@@ -1,0 +1,30 @@
+solax:
+  modbus:
+    # Modbus TCP connection
+    host: 192.168.0.31
+    port: 502
+    # Time management required for modbus
+    time:
+      # Delay between two requests
+      delay: 1000
+  # ID of the inverter in modbus, can differ if you have multiple inverters
+  unitId: 1
+
+# API for electricity prices provided to grid
+# - Documentation: https://spotovaelektrina.cz/api
+ote:
+  api:
+    url: "https://spotovaelektrina.cz/api/"
+
+# API for weather data
+# - Documentation: https://www.meteosource.com/documentation
+meteosource:
+  api:
+    url: "https://www.meteosource.com/api/"
+    key: "YOUR_API_KEY"
+  # Location for weather data. How to find is described in the documentation
+  placeId: "prague"
+
+# Logging configuration
+logging:
+  config: classpath:log4j2.xml
