@@ -17,12 +17,20 @@ public class BatteryChecker {
     private final SolaxService solaxService;
 
     @Scheduled(cron = "0 0 13 * * *")
-    public void adjustModeBasedOnBatteryLevel() {
+    public void adjustModeBasedOnBatteryLevelAtNoon() {
         log.info("==".repeat(40));
-        log.info("Starting scheduled battery check to adjust inverter mode");
+        log.info("Starting scheduled noon battery check to adjust inverter mode");
+        runCheck(50);
+    }
 
-        int minBatteryLevel = 50;
+    @Scheduled(cron = "0 0 15 * * *")
+    public void adjustModeBasedOnBatteryLevelAtEvening() {
+        log.info("==".repeat(40));
+        log.info("Starting scheduled evening battery check to adjust inverter mode");
+        runCheck(70);
+    }
 
+    public void runCheck(int minLevel) {
         Optional<InverterMode> modeOpt = solaxService.getCurrentMode();
         if (modeOpt.isEmpty()) {
             log.warn("Could not retrieve current inverter mode, aborting mode change");
@@ -30,7 +38,7 @@ public class BatteryChecker {
         }
 
         InverterMode currentMode = modeOpt.get();
-        log.debug("- Current inverter mode: {}", currentMode);
+        log.info("- Current inverter mode: {}", currentMode);
 
         Optional<Integer> batteryLevelOpt = solaxService.getBatteryLevel();
         if (batteryLevelOpt.isEmpty()) {
@@ -39,14 +47,13 @@ public class BatteryChecker {
         }
 
         int batteryLevel = batteryLevelOpt.get();
-        log.debug("- Current battery level: {}%", batteryLevel);
+        log.info("- Current battery level: {}% - required: {}%", batteryLevel, minLevel);
 
         // Change to self-use - If battery level is low, while we're exporting everything to grid.
-        if (batteryLevel < minBatteryLevel && currentMode == InverterMode.FEED_IN_PRIORITY) {
+        if (batteryLevel < minLevel && currentMode == InverterMode.FEED_IN_PRIORITY) {
             log.info("Battery level is low while FEED_IN_PRIORITY. Attempting switch to SELF_USE");
-            boolean ok = solaxService.changeMode(InverterMode.SELF_USE);
 
-            if (ok) {
+            if (solaxService.changeMode(InverterMode.SELF_USE)) {
                 log.info("- Inverter mode switched to SELF_USE successfully");
             } else {
                 log.error("- Failed to switch inverter mode to SELF_USE");
