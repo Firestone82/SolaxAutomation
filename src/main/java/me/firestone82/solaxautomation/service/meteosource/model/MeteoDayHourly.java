@@ -20,6 +20,6 @@ public class MeteoDayHourly {
     private Precipitation precipitation;
 
     public double getQuality() {
-        return weather.getLevel() - (cloud_cover.getTotal() / 100F);
+        return weather.getLevel() + (cloud_cover.getTotal() / 100F);
     }
 }

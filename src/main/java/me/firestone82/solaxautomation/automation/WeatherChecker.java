@@ -1,5 +1,6 @@
 package me.firestone82.solaxautomation.automation;
 
+import jakarta.annotation.PostConstruct;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.firestone82.solaxautomation.service.meteosource.MeteoSourceService;
@@ -7,6 +8,8 @@ import me.firestone82.solaxautomation.service.meteosource.model.MeteoDayHourly;
 import me.firestone82.solaxautomation.service.meteosource.model.WeatherForecast;
 import me.firestone82.solaxautomation.service.solax.SolaxService;
 import me.firestone82.solaxautomation.service.solax.model.InverterMode;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -25,14 +28,14 @@ public class WeatherChecker {
     public void adjustModeBasedOnMorningWeather() {
         log.info("==".repeat(40));
         log.info("Starting scheduled morning inverter-mode adjustment based on today’s weather");
-        runCheck(6, 18, 2.5);
+        runCheck(6, 19, 2.5);
     }
 
     @Scheduled(cron = "0 0 10 * * *")
     public void adjustModeBasedOnForenoonWeather() {
         log.info("==".repeat(40));
         log.info("Starting scheduled forenoon inverter-mode adjustment based on today’s weather");
-        runCheck(10, 18, 2);
+        runCheck(10, 19, 1.75);
     }
 
     public void runCheck(int startHour, int endHour, double minQuality) {
