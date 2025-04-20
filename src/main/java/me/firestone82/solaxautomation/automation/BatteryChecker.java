@@ -24,10 +24,17 @@ public class BatteryChecker {
     }
 
     @Scheduled(cron = "0 0 15 * * *")
+    public void adjustModeBasedOnBatteryLevelAtAfternoon() {
+        log.info("==".repeat(40));
+        log.info("Starting scheduled afternoon battery check to adjust inverter mode");
+        runCheck(70);
+    }
+
+    @Scheduled(cron = "0 0 17 * * *")
     public void adjustModeBasedOnBatteryLevelAtEvening() {
         log.info("==".repeat(40));
         log.info("Starting scheduled evening battery check to adjust inverter mode");
-        runCheck(70);
+        runCheck(90);
     }
 
     public void runCheck(int minLevel) {
@@ -49,7 +56,7 @@ public class BatteryChecker {
         int batteryLevel = batteryLevelOpt.get();
         log.info("- Current battery level: {}% - required: {}%", batteryLevel, minLevel);
 
-        // Change to self-use - If battery level is low, while we're exporting everything to grid.
+        // Change to self-use - If battery level is low while prioritizing export
         if (batteryLevel < minLevel && currentMode == InverterMode.FEED_IN_PRIORITY) {
             log.info("Battery level is low while FEED_IN_PRIORITY. Attempting switch to SELF_USE");
 
@@ -59,7 +66,7 @@ public class BatteryChecker {
                 log.error("- Failed to switch inverter mode to SELF_USE");
             }
         } else {
-            log.info("Battery level is sufficient while FEED_IN_PRIORITY. No mode change needed");
+            log.info("Battery level is sufficient. No mode change needed");
         }
     }
 }

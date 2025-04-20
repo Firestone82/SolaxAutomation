@@ -8,8 +8,6 @@ import me.firestone82.solaxautomation.service.meteosource.model.MeteoDayHourly;
 import me.firestone82.solaxautomation.service.meteosource.model.WeatherForecast;
 import me.firestone82.solaxautomation.service.solax.SolaxService;
 import me.firestone82.solaxautomation.service.solax.model.InverterMode;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -28,14 +26,37 @@ public class WeatherChecker {
     public void adjustModeBasedOnMorningWeather() {
         log.info("==".repeat(40));
         log.info("Starting scheduled morning inverter-mode adjustment based on today’s weather");
-        runCheck(6, 19, 2.5);
+        runCheck(6, 19, 3.25);
     }
 
-    @Scheduled(cron = "0 0 10 * * *")
+    @Scheduled(cron = "0 0 11 * * *")
     public void adjustModeBasedOnForenoonWeather() {
         log.info("==".repeat(40));
         log.info("Starting scheduled forenoon inverter-mode adjustment based on today’s weather");
-        runCheck(10, 19, 1.75);
+        runCheck(11, 19, 2.25);
+    }
+
+    @PostConstruct
+    public void showWeather() {
+        int startHour = 6;
+        int endHour = 19;
+
+        Optional<WeatherForecast> forecastOpt = meteoSourceService.getCurrentWeather();
+        if (forecastOpt.isEmpty()) {
+            log.warn("Could not retrieve weather forecast, unable to show weather");
+            return;
+        }
+
+        List<MeteoDayHourly> hours = forecastOpt.get().getHourlyBetween(startHour, endHour);
+
+        double avgQuality = hours.stream()
+                .mapToDouble(MeteoDayHourly::getQuality)
+                .average()
+                .orElse(0.0);
+
+        log.info("Weather forecast for today ({}–{}h):", startHour, endHour);
+        log.info("- Average level: {}", avgQuality);
+        hours.forEach(hour -> log.debug(hour.toString()));
     }
 
     public void runCheck(int startHour, int endHour, double minQuality) {
@@ -61,14 +82,8 @@ public class WeatherChecker {
                 .orElse(0.0);
 
         log.info("- Average quality level today (6–18h): {} - required: {}", avgQuality, minQuality);
-
         log.info("- Weather forecast for today ({}–{}h):", startHour, endHour);
-        for (MeteoDayHourly hour : hours) {
-            log.debug(
-                    "- Hour {}: Weather: {}, Cloud cover: {}%, Quality level: {}",
-                    hour.getDate().getHour(), hour.getWeather().name(), hour.getCloud_cover().getTotal(), hour.getQuality()
-            );
-        }
+        hours.forEach(hour -> log.debug(hour.toString()));
 
         // Change to self-use - If weather is cloudy
         if (avgQuality > minQuality) {

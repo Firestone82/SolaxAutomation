@@ -8,8 +8,8 @@ import lombok.Getter;
 public enum WeatherType {
     NOT_AVAILABLE(1, 1),
     SUNNY(2, 1),                     // SUNNY
-    MOSTLY_SUNNY(3, 2),              // SUNNY
-    PARTLY_SUNNY(4, 2.5),            // SUNNY
+    MOSTLY_SUNNY(3, 1.5),            // SUNNY
+    PARTLY_SUNNY(4, 2),              // SUNNY
     MOSTLY_CLOUDY(5, 3),             // CLOUDY
     CLOUDY(6, 4),                    // CLOUDY
     OVERCAST(7, 5),                  // CLOUDY

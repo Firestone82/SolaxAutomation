@@ -40,7 +40,7 @@ public class NegativeExportChecker {
         });
     }
 
-    @EventListener(ApplicationReadyEvent.class)
+//    @EventListener(ApplicationReadyEvent.class)
     private void afterStartup() {
         log.info("==".repeat(40));
         log.info("Running negative export check on startup");
