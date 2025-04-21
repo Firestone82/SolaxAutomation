@@ -11,6 +11,7 @@ import me.firestone82.solaxautomation.service.solax.model.InverterMode;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -22,22 +23,39 @@ public class WeatherChecker {
     private final SolaxService solaxService;
     private final MeteoSourceService meteoSourceService;
 
+    private static final float WEEKDAY_MAX_QUALITY = 4.5f;
+    private static final float WEEKEND_MAX_QUALITY = 2.5f;
+
     @Scheduled(cron = "0 0 6 * * *")
     public void adjustModeBasedOnMorningWeather() {
         log.info("==".repeat(40));
         log.info("Starting scheduled morning inverter-mode adjustment based on today’s weather");
-        runCheck(6, 19, 3.25);
+        runCheck(6, 12, getQuality());
     }
 
     @Scheduled(cron = "0 0 11 * * *")
     public void adjustModeBasedOnForenoonWeather() {
         log.info("==".repeat(40));
         log.info("Starting scheduled forenoon inverter-mode adjustment based on today’s weather");
-        runCheck(11, 19, 2.25);
+        runCheck(11, 19, getQuality());
+    }
+
+    private float getQuality() {
+        LocalDateTime now = LocalDateTime.now();
+        boolean weekend = now.getDayOfWeek().getValue() == 6 || now.getDayOfWeek().getValue() == 7;
+
+        float minQuality = weekend ? WEEKDAY_MAX_QUALITY : WEEKEND_MAX_QUALITY;
+        log.debug("Today is {}, required min quality is {}", weekend ? "weekend" : "weekday", minQuality);
+
+        return minQuality;
     }
 
     @PostConstruct
+    @Scheduled(cron = "0 5 * * * *")
     public void showWeather() {
+        log.info("==".repeat(40));
+        log.info("Starting scheduled weather forecast display");
+
         int startHour = 6;
         int endHour = 19;
 
@@ -48,7 +66,6 @@ public class WeatherChecker {
         }
 
         List<MeteoDayHourly> hours = forecastOpt.get().getHourlyBetween(startHour, endHour);
-
         double avgQuality = hours.stream()
                 .mapToDouble(MeteoDayHourly::getQuality)
                 .average()
@@ -56,7 +73,19 @@ public class WeatherChecker {
 
         log.info("Weather forecast for today ({}–{}h):", startHour, endHour);
         log.info("- Average level: {}", avgQuality);
-        hours.forEach(hour -> log.debug(hour.toString()));
+        hours.forEach(hour -> log.info(hour.toString()));
+
+        Optional<Integer[]> inverterPowerOpt = solaxService.getInverterPower();
+        if (inverterPowerOpt.isEmpty()) {
+            log.warn("Could not retrieve inverter power, unable to show weather");
+            return;
+        }
+
+        Integer[] inverterPower = inverterPowerOpt.get();
+
+        log.info("Current inverter power: {} W", (inverterPower[0] + inverterPower[1]));
+        log.info("- DC1: {} W", inverterPower[0]);
+        log.info("- DC2: {} W", inverterPower[1]);
     }
 
     public void runCheck(int startHour, int endHour, double minQuality) {
@@ -83,24 +112,22 @@ public class WeatherChecker {
 
         log.info("- Average quality level today (6–18h): {} - required: {}", avgQuality, minQuality);
         log.info("- Weather forecast for today ({}–{}h):", startHour, endHour);
-        hours.forEach(hour -> log.debug(hour.toString()));
+        hours.forEach(hour -> log.info(hour.toString()));
 
         // Change to self-use - If weather is cloudy
         if (avgQuality > minQuality) {
-            if (currentMode == InverterMode.SELF_USE) {
-                log.info("Weather is cloudy. Inverter is already in SELF_USE mode, no change needed");
-            } else {
-                log.info("Weather is cloudy. Attempting switch to SELF_USE");
+            if (currentMode != InverterMode.SELF_USE) {
+                log.info("Weather is cloudy. Attempting switch to {}", InverterMode.SELF_USE.name());
                 setMode(InverterMode.SELF_USE);
             }
         } else {
-            if (currentMode == InverterMode.FEED_IN_PRIORITY) {
-                log.info("Weather is sunny. Inverter is already in FEED_IN_PRIORITY, no change needed");
-            } else {
-                log.info("Weather is sunny. Attempting switch to FEED_IN_PRIORITY");
+            if (currentMode != InverterMode.FEED_IN_PRIORITY) {
+                log.info("Weather is sunny. Attempting switch to {}", InverterMode.FEED_IN_PRIORITY.name());
                 setMode(InverterMode.FEED_IN_PRIORITY);
             }
         }
+
+        log.info("Inverter is already in the correct state, no action needed");
     }
 
     private void setMode(InverterMode mode) {
