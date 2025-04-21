@@ -4,5 +4,5 @@ import lombok.Data;
 
 @Data
 public class Cloud {
-    private final int total;
+    private final double total;
 }

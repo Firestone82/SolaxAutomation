@@ -13,9 +13,9 @@ public class CloudJsonAdapter implements JsonDeserializer<Cloud> {
     @Override
     public Cloud deserialize(JsonElement jsonElement, Type type, JsonDeserializationContext jsonDeserializationContext) throws JsonParseException {
         if (jsonElement.isJsonPrimitive()) {
-            return new Cloud(jsonElement.getAsInt());
+            return new Cloud(jsonElement.getAsDouble());
         } else if (jsonElement.isJsonObject()) {
-            return new Cloud(jsonElement.getAsJsonObject().get("total").getAsInt());
+            return new Cloud(jsonElement.getAsJsonObject().get("total").getAsDouble());
         } else {
             throw new JsonParseException("Invalid JSON for Cloud: " + jsonElement);
         }
