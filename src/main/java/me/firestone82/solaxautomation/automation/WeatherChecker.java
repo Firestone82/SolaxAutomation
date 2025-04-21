@@ -1,6 +1,5 @@
 package me.firestone82.solaxautomation.automation;
 
-import jakarta.annotation.PostConstruct;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.firestone82.solaxautomation.service.meteosource.MeteoSourceService;
@@ -8,6 +7,8 @@ import me.firestone82.solaxautomation.service.meteosource.model.MeteoDayHourly;
 import me.firestone82.solaxautomation.service.meteosource.model.WeatherForecast;
 import me.firestone82.solaxautomation.service.solax.SolaxService;
 import me.firestone82.solaxautomation.service.solax.model.InverterMode;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -50,8 +51,8 @@ public class WeatherChecker {
         return minQuality;
     }
 
-    @PostConstruct
-    @Scheduled(cron = "0 5 * * * *")
+    @EventListener(ApplicationReadyEvent.class)
+    @Scheduled(cron = "0 1 4-20 * * *")
     public void showWeather() {
         log.info("==".repeat(40));
         log.info("Starting scheduled weather forecast display");
@@ -110,9 +111,9 @@ public class WeatherChecker {
                 .average()
                 .orElse(0.0);
 
-        log.info("- Average quality level today (6–18h): {} - required: {}", avgQuality, minQuality);
         log.info("- Weather forecast for today ({}–{}h):", startHour, endHour);
         hours.forEach(hour -> log.info(hour.toString()));
+        log.info("- Average quality level today {} - required: {}", avgQuality, minQuality);
 
         // Change to self-use - If weather is cloudy
         if (avgQuality > minQuality) {

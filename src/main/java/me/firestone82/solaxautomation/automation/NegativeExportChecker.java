@@ -13,6 +13,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 @Slf4j
@@ -35,6 +36,12 @@ public class NegativeExportChecker {
                 return;
             }
 
+            LocalDateTime now = LocalDateTime.now();
+            if (now.getHour() < 4 || now.getHour() > 20) {
+                log.warn("Detected night time, ignoring event");
+                return;
+            }
+
             raspberryPiService.setPreviousConnectionSwitchState(event.state());
             runCheck();
         });
@@ -47,7 +54,7 @@ public class NegativeExportChecker {
         runCheck();
     }
 
-    @Scheduled(cron = "30 0 6-18 * * *")
+    @Scheduled(cron = "30 0 4-20 * * *")
     public void negativeExport() {
         log.info("==".repeat(40));
         log.info("Running scheduled negative export check based on period");
