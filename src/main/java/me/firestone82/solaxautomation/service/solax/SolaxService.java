@@ -79,4 +79,9 @@ public class SolaxService {
         log.debug("Requesting to read current battery level (unit ID: {})", unitId);
         return solaxClient.read(ReadRegister.BATTERY_CAPACITY, unitId);
     }
+
+    public Optional<Integer[]> getInverterPower() {
+        log.debug("Requesting to read current inverter power (unit ID: {})", unitId);
+        return solaxClient.read(ReadRegister.POWER_DC, unitId);
+    }
 }

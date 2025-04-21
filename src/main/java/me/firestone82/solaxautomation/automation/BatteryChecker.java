@@ -66,7 +66,7 @@ public class BatteryChecker {
                 log.error("- Failed to switch inverter mode to SELF_USE");
             }
         } else {
-            log.info("Battery level is sufficient. No mode change needed");
+            log.info("Battery level is sufficient, no action needed");
         }
     }
 }
