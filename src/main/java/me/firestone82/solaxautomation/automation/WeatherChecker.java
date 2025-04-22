@@ -12,7 +12,6 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -24,31 +23,18 @@ public class WeatherChecker {
     private final SolaxService solaxService;
     private final MeteoSourceService meteoSourceService;
 
-    private static final float WEEKDAY_MAX_QUALITY = 4.5f;
-    private static final float WEEKEND_MAX_QUALITY = 2.5f;
-
     @Scheduled(cron = "0 0 6 * * *")
     public void adjustModeBasedOnMorningWeather() {
         log.info("==".repeat(40));
         log.info("Starting scheduled morning inverter-mode adjustment based on today’s weather");
-        runCheck(6, 12, getQuality());
+        runCheck(12, 18, 6.0f);
     }
 
-    @Scheduled(cron = "0 0 11 * * *")
-    public void adjustModeBasedOnForenoonWeather() {
+    @Scheduled(cron = "0 0 12 * * *")
+    public void adjustModeBasedOnNoonWeather() {
         log.info("==".repeat(40));
         log.info("Starting scheduled forenoon inverter-mode adjustment based on today’s weather");
-        runCheck(11, 19, getQuality());
-    }
-
-    private float getQuality() {
-        LocalDateTime now = LocalDateTime.now();
-        boolean weekend = now.getDayOfWeek().getValue() == 6 || now.getDayOfWeek().getValue() == 7;
-
-        float minQuality = weekend ? WEEKDAY_MAX_QUALITY : WEEKEND_MAX_QUALITY;
-        log.debug("Today is {}, required min quality is {}", weekend ? "weekend" : "weekday", minQuality);
-
-        return minQuality;
+        runCheck(12, 18, 5.25f);
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -58,7 +44,7 @@ public class WeatherChecker {
         log.info("Starting scheduled weather forecast display");
 
         int startHour = 6;
-        int endHour = 19;
+        int endHour = 18;
 
         Optional<WeatherForecast> forecastOpt = meteoSourceService.getCurrentWeather();
         if (forecastOpt.isEmpty()) {
@@ -112,7 +98,7 @@ public class WeatherChecker {
                 .orElse(0.0);
 
         log.info("- Weather forecast for today ({}–{}h):", startHour, endHour);
-        hours.forEach(hour -> log.info(hour.toString()));
+        hours.forEach(hour -> log.info("   {}", hour.toString()));
         log.info("- Average quality level today {} - required: {}", avgQuality, minQuality);
 
         // Change to self-use - If weather is cloudy

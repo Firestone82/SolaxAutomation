@@ -36,13 +36,14 @@ public class NegativeExportChecker {
                 return;
             }
 
+            raspberryPiService.setPreviousConnectionSwitchState(event.state());
+
             LocalDateTime now = LocalDateTime.now();
             if (now.getHour() < 4 || now.getHour() > 20) {
                 log.warn("Detected night time, ignoring event");
                 return;
             }
 
-            raspberryPiService.setPreviousConnectionSwitchState(event.state());
             runCheck();
         });
     }

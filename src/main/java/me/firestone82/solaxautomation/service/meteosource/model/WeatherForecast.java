@@ -31,9 +31,14 @@ public class WeatherForecast {
 
         LocalDateTime today = LocalDateTime.now();
 
-        return getHourly().stream()
+        return getHourly()
+                .stream()
                 .filter(data -> {
                     if (today.getDayOfMonth() != data.getDate().getDayOfMonth()) {
+                        return false;
+                    }
+
+                    if (data.getDate().getHour() < today.getHour()) {
                         return false;
                     }
 
