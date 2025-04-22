@@ -22,7 +22,8 @@ public class SolaxService {
 
     public SolaxService(
             @Autowired SolaxClient solaxClient,
-            @Value("${solax.unitId}") int unitId
+            @Value("${solax.unitId}") int unitId,
+            @Value("${solax.password}") Integer password
     ) {
         log.info("Initializing Solax service");
 
@@ -34,17 +35,39 @@ public class SolaxService {
 
             Optional<String> optInverterSn = solaxClient.read(ReadRegister.INVERTER_SN, unitId);
             if (optInverterSn.isPresent()) {
-                log.info("Inverter serial number: {}", optInverterSn.get());
+                log.info("- Inverter serial number: {}", optInverterSn.get());
             } else {
                 log.error("Unable to read inverter serial number (unit ID: {}). Exiting.", unitId);
                 System.exit(1);
             }
+
+            // Unlock the inverter if found locked
+            unlock(password);
         } else {
             log.error("Failed to connect to Solax inverter (unit ID: {}). Exiting.", unitId);
             System.exit(1);
         }
 
         log.info("SolaxService initialized successfully");
+    }
+
+    private void unlock(Integer password) {
+        log.debug("Unlocking Solax inverter (unit ID: {})", unitId);
+        log.trace(" - Password: {}", password);
+
+        Optional<Integer> optLock = solaxClient.read(ReadRegister.LOCK_STATE, unitId);
+        if (optLock.isPresent()) {
+            if (optLock.get() == 0) {
+                log.info("Inverter is locked, unlocking...");
+                solaxClient.write(WriteRegister.UNLOCK_PASSWORD, unitId, password);
+                log.info("Inverter unlocked successfully.");
+            } else {
+                log.warn("Inverter is already unlocked, ignoring...");
+            }
+        } else {
+            log.error("Unable to read inverter lock state (unit ID: {}). Exiting.", unitId);
+            System.exit(1);
+        }
     }
 
     public boolean changeMode(InverterMode mode) {

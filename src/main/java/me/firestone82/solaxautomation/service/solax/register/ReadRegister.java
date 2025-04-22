@@ -12,7 +12,8 @@ public class ReadRegister<T> extends Register<T> {
     public static ReadRegister<Integer> EXPORT_LIMIT = new ReadRegister<>("ExportLimit", 0x00B6, 1, Integer.class, ReadRegistryType.HOLDING);
     public static ReadRegister<InverterMode> USE_MODE = new ReadRegister<>("SolarChargerUseMode", 0x008B, 1, InverterMode.class, ReadRegistryType.HOLDING);
     public static ReadRegister<Integer[]> POWER_DC = new ReadRegister<>("PowerDC", 0x000A, 2, Integer[].class, ReadRegistryType.INPUT);
-    public static ReadRegister<Integer> BATTERY_CAPACITY = new ReadRegister<>("BatteryCapacity", 0x001C , 1, Integer.class, ReadRegistryType.INPUT);
+    public static ReadRegister<Integer> BATTERY_CAPACITY = new ReadRegister<>("BatteryCapacity", 0x001C, 1, Integer.class, ReadRegistryType.INPUT);
+    public static ReadRegister<Integer> LOCK_STATE = new ReadRegister<>("LockState", 0x0054, 1, Integer.class, ReadRegistryType.INPUT);
 
     private final ReadRegistryType type;
 

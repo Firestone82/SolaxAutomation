@@ -9,11 +9,13 @@ import me.firestone82.solaxautomation.service.solax.register.ReadRegister;
 import me.firestone82.solaxautomation.service.solax.register.WriteRegister;
 import net.solarnetwork.io.modbus.ModbusClient;
 import net.solarnetwork.io.modbus.ModbusException;
-import net.solarnetwork.io.modbus.ModbusMessage;
 import net.solarnetwork.io.modbus.netty.msg.RegistersModbusMessage;
 import net.solarnetwork.io.modbus.tcp.netty.NettyTcpModbusClientConfig;
 import net.solarnetwork.io.modbus.tcp.netty.TcpNettyModbusClient;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.SpringApplication;
+import org.springframework.context.ApplicationContext;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -21,6 +23,7 @@ import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static net.solarnetwork.io.modbus.netty.msg.RegistersModbusMessage.*;
 
@@ -28,15 +31,20 @@ import static net.solarnetwork.io.modbus.netty.msg.RegistersModbusMessage.*;
 @Getter
 @Component
 public class SolaxClient {
+    private final ApplicationContext applicationContext;
 
     private final ModbusClient modbusClient;
     private final ModbusRequestQueue requestQueue;
     private long lastActivityTime;
 
+    private final AtomicInteger consecutiveReadWriteFailures = new AtomicInteger(0);
+    private final int maxConsecutiveFailures = 3;
+
     public SolaxClient(
             @Value("${solax.modbus.host}") String hostName,
             @Value("${solax.modbus.port}") int hostPort,
-            ModbusRequestQueue requestQueue
+            @Autowired ModbusRequestQueue requestQueue,
+            @Autowired ApplicationContext applicationContext
     ) {
         log.info("Initializing Solax client with host: {} and port: {}", hostName, hostPort);
 
@@ -45,6 +53,7 @@ public class SolaxClient {
         modbusClient = new TcpNettyModbusClient(config);
 
         this.requestQueue = requestQueue;
+        this.applicationContext = applicationContext;
 
         log.info("Solax client initialized successfully");
     }
@@ -69,7 +78,7 @@ public class SolaxClient {
             return;
         }
 
-        if (lastActivityTime + 60 * 1000 < System.currentTimeMillis()) {
+        if (lastActivityTime + (5 * 60 * 1000) < System.currentTimeMillis()) {
             if (disconnect()) {
                 log.info("Disconnected from Solax inverter due to inactivity");
             } else {
@@ -100,7 +109,10 @@ public class SolaxClient {
 
         try {
             modbusClient.start().get();
+
             lastActivityTime = System.currentTimeMillis();
+            consecutiveReadWriteFailures.set(0);
+
             return true;
         } catch (ExecutionException e) {
             log.error("Failed to connect to Solax inverter", e);
@@ -139,21 +151,22 @@ public class SolaxClient {
 
     public <T> Optional<T> read(ReadRegister<T> register, int unitId) {
         String registerAddress = String.format("%4s", Integer.toHexString(register.getAddress())).replace(' ', '0');
-        log.trace("Reading from register '{}' at 0x{} with length {}", register.getName(), registerAddress, register.getCount());
-
-        ModbusMessage req = switch (register.getType()) {
-            case INPUT -> readInputsRequest(unitId, register.getAddress(), register.getCount());
-            case HOLDING -> readHoldingsRequest(unitId, register.getAddress(), register.getCount());
-        };
+        log.trace("Reading from {} register '{}' at 0x{} with length {}", register.getType().name(), register.getName(), registerAddress, register.getCount());
 
         Callable<Optional<T>> task = () -> {
             try {
                 return ensureConnected(modbus -> {
-                    RegistersModbusMessage res = modbusClient.send(req).unwrap(RegistersModbusMessage.class);
+                    RegistersModbusMessage res = modbusClient.send(switch (register.getType()) {
+                        case INPUT -> readInputsRequest(unitId, register.getAddress(), register.getCount());
+                        case HOLDING -> readHoldingsRequest(unitId, register.getAddress(), register.getCount());
+                    }).unwrap(RegistersModbusMessage.class);
+
                     return Optional.of(ModbusConvertUtil.convertResponse(res.dataCopy(), register.getTClass(), register.getCount()));
                 });
             } catch (ModbusException e) {
-                log.error("Failed reading {} @{} count {}: {}", register.getName(), register.getAddress(), register.getCount(), e.getMessage());
+                int failures = consecutiveReadWriteFailures.incrementAndGet();
+                log.error("Failed to read {} (addr: {}, count {}): {}", register.getName(), register.getAddress(), register.getCount(), e.getMessage());
+                checkAndShutdownFailures(failures);
                 return Optional.empty();
             }
         };
@@ -164,7 +177,9 @@ public class SolaxClient {
             Thread.currentThread().interrupt();
             log.warn("Read interrupted for {}", register.getName());
         } catch (ExecutionException ee) {
+            int failures = consecutiveReadWriteFailures.incrementAndGet();
             log.error("Read error for {}: {}", register.getName(), ee.getCause().getMessage());
+            checkAndShutdownFailures(failures);
         }
 
         return Optional.empty();
@@ -174,24 +189,25 @@ public class SolaxClient {
         String registerAddress = String.format("%4s", Integer.toHexString(register.getAddress())).replace(' ', '0');
         log.trace("Writing to register '{}' at 0x{} with length {}", register.getName(), registerAddress, register.getCount());
 
-        ModbusMessage req = switch (value) {
-            case Integer v -> writeHoldingRequest(unitId, register.getAddress(), v);
-            case Boolean v -> writeHoldingRequest(unitId, register.getAddress(), v ? 1 : 0);
-            case Enum<?> v -> writeHoldingRequest(unitId, register.getAddress(), v.ordinal());
-            default -> {
-                short[] values = ModbusConvertUtil.convertRequest(value, register.getCount());
-                yield writeHoldingsRequest(unitId, register.getAddress(), values);
-            }
-        };
-
         Callable<Boolean> task = () -> {
             try {
                 return ensureConnected(modbus -> {
-                    RegistersModbusMessage res = modbusClient.send(req).unwrap(RegistersModbusMessage.class);
+                    RegistersModbusMessage res = modbusClient.send(switch (value) {
+                        case Integer v -> writeHoldingRequest(unitId, register.getAddress(), v);
+                        case Boolean v -> writeHoldingRequest(unitId, register.getAddress(), v ? 1 : 0);
+                        case Enum<?> v -> writeHoldingRequest(unitId, register.getAddress(), v.ordinal());
+                        default -> {
+                            short[] values = ModbusConvertUtil.convertRequest(value, register.getCount());
+                            yield writeHoldingsRequest(unitId, register.getAddress(), values);
+                        }
+                    }).unwrap(RegistersModbusMessage.class);
+
                     return !res.isException();
                 });
             } catch (ModbusException e) {
+                int failures = consecutiveReadWriteFailures.incrementAndGet();
                 log.error("Failed to write {} (addr {}): {}", register.getName(), register.getAddress(), e.getMessage());
+                checkAndShutdownFailures(failures);
                 return false;
             }
         };
@@ -202,7 +218,9 @@ public class SolaxClient {
             Thread.currentThread().interrupt();
             log.warn("Write interrupted for {}", register.getName());
         } catch (ExecutionException ee) {
+            int failures = consecutiveReadWriteFailures.incrementAndGet();
             log.error("Error executing write for {}: {}", register.getName(), ee.getCause().getMessage());
+            checkAndShutdownFailures(failures);
         }
 
         return false;
@@ -216,5 +234,18 @@ public class SolaxClient {
 
         lastActivityTime = System.currentTimeMillis();
         return callable.call(modbusClient);
+    }
+
+    private void checkAndShutdownFailures(int failures) {
+        if (failures >= maxConsecutiveFailures) {
+            log.error("Exceeded maximum consecutive read/write failures ({}) - shutting down application", failures);
+
+            // Graceful shutdown if possible, otherwise force exit
+            try {
+                SpringApplication.exit(applicationContext, () -> 1);
+            } catch (Exception e) {
+                System.exit(1);
+            }
+        }
     }
 }

@@ -16,7 +16,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 import static org.mockito.Mockito.mock;
@@ -35,7 +34,7 @@ public class RaspberryPiService {
         log.info("Initializing Raspberry Pi service");
         log.debug(" - OS architecture: {} ({})", SystemUtils.OS_NAME, SystemUtils.OS_ARCH);
 
-        if (isRaspberryPiByModel()) {
+        if (isRaspberryPi()) {
             log.info("RaspberryPI detected, initializing Pi4J");
 
             try {
@@ -74,34 +73,34 @@ public class RaspberryPiService {
         this.connectionSwitch = pi4j.create(DigitalInput.newConfigBuilder(pi4j)
                 .id("connectionSwitch")
                 .description("Electricity between two houses connection switch")
-                .address(17)               // BCM 17 - PIN 11
+                .address(17) // BCM 17 - PIN 11
                 .debounce(100L, TimeUnit.MILLISECONDS)
                 .pull(PullResistance.PULL_DOWN)
                 .build()
         );
     }
 
-    public static Optional<String> getPiModel() {
+    public static boolean isRaspberryPi() {
+        if (!SystemUtils.IS_OS_LINUX) {
+            log.warn("Not running on Linux, cannot determine if Raspberry Pi");
+            return false;
+        }
+
+        if (!SystemUtils.OS_ARCH.equals("arm") && !SystemUtils.OS_ARCH.equals("aarch64")) {
+            log.warn("Not running on ARM architecture, cannot determine if Raspberry Pi");
+            return false;
+        }
+
         try {
             byte[] data = Files.readAllBytes(Paths.get("/proc/device-tree/model"));
-
             String model = new String(data, StandardCharsets.UTF_8)
                     .replace("\u0000", "")
                     .trim();
 
-            return Optional.of(model);
+            return model.startsWith("Raspberry Pi");
         } catch (IOException e) {
-            return Optional.empty();
-        }
-    }
-
-    public static boolean isRaspberryPiByModel() {
-        if (!SystemUtils.IS_OS_LINUX) {
+            log.error("Failed to read /proc/device-tree/model.", e);
             return false;
         }
-
-        return getPiModel()
-                .map(m -> m.startsWith("Raspberry Pi"))
-                .orElse(false);
     }
 }

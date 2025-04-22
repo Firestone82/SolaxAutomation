@@ -9,6 +9,8 @@ solax:
       delay: 1000
   # ID of the inverter in modbus, can differ if you have multiple inverters
   unitId: 1
+  # Advanced password for the inverter
+  password: 2014
 
 # API for electricity prices provided to grid
 # - Documentation: https://spotovaelektrina.cz/api

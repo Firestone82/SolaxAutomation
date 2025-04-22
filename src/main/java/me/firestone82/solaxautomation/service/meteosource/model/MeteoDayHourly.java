@@ -27,7 +27,7 @@ public class MeteoDayHourly {
     @Override
     public String toString() {
         return StringUtils.parseArgs(
-                "- Hour {}: Weather: {}, Cloud cover: {}%, Quality level: {}",
+                "Hour {}: Weather: {}, Cloud cover: {}%, Quality level: {}",
                 date.getHour(), weather.name(), cloud_cover.getTotal(), getQuality()
         );
     }

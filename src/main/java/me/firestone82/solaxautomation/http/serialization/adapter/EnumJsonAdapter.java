@@ -7,6 +7,12 @@ import com.google.gson.JsonParseException;
 
 import java.lang.reflect.Type;
 
+/**
+ * A custom JSON deserializer for enum types.
+ * <p>
+ * This deserializer converts a JSON string to an enum constant by matching the string to the enum constant's name.
+ * The name is converted to uppercase before matching.
+ */
 public class EnumJsonAdapter implements JsonDeserializer<Enum<?>> {
 
     @Override
