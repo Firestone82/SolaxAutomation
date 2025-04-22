@@ -33,6 +33,7 @@ public class SolaxService {
         if (solaxClient.connect()) {
             log.info("Successfully connected to Solax inverter (unit ID: {})", unitId);
 
+            log.debug("Requesting to read inverter serial number (unit ID: {})", unitId);
             Optional<String> optInverterSn = solaxClient.read(ReadRegister.INVERTER_SN, unitId);
             if (optInverterSn.isPresent()) {
                 log.info("- Inverter serial number: {}", optInverterSn.get());
