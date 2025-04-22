@@ -8,8 +8,6 @@ import me.firestone82.solaxautomation.service.ote.OTEService;
 import me.firestone82.solaxautomation.service.ote.model.PowerHourPrice;
 import me.firestone82.solaxautomation.service.raspberry.RaspberryPiService;
 import me.firestone82.solaxautomation.service.solax.SolaxService;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -29,10 +27,10 @@ public class NegativeExportChecker {
     private void init() {
         raspberryPiService.getConnectionSwitch().addListener(event -> {
             log.info("==".repeat(40));
-            log.info("Connection switch state changed to: {}, running check for negative export", event.state().name());
+            log.info("Detected switch state changed to: {}, running check for negative export", event.state().name());
 
             if (raspberryPiService.getPreviousConnectionSwitchState() == event.state()) {
-                log.warn("Detected state change to the same state, ignoring event");
+                log.warn("State change to the same state, ignoring event");
                 return;
             }
 
@@ -48,64 +46,62 @@ public class NegativeExportChecker {
         });
     }
 
-    @EventListener(ApplicationReadyEvent.class)
-    private void afterStartup() {
-        log.info("==".repeat(40));
-        log.info("Running negative export check on startup");
-        runCheck();
-    }
-
     @Scheduled(cron = "30 0 4-20 * * *")
     public void negativeExport() {
         log.info("==".repeat(40));
-        log.info("Running scheduled negative export check based on period");
+        log.info("Running period negative export check");
         runCheck();
     }
 
+    /**
+     * Disable negative export if price for export is not worth selling. But ignore it,
+     * if switch is @{@link DigitalState#LOW} (not connected to grid).
+     */
     private void runCheck() {
-        double minExportPrice = 0.5;
+        double minExportPrice = 0.5; // 0.5 CZK/kWh
         int maxExportLimit = 3950;
 
         DigitalState connectionState = raspberryPiService.getConnectionSwitch().state();
         log.info(" - Connection switch state: {}", connectionState.name());
 
-        Optional<PowerHourPrice> optionalCurrentPrice = oteService.getCurrentHourPrices();
-        if (optionalCurrentPrice.isEmpty()) {
-            log.warn("Could not retrieve price from OTE API, aborting check");
+        Optional<PowerHourPrice> optPrice = oteService.getCurrentHourPrices();
+        if (optPrice.isEmpty()) {
+            log.warn("Could not retrieve price from OTE API, aborting check.");
             return;
         }
 
-        double currentPrice = optionalCurrentPrice.get().getPriceCZK() / 1000f;
+        double currentPrice = optPrice.get().getPriceCZK() / 1000f;
         log.info(" - Current price: {} CZK/kWh", currentPrice);
 
-        Optional<Integer> optionalCurrentExportLimit = solaxService.getCurrentExportLimit();
-        if (optionalCurrentExportLimit.isEmpty()) {
-            log.warn("Could not retrieve export limit from inverter, aborting check");
+        Optional<Integer> optLimit = solaxService.getCurrentExportLimit();
+        if (optLimit.isEmpty()) {
+            log.warn("Could not retrieve export limit from inverter, aborting check.");
             return;
         }
 
-        double currentExportLimit = optionalCurrentExportLimit.get();
+        double currentExportLimit = optLimit.get();
         log.info(" - Current export limit: {} W", currentExportLimit);
 
-        // Enable export - If we are not connected to grid and export is disabled
+        // Not connected to grid
         if (connectionState.isLow() && currentExportLimit <= 0) {
-            log.info("Minimal price detected while switch is LOW, enabling export to grid");
+            log.info("Price detected as not worth selling, but switch is LOW, enabling export to grid");
             setExport(maxExportLimit);
             return;
         }
 
-        // Disable export - If price is negative, we are connected to grid and export is enabled
-        if (connectionState.isHigh() && currentPrice <= minExportPrice && currentExportLimit > 0) {
-            log.info("Minimal price detected while switch is HIGH, disabling export to grid");
-            setExport(0);
-            return;
-        }
+        // Connected to grid
+        if (connectionState.isHigh()) {
+            if (currentPrice <= minExportPrice && currentExportLimit > 0) {
+                log.info("Price detected as not worth selling, disabling export to grid");
+                setExport(0);
+                return;
+            }
 
-        // Enable export - If price is positive, we are connected to grid and export is disabled
-        if (connectionState.isHigh() && currentPrice > minExportPrice && currentExportLimit <= 0) {
-            log.info("Positive price detected while switch is HIGH, enabling export to grid");
-            setExport(maxExportLimit);
-            return;
+            if (currentPrice > minExportPrice && currentExportLimit <= 0) {
+                log.info("Price detected as worth selling, enabling export to grid");
+                setExport(maxExportLimit);
+                return;
+            }
         }
 
         log.info("Inverter is already in the correct state, no action needed");

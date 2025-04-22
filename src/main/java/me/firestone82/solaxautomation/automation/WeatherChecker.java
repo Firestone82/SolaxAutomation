@@ -7,8 +7,6 @@ import me.firestone82.solaxautomation.service.meteosource.model.MeteoDayHourly;
 import me.firestone82.solaxautomation.service.meteosource.model.WeatherForecast;
 import me.firestone82.solaxautomation.service.solax.SolaxService;
 import me.firestone82.solaxautomation.service.solax.model.InverterMode;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -26,68 +24,40 @@ public class WeatherChecker {
     @Scheduled(cron = "0 0 6 * * *")
     public void adjustModeBasedOnMorningWeather() {
         log.info("==".repeat(40));
-        log.info("Starting scheduled morning inverter-mode adjustment based on today’s weather");
-        runCheck(12, 18, 6.0f);
+        log.info("Running morning weather forecast check");
+        runCheck(6.0f);
     }
 
     @Scheduled(cron = "0 0 12 * * *")
     public void adjustModeBasedOnNoonWeather() {
         log.info("==".repeat(40));
-        log.info("Starting scheduled forenoon inverter-mode adjustment based on today’s weather");
-        runCheck(12, 18, 5.25f);
+        log.info("Running noon weather forecast check");
+        runCheck(5.25f);
     }
 
-    @EventListener(ApplicationReadyEvent.class)
-    @Scheduled(cron = "0 1 4-20 * * *")
-    public void showWeather() {
-        log.info("==".repeat(40));
-        log.info("Starting scheduled weather forecast display");
-
-        int startHour = 6;
+    /**
+     * Switch inverter mode based on current weather forecast, if the weather will be
+     * cloudy (raining, ...), switch to self-use mode to charge batteries, otherwise switch to
+     * feed-in priority mode for grid export.
+     *
+     * @param minQuality minimum quality to consider the weather as cloudy
+     */
+    public void runCheck(double minQuality) {
+        int startHour = 12;
         int endHour = 18;
 
-        Optional<WeatherForecast> forecastOpt = meteoSourceService.getCurrentWeather();
-        if (forecastOpt.isEmpty()) {
-            log.warn("Could not retrieve weather forecast, unable to show weather");
-            return;
-        }
-
-        List<MeteoDayHourly> hours = forecastOpt.get().getHourlyBetween(startHour, endHour);
-        double avgQuality = hours.stream()
-                .mapToDouble(MeteoDayHourly::getQuality)
-                .average()
-                .orElse(0.0);
-
-        log.info("Weather forecast for today ({}–{}h):", startHour, endHour);
-        log.info("- Average level: {}", avgQuality);
-        hours.forEach(hour -> log.info(hour.toString()));
-
-        Optional<Integer[]> inverterPowerOpt = solaxService.getInverterPower();
-        if (inverterPowerOpt.isEmpty()) {
-            log.warn("Could not retrieve inverter power, unable to show weather");
-            return;
-        }
-
-        Integer[] inverterPower = inverterPowerOpt.get();
-
-        log.info("Current inverter power: {} W", (inverterPower[0] + inverterPower[1]));
-        log.info("- DC1: {} W", inverterPower[0]);
-        log.info("- DC2: {} W", inverterPower[1]);
-    }
-
-    public void runCheck(int startHour, int endHour, double minQuality) {
         Optional<InverterMode> modeOpt = solaxService.getCurrentMode();
         if (modeOpt.isEmpty()) {
-            log.warn("Could not retrieve current inverter mode, aborting mode change");
+            log.warn("Could not retrieve current inverter mode, aborting check.");
             return;
         }
 
         InverterMode currentMode = modeOpt.get();
-        log.debug("- Current inverter mode: {}", currentMode);
+        log.info("- Current inverter mode: {}", currentMode);
 
         Optional<WeatherForecast> forecastOpt = meteoSourceService.getCurrentWeather();
         if (forecastOpt.isEmpty()) {
-            log.warn("Could not retrieve weather forecast, aborting mode change");
+            log.warn("Could not retrieve weather forecast, aborting check.");
             return;
         }
 
@@ -98,19 +68,25 @@ public class WeatherChecker {
                 .orElse(0.0);
 
         log.info("- Weather forecast for today ({}–{}h):", startHour, endHour);
-        hours.forEach(hour -> log.info("   {}", hour.toString()));
-        log.info("- Average quality level today {} - required: {}", avgQuality, minQuality);
+        hours.forEach(hour -> log.info("  | {}", hour.toString()));
+        log.info("- Average quality calculated: {} - required: {}", avgQuality, minQuality);
 
-        // Change to self-use - If weather is cloudy
+        if (avgQuality == 0) {
+            log.warn("Weather quality is 0, cannot determine weather, aborting check.");
+            return;
+        }
+
         if (avgQuality > minQuality) {
             if (currentMode != InverterMode.SELF_USE) {
-                log.info("Weather is cloudy. Attempting switch to {}", InverterMode.SELF_USE.name());
+                log.info("Weather quality detected as cloudy, switching inverter mode to SELF_USE");
                 setMode(InverterMode.SELF_USE);
+                return;
             }
         } else {
             if (currentMode != InverterMode.FEED_IN_PRIORITY) {
-                log.info("Weather is sunny. Attempting switch to {}", InverterMode.FEED_IN_PRIORITY.name());
+                log.info("Weather quality detected as sunny, switching inverter mode to FEED_IN_PRIORITY");
                 setMode(InverterMode.FEED_IN_PRIORITY);
+                return;
             }
         }
 

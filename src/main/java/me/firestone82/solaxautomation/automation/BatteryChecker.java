@@ -17,56 +17,58 @@ public class BatteryChecker {
     private final SolaxService solaxService;
 
     @Scheduled(cron = "0 0 13 * * *")
-    public void adjustModeBasedOnBatteryLevelAtNoon() {
+    public void adjustModeBasedOnBatteryMinLevelOfFifty() {
         log.info("==".repeat(40));
-        log.info("Starting scheduled noon battery check to adjust inverter mode");
+        log.info("Running noon battery level check for 50%.");
         runCheck(50);
     }
 
     @Scheduled(cron = "0 0 15 * * *")
-    public void adjustModeBasedOnBatteryLevelAtAfternoon() {
+    public void adjustModeBasedOnBatteryMinLevelOfSeventy() {
         log.info("==".repeat(40));
-        log.info("Starting scheduled afternoon battery check to adjust inverter mode");
+        log.info("Running afternoon battery level check for 70%.");
         runCheck(70);
     }
 
-    @Scheduled(cron = "0 0 17 * * *")
-    public void adjustModeBasedOnBatteryLevelAtEvening() {
-        log.info("==".repeat(40));
-        log.info("Starting scheduled evening battery check to adjust inverter mode");
-        runCheck(90);
-    }
-
+    /**
+     * Stop prioritizing export if batter level is under {@code minLevel},
+     * by switching from FEED_IN_PRIORITY to SELF_USE inverter mode.
+     *
+     * @param minLevel minimum battery level to check
+     */
     public void runCheck(int minLevel) {
         Optional<InverterMode> modeOpt = solaxService.getCurrentMode();
         if (modeOpt.isEmpty()) {
-            log.warn("Could not retrieve current inverter mode, aborting mode change");
+            log.warn("Could not retrieve current inverter mode, aborting check.");
             return;
         }
 
         InverterMode currentMode = modeOpt.get();
         log.info("- Current inverter mode: {}", currentMode);
 
-        Optional<Integer> batteryLevelOpt = solaxService.getBatteryLevel();
-        if (batteryLevelOpt.isEmpty()) {
-            log.warn("Could not retrieve current battery level, aborting mode change");
+        Optional<Integer> batteryOpt = solaxService.getBatteryLevel();
+        if (batteryOpt.isEmpty()) {
+            log.warn("Could not retrieve current battery level, aborting check.");
             return;
         }
 
-        int batteryLevel = batteryLevelOpt.get();
+        int batteryLevel = batteryOpt.get();
         log.info("- Current battery level: {}% - required: {}%", batteryLevel, minLevel);
 
-        // Change to self-use - If battery level is low while prioritizing export
         if (batteryLevel < minLevel && currentMode == InverterMode.FEED_IN_PRIORITY) {
-            log.info("Battery level is low while FEED_IN_PRIORITY. Attempting switch to SELF_USE");
+            log.info("Battery level is bellow {}%, switching inverter mode to SELF_USE", minLevel);
+            setMode(InverterMode.SELF_USE);
+            return;
+        }
 
-            if (solaxService.changeMode(InverterMode.SELF_USE)) {
-                log.info("- Inverter mode switched to SELF_USE successfully");
-            } else {
-                log.error("- Failed to switch inverter mode to SELF_USE");
-            }
+        log.info("Battery level is sufficient, no action needed");
+    }
+
+    private void setMode(InverterMode mode) {
+        if (solaxService.changeMode(mode)) {
+            log.info(" - Inverter mode set to {} successfully", mode);
         } else {
-            log.info("Battery level is sufficient, no action needed");
+            log.error(" - Failed to set inverter mode to {}", mode);
         }
     }
 }
