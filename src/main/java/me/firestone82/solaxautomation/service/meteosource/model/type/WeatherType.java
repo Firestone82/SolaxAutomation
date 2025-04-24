@@ -44,7 +44,7 @@ public enum WeatherType {
     POSSIBLE_FREEZING_RAIN(24, 10.0),
 
     // SEVERE
-    THUNDERSTORM(14, 10.0),
+    TSTORM(14, 10.0),
     LOCAL_THUNDERSTORMS(15, 11.0),
     HAIL(25, 11.0);
 
