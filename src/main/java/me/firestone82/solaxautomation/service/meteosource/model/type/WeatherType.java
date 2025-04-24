@@ -6,48 +6,51 @@ import lombok.Getter;
 @Getter
 @AllArgsConstructor
 public enum WeatherType {
-    NOT_AVAILABLE(1, 11),
+    NOT_AVAILABLE(null,1, 11),
 
     // CLEAR SKIES
-    CLEAR(26, 0.0),
-    MOSTLY_CLEAR(27, 0.5),
-    PARTLY_CLEAR(28, 1.0),
+    CLEAR(null,26, 0.0),
+    MOSTLY_CLEAR(null,27, 0.5),
+    PARTLY_CLEAR(null,28, 1.0),
 
     // SUNNY
-    SUNNY(2, 1.0),
-    MOSTLY_SUNNY(3, 1.5),
-    PARTLY_SUNNY(4, 2.0),
+    SUNNY(null,2, 1.0),
+    MOSTLY_SUNNY(null,3, 1.5),
+    PARTLY_SUNNY(null,4, 2.0),
 
     // CLOUDY
-    MOSTLY_CLOUDY(5, 3.0),
-    CLOUDY(6, 3.5),
-    OVERCAST(7, 5.0),
-    OVERCAST_WITH_LOW_CLOUDS(8, 5.0),
-    FOG(9, 5.0),
+    MOSTLY_CLOUDY(null,5, 3.0),
+    CLOUDY(null,6, 3.5),
+    OVERCAST(null,7, 5.0),
+    OVERCAST_WITH_LOW_CLOUDS(null,8, 5.0),
+    FOG(null,9, 5.0),
 
     // LIGHT PRECIPITATION
-    POSSIBLE_RAIN(12, 6.0),
-    POSSIBLE_SNOW(18, 6.0),
+    POSSIBLE_RAIN("PSBL_RAIN",12, 6.0),
+    POSSIBLE_SNOW("PSBL_SNOW",18, 6.0),
 
     // RAIN / SNOW
-    LIGHT_RAIN(10, 7.0),
-    RAIN(11, 8.0),
-    RAIN_SHOWER(13, 9.0),
-    LIGHT_SNOW(16, 7.0),
-    SNOW(17, 8.0),
-    SNOW_SHOWER(19, 9.0),
+    LIGHT_RAIN(null,10, 7.0),
+    RAIN(null,11, 8.0),
+    RAIN_SHOWER(null,13, 9.0),
+    LIGHT_SNOW(null,16, 7.0),
+    SNOW(null,17, 8.0),
+    SNOW_SHOWER(null,19, 9.0),
 
     // MIXED / FREEZING
-    RAIN_AND_SNOW(20, 9.0),
-    POSSIBLE_RAIN_AND_SNOW(21, 9.0),
-    FREEZING_RAIN(23, 10.0),
-    POSSIBLE_FREEZING_RAIN(24, 10.0),
+    RAIN_AND_SNOW(null,20, 9.0),
+    POSSIBLE_RAIN_AND_SNOW(null,21, 9.0),
+    FREEZING_RAIN(null,23, 10.0),
+    POSSIBLE_FREEZING_RAIN(null,24, 10.0),
 
     // SEVERE
-    TSTORM(14, 10.0),
-    LOCAL_THUNDERSTORMS(15, 11.0),
-    HAIL(25, 11.0);
+    THUNDERSTORM("TSTORM",14, 10.0),
+    LOCAL_THUNDERSTORMS(null,15, 11.0),
+    HAIL(null,25, 11.0);
 
+    private final String alias;
     private final int code;
     private final double level;
+
+
 }
