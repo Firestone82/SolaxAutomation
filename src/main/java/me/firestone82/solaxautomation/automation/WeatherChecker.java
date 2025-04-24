@@ -25,14 +25,14 @@ public class WeatherChecker {
     public void adjustModeBasedOnMorningWeather() {
         log.info("==".repeat(40));
         log.info("Running morning weather forecast check");
-        runCheck(6.0f);
+        runCheck(7, 12, 6.0f);
     }
 
-    @Scheduled(cron = "0 0 12 * * *")
+    @Scheduled(cron = "0 0 11 * * *")
     public void adjustModeBasedOnNoonWeather() {
         log.info("==".repeat(40));
         log.info("Running noon weather forecast check");
-        runCheck(5.25f);
+        runCheck(11, 18, 5.25f);
     }
 
     /**
@@ -42,10 +42,7 @@ public class WeatherChecker {
      *
      * @param minQuality minimum quality to consider the weather as cloudy
      */
-    public void runCheck(double minQuality) {
-        int startHour = 12;
-        int endHour = 18;
-
+    public void runCheck(int startHour, int endHour, double minQuality) {
         Optional<InverterMode> modeOpt = solaxService.getCurrentMode();
         if (modeOpt.isEmpty()) {
             log.warn("Could not retrieve current inverter mode, aborting check.");
