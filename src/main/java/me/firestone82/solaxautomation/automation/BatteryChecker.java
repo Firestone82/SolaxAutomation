@@ -16,14 +16,14 @@ public class BatteryChecker {
 
     private final SolaxService solaxService;
 
-    @Scheduled(cron = "0 0 13 * * *")
+    @Scheduled(cron = "15 0 13 * * *")
     public void adjustModeBasedOnBatteryMinLevelOfFifty() {
         log.info("==".repeat(40));
         log.info("Running noon battery level check for 50%.");
         runCheck(50);
     }
 
-    @Scheduled(cron = "0 0 15 * * *")
+    @Scheduled(cron = "15 0 15 * * *")
     public void adjustModeBasedOnBatteryMinLevelOfSeventy() {
         log.info("==".repeat(40));
         log.info("Running afternoon battery level check for 70%.");
@@ -55,9 +55,19 @@ public class BatteryChecker {
         int batteryLevel = batteryOpt.get();
         log.info("- Current battery level: {}% - required: {}%", batteryLevel, minLevel);
 
-        if (batteryLevel < minLevel && currentMode == InverterMode.FEED_IN_PRIORITY) {
-            log.info("Battery level is bellow {}%, switching inverter mode to SELF_USE", minLevel);
-            setMode(InverterMode.SELF_USE);
+        if (currentMode != InverterMode.FEED_IN_PRIORITY && currentMode != InverterMode.SELF_USE) {
+            log.warn("Inverter mode is not FEED_IN_PRIORITY or SELF_USE, aborting check.");
+            return;
+        }
+
+        if (batteryLevel < minLevel) {
+            if (currentMode == InverterMode.FEED_IN_PRIORITY) {
+                log.info("Battery level is bellow {}%, switching inverter mode to SELF_USE", minLevel);
+                setMode(InverterMode.SELF_USE);
+                return;
+            }
+
+            log.info("Battery level is bellow {}%, but inverter mode is already in SELF_USE, no action needed", minLevel);
             return;
         }
 

@@ -19,8 +19,14 @@ import java.util.Optional;
 @Component
 public class MeteoSourceService {
 
-    @Value("${meteosource.placeId}")
+    @Value("${meteosource.location.placeId}")
     public String placeId;
+
+    @Value("${meteosource.location.lat}")
+    public String lat;
+
+    @Value("${meteosource.location.lon}")
+    public String lon;
 
     private final MeteoSourceAPI api;
 
@@ -47,9 +53,20 @@ public class MeteoSourceService {
 
     public Optional<WeatherForecast> getCurrentWeather() {
         log.debug("Request to get current weather");
-        
+
         try {
-            Response<WeatherForecast> response = api.getForecast(placeId, "current,hourly").execute();
+            Response<WeatherForecast> response;
+
+            if (lat != null && lon != null) {
+                log.debug("- Using coordinates: lat={}, lon={}", lat, lon);
+                response = api.getForecast(null, lat, lon, "current,hourly").execute();
+            } else if (placeId != null) {
+                log.debug("- Using place ID: {}", placeId);
+                response = api.getForecast(placeId, null, null, "current,hourly").execute();
+            } else {
+                log.error("No location information provided. Please set either lat/lon or placeId.");
+                return Optional.empty();
+            }
 
             if (response.isSuccessful()) {
                 if (response.code() == 204 || response.body() == null) {

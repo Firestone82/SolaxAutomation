@@ -10,6 +10,8 @@ public interface MeteoSourceAPI {
     @GET("v1/free/point")
     Call<WeatherForecast> getForecast(
             @Query("place_id") String placeId,
+            @Query("lat") String lat,
+            @Query("lon") String lon,
             @Query("sections") String sections
     );
 

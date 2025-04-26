@@ -24,8 +24,12 @@ meteosource:
   api:
     url: "https://www.meteosource.com/api/"
     key: "YOUR_API_KEY"
-  # Location for weather data. How to find is described in the documentation
-  placeId: "prague"
+  # Location for weather data. Lat and lon is always better. How to find is described in the documentation
+  location:
+    placeId: "prague"
+    # Coordinates for the location
+    lat: 50.0755
+    lon: 14.4378
 
 # Logging configuration
 logging:

@@ -8,6 +8,8 @@ import me.firestone82.solaxautomation.service.ote.OTEService;
 import me.firestone82.solaxautomation.service.ote.model.PowerHourPrice;
 import me.firestone82.solaxautomation.service.raspberry.RaspberryPiService;
 import me.firestone82.solaxautomation.service.solax.SolaxService;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -46,8 +48,16 @@ public class NegativeExportChecker {
         });
     }
 
+    @EventListener(ApplicationReadyEvent.class)
+    public void runNegativeExportCheckOnStartup() {
+        log.info("==".repeat(40));
+        log.info("Running startup negative export check");
+
+        runCheck();
+    }
+
     @Scheduled(cron = "30 0 4-20 * * *")
-    public void negativeExport() {
+    public void adjustExportLimitBasedOnPrice() {
         log.info("==".repeat(40));
         log.info("Running period negative export check");
         runCheck();
