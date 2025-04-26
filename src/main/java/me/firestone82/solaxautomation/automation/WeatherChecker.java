@@ -76,6 +76,11 @@ public class WeatherChecker {
             return;
         }
 
+        if (forecastOpt.get().getHourly().isEmpty()) {
+            log.warn("Weather forecast is empty, unable to show weather.");
+            return;
+        }
+
         List<MeteoDayHourly> hours = forecastOpt.get().getHourlyBetween(startHour, endHour);
         double avgQuality = hours.stream()
                 .mapToDouble(MeteoDayHourly::getQuality)
