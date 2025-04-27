@@ -101,7 +101,6 @@ public class WeatherChecker {
     }
 
     private Consumer<FunctionData> weatherCheck() {
-        // InverterMode, avgQuality, minQuality
         return data -> {
             InverterMode mode = data.mode();
 
@@ -119,7 +118,7 @@ public class WeatherChecker {
                 return;
             }
 
-            if (data.avgQuality() > data.minQuality()) {
+            if (data.avgQuality() <= data.minQuality()) {
                 if (mode == InverterMode.SELF_USE) {
                     log.info("Weather quality detected as sunny, switching inverter mode to FEED_IN_PRIORITY");
                     setMode(InverterMode.FEED_IN_PRIORITY);
@@ -138,20 +137,19 @@ public class WeatherChecker {
     }
 
     private Consumer<FunctionData> outageCheck() {
-        // InverterMode, avgQuality, minQuality
         return data -> {
             InverterMode mode = data.mode();
 
-            if (data.avgQuality() > data.minQuality()) {
-                if (mode != InverterMode.BACKUP) {
-                    log.info("Weather quality detected as thunderstorm, switching inverter mode to BACKUP");
-//                    setMode(InverterMode.BACKUP);
-                    return;
-                }
-            } else {
+            if (data.avgQuality() <= data.minQuality()) {
                 if (mode == InverterMode.BACKUP) {
                     log.info("Weather quality detected as no thunderstorm, switching inverter mode to SELF_USE");
 //                    setMode(InverterMode.SELF_USE);
+                    return;
+                }
+            } else {
+                if (mode != InverterMode.BACKUP) {
+                    log.info("Weather quality detected as thunderstorm, switching inverter mode to BACKUP");
+//                    setMode(InverterMode.BACKUP);
                     return;
                 }
             }
