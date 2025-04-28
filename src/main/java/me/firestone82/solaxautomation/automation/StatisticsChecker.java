@@ -8,9 +8,10 @@ import me.firestone82.solaxautomation.service.meteosource.model.WeatherForecast;
 import me.firestone82.solaxautomation.service.solax.SolaxService;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 
@@ -23,7 +24,7 @@ public class StatisticsChecker {
     private final MeteoSourceService meteoSourceService;
 
     @EventListener(ApplicationReadyEvent.class)
-    @Scheduled(cron = "0 5 4-20 * * *")
+//    @Scheduled(cron = "0 5 4-20 * * *")
     public void showStatistics() {
         log.info("==".repeat(40));
         log.info("Running statistics check");
@@ -34,8 +35,8 @@ public class StatisticsChecker {
      * Show statistics based on current weather forecast and inverter power.
      */
     public void runCheck() {
-        int startHour = 6;
-        int endHour = 18;
+        LocalDateTime startHour = LocalDateTime.now().withHour(6).truncatedTo(ChronoUnit.HOURS);
+        LocalDateTime endHour = LocalDateTime.now().withHour(18).truncatedTo(ChronoUnit.HOURS);
 
         Optional<WeatherForecast> forecastOpt = meteoSourceService.getCurrentWeather();
         forecastOpt.ifPresentOrElse(

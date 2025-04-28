@@ -34,20 +34,20 @@ public class WeatherChecker {
         if (now.getHour() == 6) {
             log.info("==".repeat(40));
             log.info("Running morning weather forecast check");
-            runCheck(7, 12, CLOUDY_THRESHOLD, weatherCheck());
+            runCheck(now.withHour(7), now.withHour(12), CLOUDY_THRESHOLD, weatherCheck());
             return;
         }
 
         if (now.getHour() == 11) {
             log.info("==".repeat(40));
             log.info("Running noon weather forecast check");
-            runCheck(12, 18, CLOUDY_THRESHOLD - 1, weatherCheck());
+            runCheck(now.withHour(12), now.withHour(18), CLOUDY_THRESHOLD - 1, weatherCheck());
             return;
         }
 
         log.info("==".repeat(40));
         log.info("Running outage forecast check");
-        runCheck(now.getHour(), now.getHour() + THUNDERSTORM_HOUR, THUNDERSTORM_THRESHOLD, outageCheck());
+        runCheck(now, now.plusHours(THUNDERSTORM_HOUR), THUNDERSTORM_THRESHOLD, outageCheck());
     }
 
     /**
@@ -55,12 +55,12 @@ public class WeatherChecker {
      * cloudy (raining, ...), switch to self-use mode to charge batteries, otherwise switch to
      * feed-in priority mode for grid export.
      *
-     * @param startHour  start hour of the forecast to check
-     * @param endHour    end hour of the forecast to check
+     * @param start      start of the forecast to check
+     * @param end        end of the forecast to check
      * @param minQuality minimum quality to consider the weather as cloudy
      * @param function   function to run with the current inverter mode and weather quality
      */
-    public void runCheck(int startHour, int endHour, double minQuality, Consumer<FunctionData> function) {
+    public void runCheck(LocalDateTime start, LocalDateTime end, double minQuality, Consumer<FunctionData> function) {
         Optional<InverterMode> modeOpt = solaxService.getCurrentMode();
         if (modeOpt.isEmpty()) {
             log.warn("Could not retrieve current inverter mode, aborting check.");
@@ -81,13 +81,13 @@ public class WeatherChecker {
             return;
         }
 
-        List<MeteoDayHourly> hours = forecastOpt.get().getHourlyBetween(startHour, endHour);
+        List<MeteoDayHourly> hours = forecastOpt.get().getHourlyBetween(start, end);
         double avgQuality = hours.stream()
                 .mapToDouble(MeteoDayHourly::getQuality)
                 .average()
                 .orElse(0.0);
 
-        log.info("- Weather forecast for today ({}–{}h):", startHour, endHour);
+        log.info("- Weather forecast for today ({}–{}h):", start.getHour(), end.getHour());
         hours.forEach(hour -> log.info("  | {}", hour.toString()));
         log.info("- Average quality calculated: {} - required: {}", avgQuality, minQuality);
 
@@ -96,7 +96,7 @@ public class WeatherChecker {
             return;
         }
 
-        FunctionData data = new FunctionData(currentMode, avgQuality, minQuality);
+        FunctionData data = new FunctionData(currentMode, hours, avgQuality, minQuality);
         function.accept(data);
     }
 
@@ -109,7 +109,7 @@ public class WeatherChecker {
                 log.info("--".repeat(20));
 
                 LocalDateTime now = LocalDateTime.now();
-                runCheck(now.getHour(), now.getHour() + THUNDERSTORM_HOUR, THUNDERSTORM_THRESHOLD, outageCheck());
+                runCheck(now, now.plusHours(THUNDERSTORM_HOUR), THUNDERSTORM_THRESHOLD, outageCheck());
                 return;
             }
 
@@ -142,6 +142,11 @@ public class WeatherChecker {
 
             if (data.avgQuality() <= data.minQuality()) {
                 if (mode == InverterMode.BACKUP) {
+                    if (data.hours().getFirst().getQuality() > THUNDERSTORM_HOUR) {
+                        log.info("Weather quality is falling, but currently still thunderstorm, waiting for next hour");
+                        return;
+                    }
+
                     log.info("Weather quality detected as no thunderstorm, switching inverter mode to SELF_USE");
 //                    setMode(InverterMode.SELF_USE);
                     return;
@@ -166,6 +171,6 @@ public class WeatherChecker {
         }
     }
 
-    public record FunctionData(InverterMode mode, double avgQuality, double minQuality) {
+    public record FunctionData(InverterMode mode, List<MeteoDayHourly> hours, double avgQuality, double minQuality) {
     }
 }

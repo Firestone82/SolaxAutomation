@@ -4,6 +4,7 @@ import lombok.Data;
 import me.firestone82.solaxautomation.http.data.DataWrapper;
 
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 @Data
@@ -20,30 +21,21 @@ public class WeatherForecast {
         return hourly.data();
     }
 
-    public List<MeteoDayHourly> getHourlyBetween(int start, int end) {
-        if (start < 0 || end > hourly.data().size()) {
-            throw new IndexOutOfBoundsException("Start or end index is out of bounds");
-        }
+    public List<MeteoDayHourly> getHourlyBetween(LocalDateTime start, LocalDateTime end) {
+        LocalDateTime startHour = start.truncatedTo(ChronoUnit.HOURS);
+        LocalDateTime endHour = end.truncatedTo(ChronoUnit.HOURS);
 
-        if (start > end) {
-            throw new IllegalArgumentException("Start index cannot be greater than end index");
+        if (startHour.isAfter(endHour)) {
+            throw new IllegalArgumentException("Start must be on or before end");
         }
-
-        LocalDateTime today = LocalDateTime.now();
 
         return getHourly()
                 .stream()
-                .filter(data -> {
-                    if (today.getDayOfMonth() != data.getDate().getDayOfMonth()) {
-                        return false;
-                    }
-
-                    if (data.getDate().getHour() < today.getHour()) {
-                        return false;
-                    }
-
-                    return data.getDate().getHour() >= start && data.getDate().getHour() <= end;
+                .filter(md -> {
+                    LocalDateTime hour = md.getDate().truncatedTo(ChronoUnit.HOURS);
+                    return !hour.isBefore(startHour) && !hour.isAfter(endHour);
                 })
                 .toList();
     }
+
 }
