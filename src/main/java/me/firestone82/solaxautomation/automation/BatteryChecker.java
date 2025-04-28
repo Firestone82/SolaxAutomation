@@ -30,6 +30,13 @@ public class BatteryChecker {
         runCheck(70);
     }
 
+    @Scheduled(cron = "15 0 17 * * *")
+    public void adjustModeBasedOnBatteryMinLevelOfHundred() {
+        log.info("==".repeat(40));
+        log.info("Running evening battery level check for 100%.");
+        runCheck(100);
+    }
+
     /**
      * Stop prioritizing export if batter level is under {@code minLevel},
      * by switching from FEED_IN_PRIORITY to SELF_USE inverter mode.
