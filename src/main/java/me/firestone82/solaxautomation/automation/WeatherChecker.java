@@ -25,9 +25,9 @@ public class WeatherChecker {
 
     private static final double CLOUDY_THRESHOLD = 5.0;
     private static final double THUNDERSTORM_THRESHOLD = 10.0;
-    private static final int THUNDERSTORM_HOUR = 3;
+    private static final int THUNDERSTORM_HOUR = 2;
 
-    @Scheduled(cron = "45 0 8-23,0-2 * * *")
+    @Scheduled(cron = "45 0 * * * *")
     public void adjustModeBasedOnWeather() {
         LocalDateTime now = LocalDateTime.now();
 
