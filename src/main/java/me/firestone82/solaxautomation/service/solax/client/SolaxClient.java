@@ -19,8 +19,10 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.util.Deque;
 import java.util.Optional;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -38,7 +40,11 @@ public class SolaxClient {
     private long lastActivityTime;
 
     private final AtomicInteger consecutiveReadWriteFailures = new AtomicInteger(0);
-    private final int maxConsecutiveFailures = 3;
+    private final int MAX_CONSECUTIVE_FAILURES = 5;
+
+    private final Deque<Long> writeTimestamps = new ConcurrentLinkedDeque<>();
+    private final int MAX_WRITES_PER_WINDOW = 5;
+    private final int WRITE_WINDOW_HOURS = 12;
 
     public SolaxClient(
             @Value("${solax.modbus.host}") String hostName,
@@ -78,7 +84,7 @@ public class SolaxClient {
             return;
         }
 
-        if (lastActivityTime + (5 * 60 * 1000) < System.currentTimeMillis()) {
+        if (lastActivityTime + (TimeUnit.MINUTES.toMillis(5)) < System.currentTimeMillis()) {
             if (disconnect()) {
                 log.info("Disconnected from Solax inverter due to inactivity");
             } else {
@@ -164,9 +170,8 @@ public class SolaxClient {
                     return Optional.of(ModbusConvertUtil.convertResponse(res.dataCopy(), register.getTClass(), register.getCount()));
                 });
             } catch (ModbusException e) {
-                int failures = consecutiveReadWriteFailures.incrementAndGet();
                 log.error("Failed to read {} (addr: {}, count {}): {}", register.getName(), register.getAddress(), register.getCount(), e.getMessage());
-                checkAndShutdownFailures(failures);
+                recordConsecutiveFailureAndEnforceLimit();
                 return Optional.empty();
             }
         };
@@ -177,15 +182,16 @@ public class SolaxClient {
             Thread.currentThread().interrupt();
             log.warn("Read interrupted for {}", register.getName());
         } catch (ExecutionException ee) {
-            int failures = consecutiveReadWriteFailures.incrementAndGet();
             log.error("Read error for {}: {}", register.getName(), ee.getCause().getMessage());
-            checkAndShutdownFailures(failures);
+            recordConsecutiveFailureAndEnforceLimit();
         }
 
         return Optional.empty();
     }
 
     public <T> boolean write(WriteRegister<T> register, int unitId, T value) {
+        recordWriteInvocationAndEnforceLimit();
+
         String registerAddress = String.format("%4s", Integer.toHexString(register.getAddress())).replace(' ', '0');
         log.trace("Writing to register '{}' at 0x{} with length {}", register.getName(), registerAddress, register.getCount());
 
@@ -205,9 +211,8 @@ public class SolaxClient {
                     return !res.isException();
                 });
             } catch (ModbusException e) {
-                int failures = consecutiveReadWriteFailures.incrementAndGet();
                 log.error("Failed to write {} (addr {}): {}", register.getName(), register.getAddress(), e.getMessage());
-                checkAndShutdownFailures(failures);
+                recordConsecutiveFailureAndEnforceLimit();
                 return false;
             }
         };
@@ -218,9 +223,8 @@ public class SolaxClient {
             Thread.currentThread().interrupt();
             log.warn("Write interrupted for {}", register.getName());
         } catch (ExecutionException ee) {
-            int failures = consecutiveReadWriteFailures.incrementAndGet();
             log.error("Error executing write for {}: {}", register.getName(), ee.getCause().getMessage());
-            checkAndShutdownFailures(failures);
+            recordConsecutiveFailureAndEnforceLimit();
         }
 
         return false;
@@ -236,8 +240,38 @@ public class SolaxClient {
         return callable.call(modbusClient);
     }
 
-    private void checkAndShutdownFailures(int failures) {
-        if (failures >= maxConsecutiveFailures) {
+    private void recordWriteInvocationAndEnforceLimit() {
+        long now = System.currentTimeMillis();
+        long cutoff = now - TimeUnit.HOURS.toMillis(WRITE_WINDOW_HOURS);
+
+        // prune anything older than 12h
+        while (true) {
+            Long ts = writeTimestamps.peekFirst();
+            if (ts == null || ts >= cutoff) break;
+
+            writeTimestamps.removeFirst();
+        }
+
+        // record this invocation
+        writeTimestamps.addLast(now);
+
+        if (writeTimestamps.size() >= MAX_WRITES_PER_WINDOW) {
+            log.error("Exceeded maximum of {} write calls in {} hours – shutting down", MAX_WRITES_PER_WINDOW, TimeUnit.MILLISECONDS.toHours(WRITE_WINDOW_HOURS));
+
+            // Graceful shutdown if possible, otherwise force exit
+            try {
+                SpringApplication.exit(applicationContext, () -> 1);
+            } catch (Exception e) {
+                System.exit(1);
+            }
+        }
+    }
+
+    private void recordConsecutiveFailureAndEnforceLimit() {
+        // record this failure
+        int failures = consecutiveReadWriteFailures.incrementAndGet();
+
+        if (failures >= MAX_CONSECUTIVE_FAILURES) {
             log.error("Exceeded maximum consecutive read/write failures ({}) - shutting down application", failures);
 
             // Graceful shutdown if possible, otherwise force exit
