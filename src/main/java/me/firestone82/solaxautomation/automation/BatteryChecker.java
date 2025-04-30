@@ -33,8 +33,8 @@ public class BatteryChecker {
     @Scheduled(cron = "15 0 17 * * *")
     public void adjustModeBasedOnBatteryMinLevelOfHundred() {
         log.info("==".repeat(40));
-        log.info("Running evening battery level check for 100%.");
-        runCheck(100);
+        log.info("Running evening battery level check for 90%.");
+        runCheck(90);
     }
 
     /**
