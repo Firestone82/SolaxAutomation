@@ -52,7 +52,6 @@ public class NegativeExportChecker {
     public void runNegativeExportCheckOnStartup() {
         log.info("==".repeat(40));
         log.info("Running startup negative export check");
-
         runCheck();
     }
 

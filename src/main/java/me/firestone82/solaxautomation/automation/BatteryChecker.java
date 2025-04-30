@@ -44,15 +44,6 @@ public class BatteryChecker {
      * @param minLevel minimum battery level to check
      */
     public void runCheck(int minLevel) {
-        Optional<InverterMode> modeOpt = solaxService.getCurrentMode();
-        if (modeOpt.isEmpty()) {
-            log.warn("Could not retrieve current inverter mode, aborting check.");
-            return;
-        }
-
-        InverterMode currentMode = modeOpt.get();
-        log.info("- Current inverter mode: {}", currentMode);
-
         Optional<Integer> batteryOpt = solaxService.getBatteryLevel();
         if (batteryOpt.isEmpty()) {
             log.warn("Could not retrieve current battery level, aborting check.");
@@ -62,30 +53,38 @@ public class BatteryChecker {
         int batteryLevel = batteryOpt.get();
         log.info("- Current battery level: {}% - required: {}%", batteryLevel, minLevel);
 
+        if (batteryLevel > minLevel) {
+            log.info("Battery level is sufficient, no action needed");
+            return;
+        }
+
+        Optional<InverterMode> modeOpt = solaxService.getCurrentMode();
+        if (modeOpt.isEmpty()) {
+            log.warn("Could not retrieve current inverter mode, aborting check.");
+            return;
+        }
+
+        InverterMode currentMode = modeOpt.get();
+        log.info("- Current inverter mode: {}", currentMode);
+
+        // Ignore if inverter not in priority automation
         if (currentMode != InverterMode.FEED_IN_PRIORITY && currentMode != InverterMode.SELF_USE) {
             log.warn("Inverter mode is not FEED_IN_PRIORITY or SELF_USE, aborting check.");
             return;
         }
 
-        if (batteryLevel < minLevel) {
-            if (currentMode == InverterMode.FEED_IN_PRIORITY) {
-                log.info("Battery level is bellow {}%, switching inverter mode to SELF_USE", minLevel);
-                setMode(InverterMode.SELF_USE);
-                return;
+        if (currentMode == InverterMode.FEED_IN_PRIORITY) {
+            log.info("Battery level is bellow {}%, switching inverter mode to SELF_USE", minLevel);
+
+            if (solaxService.changeMode(InverterMode.SELF_USE)) {
+                log.info(" - Inverter mode set to SELF_USE successfully");
+            } else {
+                log.error(" - Failed to set inverter mode to SELF_USE");
             }
 
-            log.info("Battery level is bellow {}%, but inverter mode is already in SELF_USE, no action needed", minLevel);
             return;
         }
 
-        log.info("Battery level is sufficient, no action needed");
-    }
-
-    private void setMode(InverterMode mode) {
-        if (solaxService.changeMode(mode)) {
-            log.info(" - Inverter mode set to {} successfully", mode);
-        } else {
-            log.error(" - Failed to set inverter mode to {}", mode);
-        }
+        log.info("Battery level is bellow {}%, but inverter mode is already in SELF_USE, no action needed", minLevel);
     }
 }

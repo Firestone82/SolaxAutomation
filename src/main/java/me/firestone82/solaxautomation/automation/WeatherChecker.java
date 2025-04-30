@@ -51,7 +51,7 @@ public class WeatherChecker {
     }
 
     /**
-     * Switch inverter mode based on current weather forecast, if the weather will be
+     * Switch inverter mode based on current weather forecast, if the weather is
      * cloudy (raining, ...), switch to self-use mode to charge batteries, otherwise switch to
      * feed-in priority mode for grid export.
      *
@@ -61,15 +61,6 @@ public class WeatherChecker {
      * @param function   function to run with the current inverter mode and weather quality
      */
     public void runCheck(LocalDateTime start, LocalDateTime end, double minQuality, Consumer<FunctionData> function) {
-        Optional<InverterMode> modeOpt = solaxService.getCurrentMode();
-        if (modeOpt.isEmpty()) {
-            log.warn("Could not retrieve current inverter mode, aborting check.");
-            return;
-        }
-
-        InverterMode currentMode = modeOpt.get();
-        log.info("- Current inverter mode: {}", currentMode);
-
         Optional<WeatherForecast> forecastOpt = meteoSourceService.getCurrentWeather();
         if (forecastOpt.isEmpty()) {
             log.warn("Could not retrieve weather forecast, aborting check.");
@@ -91,10 +82,19 @@ public class WeatherChecker {
         hours.forEach(hour -> log.info("  | {}", hour.toString()));
         log.info("- Average quality calculated: {} - required: {}", avgQuality, minQuality);
 
-        if (avgQuality == 0) {
-            log.warn("Weather quality is 0, cannot determine weather, aborting check.");
+        if (avgQuality < 1) {
+            log.warn("Weather quality is too low, cannot determine weather, aborting check.");
             return;
         }
+
+        Optional<InverterMode> modeOpt = solaxService.getCurrentMode();
+        if (modeOpt.isEmpty()) {
+            log.warn("Could not retrieve current inverter mode, aborting check.");
+            return;
+        }
+
+        InverterMode currentMode = modeOpt.get();
+        log.info("- Current inverter mode: {}", currentMode);
 
         FunctionData data = new FunctionData(currentMode, hours, avgQuality, minQuality);
         function.accept(data);
@@ -104,7 +104,7 @@ public class WeatherChecker {
         return data -> {
             InverterMode mode = data.mode();
 
-            if (data.avgQuality() > THUNDERSTORM_THRESHOLD) {
+            if (data.avgQuality() > data.minQuality()) {
                 log.debug("Weather quality detected as thunderstorm, proceeding with outage check");
                 log.info("--".repeat(20));
 
@@ -118,18 +118,16 @@ public class WeatherChecker {
                 return;
             }
 
-            if (data.avgQuality() <= data.minQuality()) {
-                if (mode == InverterMode.SELF_USE) {
-                    log.info("Weather quality detected as sunny, switching inverter mode to FEED_IN_PRIORITY");
-                    setMode(InverterMode.FEED_IN_PRIORITY);
-                    return;
-                }
-            } else {
-                if (mode == InverterMode.FEED_IN_PRIORITY) {
-                    log.info("Weather quality detected as cloudy, switching inverter mode to SELF_USE");
-                    setMode(InverterMode.SELF_USE);
-                    return;
-                }
+            if (data.avgQuality() > data.minQuality() && mode == InverterMode.FEED_IN_PRIORITY) {
+                log.info("Weather quality detected as cloudy, switching inverter mode to SELF_USE");
+                setMode(InverterMode.SELF_USE);
+                return;
+            }
+
+            if (data.avgQuality() <= data.minQuality() && mode == InverterMode.SELF_USE) {
+                log.info("Weather quality detected as sunny, switching inverter mode to FEED_IN_PRIORITY");
+                setMode(InverterMode.FEED_IN_PRIORITY);
+                return;
             }
 
             log.info("Inverter is already in the correct state, no action needed");
@@ -140,23 +138,21 @@ public class WeatherChecker {
         return data -> {
             InverterMode mode = data.mode();
 
-            if (data.avgQuality() <= data.minQuality()) {
-                if (mode == InverterMode.BACKUP) {
-                    if (data.hours().getFirst().getQuality() > THUNDERSTORM_HOUR) {
-                        log.info("Weather quality is falling, but currently still thunderstorm, waiting for next hour");
-                        return;
-                    }
+            if (data.avgQuality() > data.minQuality() && mode != InverterMode.BACKUP) {
+                log.info("Weather quality detected as thunderstorm, switching inverter mode to BACKUP");
+//              setMode(InverterMode.BACKUP);
+                return;
+            }
 
-                    log.info("Weather quality detected as no thunderstorm, switching inverter mode to SELF_USE");
-//                    setMode(InverterMode.SELF_USE);
+            if (data.avgQuality() <= data.minQuality() && mode == InverterMode.BACKUP) {
+                if (data.hours().getFirst().getQuality() > THUNDERSTORM_HOUR) {
+                    log.info("Weather quality is falling, but currently still thunderstorm, waiting for next hour");
                     return;
                 }
-            } else {
-                if (mode != InverterMode.BACKUP) {
-                    log.info("Weather quality detected as thunderstorm, switching inverter mode to BACKUP");
-//                    setMode(InverterMode.BACKUP);
-                    return;
-                }
+
+                log.info("Weather quality detected as no thunderstorm, switching inverter mode to SELF_USE");
+//              setMode(InverterMode.SELF_USE);
+                return;
             }
 
             log.info("Inverter is already in the correct state, no action needed");
