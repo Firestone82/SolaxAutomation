@@ -69,6 +69,7 @@ public class NegativeExportChecker {
     private void runCheck() {
         double minExportPrice = 0.5; // 0.5 CZK/kWh
         int maxExportLimit = 3950;
+        int minExportLimit = 100;
 
         DigitalState connectionState = raspberryPiService.getConnectionSwitch().state();
         log.info(" - Connection switch state: {}", connectionState.name());
@@ -92,7 +93,7 @@ public class NegativeExportChecker {
         log.info(" - Current export limit: {} W", currentExportLimit);
 
         // Not connected to grid
-        if (connectionState.isLow() && currentExportLimit <= 0) {
+        if (connectionState.isLow() && currentExportLimit <= minExportLimit) {
             log.info("Price detected as not worth selling, but switch is LOW, enabling export to grid");
             setExport(maxExportLimit);
             return;
@@ -100,13 +101,13 @@ public class NegativeExportChecker {
 
         // Connected to grid
         if (connectionState.isHigh()) {
-            if (currentPrice <= minExportPrice && currentExportLimit > 0) {
+            if (currentPrice <= minExportPrice && currentExportLimit > minExportLimit) {
                 log.info("Price detected as not worth selling, disabling export to grid");
-                setExport(0);
+                setExport(minExportLimit);
                 return;
             }
 
-            if (currentPrice > minExportPrice && currentExportLimit <= 0) {
+            if (currentPrice > minExportPrice && currentExportLimit <= minExportLimit) {
                 log.info("Price detected as worth selling, enabling export to grid");
                 setExport(maxExportLimit);
                 return;
@@ -120,7 +121,7 @@ public class NegativeExportChecker {
         if (solaxService.setExportLimit(limit)) {
             log.info(" - Export limit set to {} successfully", limit);
         } else {
-            log.error(" - Failed to set export limit to 0");
+            log.error(" - Failed to set export limit to {}", limit);
         }
     }
 }
