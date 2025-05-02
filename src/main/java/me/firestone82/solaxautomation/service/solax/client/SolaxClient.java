@@ -16,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -37,13 +38,15 @@ public class SolaxClient {
 
     private final ModbusClient modbusClient;
     private final ModbusRequestQueue requestQueue;
-    private long lastActivityTime;
+
+    private long lastActivityTime = System.currentTimeMillis();
+    private final int CLIENT_CONNECTION_TIMEOUT = 5;
 
     private final AtomicInteger consecutiveReadWriteFailures = new AtomicInteger(0);
     private final int MAX_CONSECUTIVE_FAILURES = 5;
 
     private final Deque<Long> writeTimestamps = new ConcurrentLinkedDeque<>();
-    private final int MAX_WRITES_PER_WINDOW = 5;
+    private final int MAX_WRITES_PER_WINDOW = 10;
     private final int WRITE_WINDOW_HOURS = 12;
 
     public SolaxClient(
@@ -84,7 +87,7 @@ public class SolaxClient {
             return;
         }
 
-        if (lastActivityTime + (TimeUnit.MINUTES.toMillis(5)) < System.currentTimeMillis()) {
+        if (lastActivityTime + (TimeUnit.MINUTES.toMillis(CLIENT_CONNECTION_TIMEOUT)) < System.currentTimeMillis()) {
             if (disconnect()) {
                 log.info("Disconnected from Solax inverter due to inactivity");
             } else {
@@ -256,11 +259,14 @@ public class SolaxClient {
         writeTimestamps.addLast(now);
 
         if (writeTimestamps.size() >= MAX_WRITES_PER_WINDOW) {
-            log.error("Exceeded maximum of {} write calls in {} hours – shutting down", MAX_WRITES_PER_WINDOW, TimeUnit.MILLISECONDS.toHours(WRITE_WINDOW_HOURS));
+            log.error("Exceeded maximum of {} write calls in {} hours – shutting down", MAX_WRITES_PER_WINDOW, WRITE_WINDOW_HOURS);
 
             // Graceful shutdown if possible, otherwise force exit
             try {
                 SpringApplication.exit(applicationContext, () -> 1);
+
+                Thread.sleep(5000);
+                ((ConfigurableApplicationContext) applicationContext).close();
             } catch (Exception e) {
                 System.exit(1);
             }
@@ -277,6 +283,9 @@ public class SolaxClient {
             // Graceful shutdown if possible, otherwise force exit
             try {
                 SpringApplication.exit(applicationContext, () -> 1);
+
+                Thread.sleep(5000);
+                ((ConfigurableApplicationContext) applicationContext).close();
             } catch (Exception e) {
                 System.exit(1);
             }

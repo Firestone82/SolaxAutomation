@@ -72,7 +72,7 @@ public class SolaxService {
     }
 
     public boolean changeMode(InverterMode mode) {
-        log.debug("Requesting to change inverter mode to {} (unit ID: {})", mode, unitId);
+        log.debug("Requesting to set inverter mode to {} (unit ID: {})", mode, unitId);
         return solaxClient.write(WriteRegister.USE_MODE, unitId, mode);
     }
 
