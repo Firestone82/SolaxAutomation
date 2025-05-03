@@ -1,12 +1,13 @@
 package me.firestone82.solaxautomation.automation;
 
-import lombok.AllArgsConstructor;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.firestone82.solaxautomation.service.meteosource.MeteoSourceService;
 import me.firestone82.solaxautomation.service.meteosource.model.MeteoDayHourly;
 import me.firestone82.solaxautomation.service.meteosource.model.WeatherForecast;
 import me.firestone82.solaxautomation.service.solax.SolaxService;
 import me.firestone82.solaxautomation.service.solax.model.InverterMode;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -17,15 +18,22 @@ import java.util.function.Consumer;
 
 @Slf4j
 @Component
-@AllArgsConstructor
+@RequiredArgsConstructor
 public class WeatherChecker {
 
     private final SolaxService solaxService;
     private final MeteoSourceService meteoSourceService;
 
-    private static final double CLOUDY_THRESHOLD = 5.0;
-    private static final double THUNDERSTORM_THRESHOLD = 10.0;
-    private static final int THUNDERSTORM_HOUR = 2;
+    @Value("${automation.weather.threshold.cloudy:5.0}")
+    private double CLOUDY_THRESHOLD;
+
+    @Value("${automation.weather.threshold.thunderstorm:10.0}")
+    private double THUNDERSTORM_THRESHOLD;
+
+    @Value("${automation.weather.thunderstormHourForecast:2}")
+    private int THUNDERSTORM_HOUR;
+
+    private boolean systemChangeToBackup = false;
 
     @Scheduled(cron = "45 0 * * * *")
     public void adjustModeBasedOnWeather() {
@@ -34,7 +42,7 @@ public class WeatherChecker {
         if (now.getHour() == 6) {
             log.info("==".repeat(40));
             log.info("Running morning weather forecast check");
-            runCheck(now.withHour(7), now.withHour(12), CLOUDY_THRESHOLD, weatherCheck());
+            runCheck(now.withHour(8), now.withHour(14), CLOUDY_THRESHOLD, weatherCheck());
             return;
         }
 
@@ -104,7 +112,7 @@ public class WeatherChecker {
         return data -> {
             InverterMode mode = data.mode();
 
-            if (data.avgQuality() > data.minQuality()) {
+            if (data.avgQuality() > THUNDERSTORM_THRESHOLD) {
                 log.debug("Weather quality detected as thunderstorm, proceeding with outage check");
                 log.info("--".repeat(20));
 
@@ -138,20 +146,27 @@ public class WeatherChecker {
         return data -> {
             InverterMode mode = data.mode();
 
+            if (!systemChangeToBackup && mode == InverterMode.BACKUP) {
+                log.warn("Inverter was change to BACKUP mode manually, aborting check.");
+                return;
+            }
+
             if (data.avgQuality() > data.minQuality() && mode != InverterMode.BACKUP) {
                 log.info("Weather quality detected as thunderstorm, switching inverter mode to BACKUP");
-//              setMode(InverterMode.BACKUP);
+                setMode(InverterMode.BACKUP);
+                systemChangeToBackup = true;
                 return;
             }
 
             if (data.avgQuality() <= data.minQuality() && mode == InverterMode.BACKUP) {
-                if (data.hours().getFirst().getQuality() > THUNDERSTORM_HOUR) {
+                if (data.hours().getFirst().getQuality() > (THUNDERSTORM_HOUR - 1.5)) {
                     log.info("Weather quality is falling, but currently still thunderstorm, waiting for next hour");
                     return;
                 }
 
                 log.info("Weather quality detected as no thunderstorm, switching inverter mode to SELF_USE");
-//              setMode(InverterMode.SELF_USE);
+                setMode(InverterMode.SELF_USE);
+                systemChangeToBackup = false;
                 return;
             }
 

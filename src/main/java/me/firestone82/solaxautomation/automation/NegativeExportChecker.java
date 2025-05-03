@@ -2,12 +2,13 @@ package me.firestone82.solaxautomation.automation;
 
 import com.pi4j.io.gpio.digital.DigitalState;
 import jakarta.annotation.PostConstruct;
-import lombok.AllArgsConstructor;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.firestone82.solaxautomation.service.ote.OTEService;
 import me.firestone82.solaxautomation.service.ote.model.PowerHourPrice;
 import me.firestone82.solaxautomation.service.raspberry.RaspberryPiService;
 import me.firestone82.solaxautomation.service.solax.SolaxService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -18,12 +19,21 @@ import java.util.Optional;
 
 @Slf4j
 @Component
-@AllArgsConstructor
+@RequiredArgsConstructor
 public class NegativeExportChecker {
 
     private final SolaxService solaxService;
     private final OTEService oteService;
     private final RaspberryPiService raspberryPiService;
+
+    @Value("${automation.export.minPrice:0}")
+    private double MIN_EXPORT_PRICE; // 0 CZK/kWh
+
+    @Value("${automation.export.power.min:0}")
+    private int MIN_EXPORT_LIMIT;
+
+    @Value("${automation.export.power.max:3950}")
+    private int MAX_EXPORT_LIMIT;
 
     @PostConstruct
     private void init() {
@@ -67,10 +77,6 @@ public class NegativeExportChecker {
      * if switch is @{@link DigitalState#LOW} (not connected to grid).
      */
     private void runCheck() {
-        double minExportPrice = 0.5; // 0.5 CZK/kWh
-        int maxExportLimit = 3950;
-        int minExportLimit = 100;
-
         DigitalState connectionState = raspberryPiService.getConnectionSwitch().state();
         log.info(" - Connection switch state: {}", connectionState.name());
 
@@ -93,23 +99,23 @@ public class NegativeExportChecker {
         log.info(" - Current export limit: {} W", currentExportLimit);
 
         // Not connected to grid
-        if (connectionState.isLow() && currentExportLimit <= minExportLimit) {
+        if (connectionState.isLow() && currentExportLimit <= MIN_EXPORT_LIMIT) {
             log.info("Price detected as not worth selling, but switch is LOW, enabling export to grid");
-            setExport(maxExportLimit);
+            setExport(MAX_EXPORT_LIMIT);
             return;
         }
 
         // Connected to grid
         if (connectionState.isHigh()) {
-            if (currentPrice <= minExportPrice && currentExportLimit > minExportLimit) {
+            if (currentPrice <= MIN_EXPORT_PRICE && currentExportLimit > MIN_EXPORT_LIMIT) {
                 log.info("Price detected as not worth selling, disabling export to grid");
-                setExport(minExportLimit);
+                setExport(MIN_EXPORT_LIMIT);
                 return;
             }
 
-            if (currentPrice > minExportPrice && currentExportLimit <= minExportLimit) {
+            if (currentPrice > MIN_EXPORT_PRICE && currentExportLimit <= MIN_EXPORT_LIMIT) {
                 log.info("Price detected as worth selling, enabling export to grid");
-                setExport(maxExportLimit);
+                setExport(MAX_EXPORT_LIMIT);
                 return;
             }
         }

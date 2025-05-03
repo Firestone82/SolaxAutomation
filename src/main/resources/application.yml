@@ -31,6 +31,18 @@ meteosource:
     lat: 50.0755
     lon: 14.4378
 
+automation:
+  export:
+    power:
+      min: 100
+      max: 3950
+    minPrice: 0.5
+  weather:
+    threshold:
+      cloudy: 5
+      thunderstorm: 10
+    thunderstormHourForecast: 2
+
 # Logging configuration
 logging:
   config: classpath:log4j2.xml

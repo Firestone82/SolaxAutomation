@@ -53,7 +53,7 @@ public class BatteryChecker {
         int batteryLevel = batteryOpt.get();
         log.info("- Current battery level: {}% - required: {}%", batteryLevel, minLevel);
 
-        if (batteryLevel > minLevel) {
+        if (batteryLevel >= minLevel) {
             log.info("Battery level is sufficient, no action needed");
             return;
         }
