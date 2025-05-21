@@ -45,8 +45,7 @@ public enum WeatherType {
 
     // SEVERE
     THUNDERSTORM("TSTORM",14, 10.0),
-    THUNDERSTORM_SHOWER("TSTORM_SHOWER",14, 10.0),
-    LOCAL_THUNDERSTORMS(null,15, 11.0),
+    LOCAL_THUNDERSTORMS("tstorm_shower",15, 11.0),
     HAIL(null,25, 11.0);
 
     private final String alias;
