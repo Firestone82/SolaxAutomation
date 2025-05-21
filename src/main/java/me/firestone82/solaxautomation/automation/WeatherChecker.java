@@ -40,17 +40,17 @@ public class WeatherChecker {
         LocalDateTime now = LocalDateTime.now();
         boolean isWeekend = now.getDayOfWeek().getValue() >= 6;
 
-        if (now.getHour() == 6) {
+        if (now.getHour() == 7) {
             log.info("==".repeat(40));
             log.info("Running morning weather forecast check");
-            runCheck(now.withHour(8), now.withHour(14), CLOUDY_THRESHOLD, weatherCheck());
+            runCheck(now.withHour(9), now.withHour(14), CLOUDY_THRESHOLD, weatherCheck());
             return;
         }
 
         if (now.getHour() == 11) {
             log.info("==".repeat(40));
             log.info("Running noon weather forecast check");
-            runCheck(now.withHour(12), now.withHour(18), CLOUDY_THRESHOLD - (isWeekend ? 1 : 0), weatherCheck());
+            runCheck(now.withHour(12), now.withHour(16), CLOUDY_THRESHOLD - (isWeekend ? 1 : 0), weatherCheck());
             return;
         }
 
