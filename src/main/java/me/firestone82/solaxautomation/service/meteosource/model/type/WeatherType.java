@@ -14,8 +14,8 @@ public enum WeatherType {
     PARTLY_CLEAR(null,28, 1.0),
 
     // SUNNY
-    SUNNY(null,2, 1.0),
-    MOSTLY_SUNNY(null,3, 1.5),
+    SUNNY(null,2, 0.0),
+    MOSTLY_SUNNY(null,3, 1.0),
     PARTLY_SUNNY(null,4, 2.0),
 
     // CLOUDY
