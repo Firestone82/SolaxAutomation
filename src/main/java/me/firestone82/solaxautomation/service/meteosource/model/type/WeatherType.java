@@ -31,11 +31,11 @@ public enum WeatherType {
 
     // RAIN / SNOW
     LIGHT_RAIN(null,10, 7.0),
-    RAIN(null,11, 8.0),
-    RAIN_SHOWER(null,13, 9.0),
+    RAIN(null,11, 7.0),
+    RAIN_SHOWER(null,13, 7.0),
     LIGHT_SNOW(null,16, 7.0),
-    SNOW(null,17, 8.0),
-    SNOW_SHOWER(null,19, 9.0),
+    SNOW(null,17, 7.0),
+    SNOW_SHOWER(null,19, 7.0),
 
     // MIXED / FREEZING
     RAIN_AND_SNOW(null,20, 9.0),
