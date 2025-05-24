@@ -4,16 +4,15 @@ import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.firestone82.solaxautomation.service.meteosource.MeteoSourceService;
 import me.firestone82.solaxautomation.service.meteosource.model.MeteoDayHourly;
-import me.firestone82.solaxautomation.service.meteosource.model.WeatherForecast;
 import me.firestone82.solaxautomation.service.solax.SolaxService;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
-import java.util.Optional;
 
 @Slf4j
 @Component
@@ -24,7 +23,7 @@ public class StatisticsChecker {
     private final MeteoSourceService meteoSourceService;
 
     @EventListener(ApplicationReadyEvent.class)
-//    @Scheduled(cron = "0 5 4-20 * * *")
+    @Scheduled(cron = "0 5 4-20 * * *")
     public void showStatistics() {
         log.info("==".repeat(40));
         log.info("Running statistics check");

@@ -50,7 +50,7 @@ public class WeatherChecker {
         if (now.getHour() == 11) {
             log.info("==".repeat(40));
             log.info("Running noon weather forecast check");
-            runCheck(now.withHour(12), now.withHour(16), CLOUDY_THRESHOLD - (isWeekend ? 1 : 0), weatherCheck());
+            runCheck(now.withHour(12), now.withHour(16), CLOUDY_THRESHOLD - (isWeekend ? 0.5 : 0), weatherCheck());
             return;
         }
 
