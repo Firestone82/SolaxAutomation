@@ -7,6 +7,7 @@ import me.firestone82.solaxautomation.service.solax.model.InverterMode;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 @Slf4j
@@ -18,20 +19,30 @@ public class BatteryChecker {
 
     @Scheduled(cron = "15 0 13 * * *")
     public void adjustModeBasedOnBatteryMinLevelOfFifty() {
+        int minLevel = LocalDateTime.now().getDayOfWeek().getValue() >= 6 ? 60 : 50;
+
         log.info("==".repeat(40));
-        log.info("Running noon battery level check for 50%.");
-        runCheck(50);
+        log.info("Running noon battery level check for {}%.", minLevel);
+        runCheck(minLevel);
     }
 
     @Scheduled(cron = "15 0 15 * * *")
     public void adjustModeBasedOnBatteryMinLevelOfSeventy() {
+        int minLevel = LocalDateTime.now().getDayOfWeek().getValue() >= 6 ? 90 : 70;
+
         log.info("==".repeat(40));
-        log.info("Running afternoon battery level check for 70%.");
-        runCheck(70);
+        log.info("Running afternoon battery level check for {}%.", minLevel);
+        runCheck(minLevel);
     }
 
     @Scheduled(cron = "15 0 17 * * *")
     public void adjustModeBasedOnBatteryMinLevelOfHundred() {
+        boolean isWeekend = LocalDateTime.now().getDayOfWeek().getValue() >= 6;
+
+        if (isWeekend) {
+            return;
+        }
+
         log.info("==".repeat(40));
         log.info("Running evening battery level check for 90%.");
         runCheck(90);

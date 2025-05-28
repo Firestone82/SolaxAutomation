@@ -38,7 +38,6 @@ public class WeatherChecker {
     @Scheduled(cron = "45 0 * * * *")
     public void adjustModeBasedOnWeather() {
         LocalDateTime now = LocalDateTime.now();
-        boolean isWeekend = now.getDayOfWeek().getValue() >= 6;
 
         if (now.getHour() == 7) {
             log.info("==".repeat(40));
@@ -50,7 +49,7 @@ public class WeatherChecker {
         if (now.getHour() == 11) {
             log.info("==".repeat(40));
             log.info("Running noon weather forecast check");
-            runCheck(now.withHour(12), now.withHour(16), CLOUDY_THRESHOLD - (isWeekend ? 0.5 : 0), weatherCheck());
+            runCheck(now.withHour(12), now.withHour(16), CLOUDY_THRESHOLD - 0.5, weatherCheck());
             return;
         }
 
