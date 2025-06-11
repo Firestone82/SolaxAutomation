@@ -35,7 +35,7 @@ public class WeatherChecker {
 
     private boolean systemChangeToBackup = false;
 
-    @Scheduled(cron = "45 0 * * * *")
+    @Scheduled(cron = "0 2 * * * *")
     public void adjustModeBasedOnWeather() {
         LocalDateTime now = LocalDateTime.now();
 

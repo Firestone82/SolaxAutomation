@@ -58,14 +58,7 @@ public class NegativeExportChecker {
         });
     }
 
-    @EventListener(ApplicationReadyEvent.class)
-    public void runNegativeExportCheckOnStartup() {
-        log.info("==".repeat(40));
-        log.info("Running startup negative export check");
-        runCheck();
-    }
-
-    @Scheduled(cron = "30 0 4-20 * * *")
+    @Scheduled(cron = "0 4 4-20 * * *")
     public void adjustExportLimitBasedOnPrice() {
         log.info("==".repeat(40));
         log.info("Running period negative export check");
@@ -77,50 +70,63 @@ public class NegativeExportChecker {
      * if switch is @{@link DigitalState#LOW} (not connected to grid).
      */
     private void runCheck() {
+        // Check connection state
         DigitalState connectionState = raspberryPiService.getConnectionSwitch().state();
         log.info(" - Connection switch state: {}", connectionState.name());
 
+        // Determine override window
+        int currentHour = java.time.LocalTime.now().getHour();
+        boolean isOverrideWindow = connectionState.isLow() && currentHour >= 12 && currentHour <= 14;
+
+        // Fetch current price from OTE API
         Optional<PowerHourPrice> optPrice = oteService.getCurrentHourPrices();
         if (optPrice.isEmpty()) {
             log.warn("Could not retrieve price from OTE API, aborting check.");
             return;
         }
 
-        double currentPrice = optPrice.get().getPriceCZK() / 1000f;
+        double currentPrice = optPrice.get().getPriceCZK() / 1000.0;
         log.info(" - Current price: {} CZK/kWh", currentPrice);
 
+        // Fetch current limit for idempotency check
         Optional<Integer> optLimit = solaxService.getCurrentExportLimit();
         if (optLimit.isEmpty()) {
-            log.warn("Could not retrieve export limit from inverter, aborting check.");
+            log.warn("Could not retrieve current export limit, aborting set.");
             return;
         }
 
-        double currentExportLimit = optLimit.get();
+        int newExportLimit;
+        int currentExportLimit = optLimit.get();
         log.info(" - Current export limit: {} W", currentExportLimit);
 
-        // Not connected to grid
-        if (connectionState.isLow() && currentExportLimit <= MIN_EXPORT_LIMIT) {
-            log.info("Price detected as not worth selling, but switch is LOW, enabling export to grid");
-            setExport(MAX_EXPORT_LIMIT);
-            return;
+        // Decide new limit
+        if (currentPrice < MIN_EXPORT_PRICE) {
+            if (connectionState.isHigh()) {
+                // Price low & grid connected -> disable export
+                newExportLimit = MIN_EXPORT_LIMIT;
+                log.info("Price below threshold and state HIGH -> disabling export");
+            } else {
+                // Price low & grid disconnected -> enable export
+                newExportLimit = MAX_EXPORT_LIMIT;
+                log.info("Price below threshold and state LOW -> enabling export");
+            }
+        } else {
+            // Price sufficient -> enable export
+            newExportLimit = MAX_EXPORT_LIMIT;
+            log.info("Price above threshold -> enabling export");
         }
 
-        // Connected to grid
-        if (connectionState.isHigh()) {
-            if (currentPrice <= MIN_EXPORT_PRICE && currentExportLimit > MIN_EXPORT_LIMIT) {
-                log.info("Price detected as not worth selling, disabling export to grid");
-                setExport(MIN_EXPORT_LIMIT);
-                return;
-            }
-
-            if (currentPrice > MIN_EXPORT_PRICE && currentExportLimit <= MIN_EXPORT_LIMIT) {
-                log.info("Price detected as worth selling, enabling export to grid");
-                setExport(MAX_EXPORT_LIMIT);
-                return;
-            }
+        // Apply override reduction if in the window and enabling export
+        if (isOverrideWindow && newExportLimit > MIN_EXPORT_LIMIT) {
+            newExportLimit = MAX_EXPORT_LIMIT - 1000;
+            log.info("Between 12:00 and 14:00 with state LOW -> reducing export by 1000W to {}", newExportLimit);
         }
 
-        log.info("Inverter is already in the correct state, no action needed");
+        if (currentExportLimit != newExportLimit) {
+            setExport(newExportLimit);
+        } else {
+            log.info("Export limit already at desired value {} W, no action needed", newExportLimit);
+        }
     }
 
     private void setExport(int limit) {

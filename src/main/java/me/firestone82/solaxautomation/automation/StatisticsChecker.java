@@ -23,11 +23,11 @@ public class StatisticsChecker {
     private final MeteoSourceService meteoSourceService;
 
     @EventListener(ApplicationReadyEvent.class)
-    @Scheduled(cron = "0 5 4-20 * * *")
+    @Scheduled(cron = "0 3 4-20 * * *")
     public void showStatistics() {
-        log.info("==".repeat(40));
-        log.info("Running statistics check");
-        runCheck();
+//        log.info("==".repeat(40));
+//        log.info("Running statistics check");
+//        runCheck();
     }
 
     /**

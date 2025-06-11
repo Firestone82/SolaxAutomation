@@ -42,6 +42,9 @@ public class SolaxService {
                 System.exit(1);
             }
 
+            Optional<Integer> test = solaxClient.read(ReadRegister.POWER_CONTROL, unitId);
+            log.info("- Power control serial number: {}", test.orElseGet(() -> -1));
+
             // Unlock the inverter if found locked
             unlock(password);
         } else {
