@@ -90,11 +90,6 @@ public class WeatherChecker {
         hours.forEach(hour -> log.info("  | {}", hour.toString()));
         log.info("- Average quality calculated: {} - required: {}", avgQuality, minQuality);
 
-        if (avgQuality < 1) {
-            log.warn("Weather quality is too low, cannot determine weather, aborting check.");
-            return;
-        }
-
         Optional<InverterMode> modeOpt = solaxService.getCurrentMode();
         if (modeOpt.isEmpty()) {
             log.warn("Could not retrieve current inverter mode, aborting check.");
