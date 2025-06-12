@@ -74,7 +74,7 @@ public class NegativeExportChecker {
 
         // Determine override window
         int currentHour = java.time.LocalTime.now().getHour();
-        boolean isOverrideWindow = connectionState.isLow() && currentHour >= 12 && currentHour <= 14;
+        boolean isOverrideWindow = connectionState.isLow() && currentHour >= 12 && currentHour < 14;
 
         // Fetch current price from OTE API
         Optional<PowerHourPrice> optPrice = oteService.getCurrentHourPrices();
@@ -117,13 +117,13 @@ public class NegativeExportChecker {
         // Apply override reduction if in the window and enabling export
         if (isOverrideWindow && newExportLimit > MIN_EXPORT_LIMIT) {
             newExportLimit = MAX_EXPORT_LIMIT - 1000;
-            log.info("Between 12:00 and 14:00 with state LOW -> reducing export by 1000W to {}", newExportLimit);
+            log.info("Between 12:00 and 14:00 with state LOW -> reducing export by 1000W to {}W", newExportLimit);
         }
 
         if (currentExportLimit != newExportLimit) {
             setExport(newExportLimit);
         } else {
-            log.info("Export limit already at desired value {} W, no action needed", newExportLimit);
+            log.info("Export limit already at desired value {}W, no action needed", newExportLimit);
         }
     }
 
