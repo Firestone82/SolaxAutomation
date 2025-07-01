@@ -154,7 +154,7 @@ public class WeatherChecker {
             }
 
             if (data.avgQuality() <= data.minQuality() && mode == InverterMode.BACKUP) {
-                if (data.hours().getFirst().getQuality() > (THUNDERSTORM_HOUR - 1.5)) {
+                if (data.hours().getFirst().getQuality() > (THUNDERSTORM_THRESHOLD - 1.5)) {
                     log.info("Weather quality is falling, but currently still thunderstorm, waiting for next hour");
                     return;
                 }

@@ -35,19 +35,6 @@ public class BatteryChecker {
         runCheck(minLevel);
     }
 
-    @Scheduled(cron = "0 5 17 * * *")
-    public void adjustModeBasedOnBatteryMinLevelOfHundred() {
-        boolean isWeekend = LocalDateTime.now().getDayOfWeek().getValue() >= 6;
-
-        if (isWeekend) {
-            return;
-        }
-
-        log.info("==".repeat(40));
-        log.info("Running evening battery level check for 90%.");
-        runCheck(90);
-    }
-
     /**
      * Stop prioritizing export if batter level is under {@code minLevel},
      * by switching from FEED_IN_PRIORITY to SELF_USE inverter mode.

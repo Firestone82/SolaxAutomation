@@ -36,6 +36,7 @@ automation:
     power:
       min: 100
       max: 3950
+      reduced: 2000
     minPrice: 0.5
   weather:
     threshold:

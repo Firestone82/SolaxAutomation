@@ -13,6 +13,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.Optional;
 
 @Slf4j
@@ -32,6 +33,9 @@ public class NegativeExportChecker {
 
     @Value("${automation.export.power.max:3950}")
     private int MAX_EXPORT_LIMIT;
+
+    @Value("${automation.export.power.reduced:2000}")
+    private int REDUCED_EXPORT_LIMIT;
 
     @PostConstruct
     private void init() {
@@ -73,8 +77,8 @@ public class NegativeExportChecker {
         log.info(" - Connection switch state: {}", connectionState.name());
 
         // Determine override window
-        int currentHour = java.time.LocalTime.now().getHour();
-        boolean isOverrideWindow = connectionState.isLow() && currentHour >= 12 && currentHour < 14;
+        int currentHour = LocalTime.now().getHour();
+        boolean isOverrideWindow = connectionState.isLow() && currentHour >= 12 && currentHour < 15;
 
         // Fetch current price from OTE API
         Optional<PowerHourPrice> optPrice = oteService.getCurrentHourPrices();
@@ -116,8 +120,8 @@ public class NegativeExportChecker {
 
         // Apply override reduction if in the window and enabling export
         if (isOverrideWindow && newExportLimit > MIN_EXPORT_LIMIT) {
-            newExportLimit = MAX_EXPORT_LIMIT - 1000;
-            log.info("Between 12:00 and 14:00 with state LOW -> reducing export by 1000W to {}W", newExportLimit);
+            newExportLimit = REDUCED_EXPORT_LIMIT;
+            log.info("Between 12:00 and 15:00 with state LOW -> reducing export by {}W to {}W", REDUCED_EXPORT_LIMIT, newExportLimit);
         }
 
         if (currentExportLimit != newExportLimit) {
