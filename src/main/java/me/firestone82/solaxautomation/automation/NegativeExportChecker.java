@@ -4,6 +4,9 @@ import com.pi4j.io.gpio.digital.DigitalState;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.firestone82.solaxautomation.service.meteosource.MeteoSourceService;
+import me.firestone82.solaxautomation.service.meteosource.model.MeteoDayHourly;
+import me.firestone82.solaxautomation.service.meteosource.model.WeatherForecast;
 import me.firestone82.solaxautomation.service.ote.OTEService;
 import me.firestone82.solaxautomation.service.ote.model.PowerHourPrice;
 import me.firestone82.solaxautomation.service.raspberry.RaspberryPiService;
@@ -14,6 +17,8 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Optional;
 
 @Slf4j
@@ -24,6 +29,7 @@ public class NegativeExportChecker {
     private final SolaxService solaxService;
     private final OTEService oteService;
     private final RaspberryPiService raspberryPiService;
+    private final MeteoSourceService meteoSourceService;
 
     @Value("${automation.export.minPrice:0}")
     private double MIN_EXPORT_PRICE; // 0 CZK/kWh
@@ -97,6 +103,27 @@ public class NegativeExportChecker {
             return;
         }
 
+        Optional<WeatherForecast> forecastOpt = meteoSourceService.getCurrentWeather();
+        if (forecastOpt.isEmpty()) {
+            log.warn("Could not retrieve weather forecast, aborting check.");
+            return;
+        }
+
+        if (forecastOpt.get().getHourly().isEmpty()) {
+            log.warn("Weather forecast is empty, unable to show weather.");
+            return;
+        }
+
+        LocalDateTime currentTime = LocalDateTime.now();
+        List<MeteoDayHourly> hours = forecastOpt.get().getHourlyBetween(
+                currentTime.truncatedTo(ChronoUnit.HOURS).minusHours(1),
+                currentTime.truncatedTo(ChronoUnit.HOURS).plusHours(1)
+        );
+        double avgQuality = hours.stream()
+                .mapToDouble(MeteoDayHourly::getQuality)
+                .average()
+                .orElse(0.0);
+
         int newExportLimit;
         int currentExportLimit = optLimit.get();
         log.info(" - Current export limit: {} W", currentExportLimit);
@@ -119,9 +146,9 @@ public class NegativeExportChecker {
         }
 
         // Apply override reduction if in the window and enabling export
-        if (isOverrideWindow && newExportLimit > MIN_EXPORT_LIMIT) {
+        if (isOverrideWindow && newExportLimit > MIN_EXPORT_LIMIT && avgQuality <= 2.0) {
             newExportLimit = REDUCED_EXPORT_LIMIT;
-            log.info("Between 12:00 and 15:00 with state LOW -> reducing export by {}W to {}W", REDUCED_EXPORT_LIMIT, newExportLimit);
+            log.info("Between 12:00 and 15:00 with state LOW and quality {} -> reducing export by {}W to {}W", avgQuality, REDUCED_EXPORT_LIMIT, newExportLimit);
         }
 
         if (currentExportLimit != newExportLimit) {
