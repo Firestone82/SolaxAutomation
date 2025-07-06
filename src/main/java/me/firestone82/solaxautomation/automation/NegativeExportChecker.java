@@ -103,6 +103,11 @@ public class NegativeExportChecker {
             return;
         }
 
+        int newExportLimit;
+        int currentExportLimit = optLimit.get();
+        log.info(" - Current export limit: {} W", currentExportLimit);
+
+        // Fetch current weather forecast
         Optional<WeatherForecast> forecastOpt = meteoSourceService.getCurrentWeather();
         if (forecastOpt.isEmpty()) {
             log.warn("Could not retrieve weather forecast, aborting check.");
@@ -117,16 +122,14 @@ public class NegativeExportChecker {
         LocalDateTime currentTime = LocalDateTime.now();
         List<MeteoDayHourly> hours = forecastOpt.get().getHourlyBetween(
                 currentTime.truncatedTo(ChronoUnit.HOURS).minusHours(1),
-                currentTime.truncatedTo(ChronoUnit.HOURS).plusHours(1)
+                currentTime.truncatedTo(ChronoUnit.HOURS).plusHours(2)
         );
         double avgQuality = hours.stream()
                 .mapToDouble(MeteoDayHourly::getQuality)
                 .average()
                 .orElse(0.0);
 
-        int newExportLimit;
-        int currentExportLimit = optLimit.get();
-        log.info(" - Current export limit: {} W", currentExportLimit);
+        log.info(" - Average weather quality in the next hour: {}", avgQuality);
 
         // Decide new limit
         if (currentPrice < MIN_EXPORT_PRICE) {
@@ -146,7 +149,7 @@ public class NegativeExportChecker {
         }
 
         // Apply override reduction if in the window and enabling export
-        if (isOverrideWindow && newExportLimit > MIN_EXPORT_LIMIT && avgQuality <= 2.0) {
+        if (isOverrideWindow && newExportLimit > MIN_EXPORT_LIMIT && avgQuality <= 3.0) {
             newExportLimit = REDUCED_EXPORT_LIMIT;
             log.info("Between 12:00 and 15:00 with state LOW and quality {} -> reducing export by {}W to {}W", avgQuality, REDUCED_EXPORT_LIMIT, newExportLimit);
         }
