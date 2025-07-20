@@ -13,7 +13,7 @@ import java.util.Optional;
 @Slf4j
 @Component
 @AllArgsConstructor
-public class BatteryChecker {
+public class BatteryLevelChecker {
 
     private final SolaxService solaxService;
 

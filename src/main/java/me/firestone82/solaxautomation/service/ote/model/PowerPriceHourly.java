@@ -6,7 +6,7 @@ import lombok.Data;
 
 @Data
 @AllArgsConstructor
-public class PowerHourPrice {
+public class PowerPriceHourly {
     private int hour;
     private double priceCZK;
 

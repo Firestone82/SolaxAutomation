@@ -8,7 +8,7 @@ import me.firestone82.solaxautomation.service.meteosource.MeteoSourceService;
 import me.firestone82.solaxautomation.service.meteosource.model.MeteoDayHourly;
 import me.firestone82.solaxautomation.service.meteosource.model.WeatherForecast;
 import me.firestone82.solaxautomation.service.ote.OTEService;
-import me.firestone82.solaxautomation.service.ote.model.PowerHourPrice;
+import me.firestone82.solaxautomation.service.ote.model.PowerPriceHourly;
 import me.firestone82.solaxautomation.service.raspberry.RaspberryPiService;
 import me.firestone82.solaxautomation.service.solax.SolaxService;
 import org.springframework.beans.factory.annotation.Value;
@@ -69,7 +69,7 @@ public class NegativeExportChecker {
     @Scheduled(cron = "0 4 4-20 * * *")
     public void adjustExportLimitBasedOnPrice() {
         log.info("==".repeat(40));
-        log.info("Running period negative export check");
+        log.info("Running period negative export check to adjust export limit based on current price");
         runCheck();
     }
 
@@ -87,7 +87,7 @@ public class NegativeExportChecker {
         boolean isOverrideWindow = connectionState.isLow() && currentHour >= 12 && currentHour < 15;
 
         // Fetch current price from OTE API
-        Optional<PowerHourPrice> optPrice = oteService.getCurrentHourPrices();
+        Optional<PowerPriceHourly> optPrice = oteService.getCurrentHourPrices();
         if (optPrice.isEmpty()) {
             log.warn("Could not retrieve price from OTE API, aborting check.");
             return;
@@ -157,7 +157,7 @@ public class NegativeExportChecker {
         if (currentExportLimit != newExportLimit) {
             setExport(newExportLimit);
         } else {
-            log.info("Export limit already at desired value {}W, no action needed", newExportLimit);
+            log.info("No action needed, export limit is already set to {}W", currentExportLimit);
         }
     }
 

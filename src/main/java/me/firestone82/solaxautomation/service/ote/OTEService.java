@@ -3,7 +3,7 @@ package me.firestone82.solaxautomation.service.ote;
 import lombok.extern.slf4j.Slf4j;
 import me.firestone82.solaxautomation.http.serialization.GsonService;
 import me.firestone82.solaxautomation.service.ote.model.PowerForecast;
-import me.firestone82.solaxautomation.service.ote.model.PowerHourPrice;
+import me.firestone82.solaxautomation.service.ote.model.PowerPriceHourly;
 import okhttp3.OkHttpClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -36,11 +36,11 @@ public class OTEService {
         log.info("OTE service initialized successfully");
     }
 
-    public Optional<PowerHourPrice> getCurrentHourPrices() {
+    public Optional<PowerPriceHourly> getCurrentHourPrices() {
         log.debug("Requesting to get current hour prices");
 
         try {
-            Response<PowerHourPrice> response = api.getActualPrice().execute();
+            Response<PowerPriceHourly> response = api.getActualPrice().execute();
 
             if (response.isSuccessful()) {
                 assert response.body() != null;

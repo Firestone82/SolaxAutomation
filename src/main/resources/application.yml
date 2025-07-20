@@ -38,6 +38,9 @@ automation:
       max: 3950
       reduced: 2000
     minPrice: 0.5
+  sell:
+    minPrice: 2.5
+    minBattery: 40
   weather:
     threshold:
       cloudy: 5

@@ -19,7 +19,7 @@ import java.util.function.Consumer;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class WeatherChecker {
+public class WeatherQualityChecker {
 
     private final SolaxService solaxService;
     private final MeteoSourceService meteoSourceService;
@@ -133,7 +133,7 @@ public class WeatherChecker {
                 return;
             }
 
-            log.info("Inverter is already in the correct state, no action needed");
+            log.info("No action needed, inverter is already in the correct state.");
         };
     }
 
@@ -165,7 +165,7 @@ public class WeatherChecker {
                 return;
             }
 
-            log.info("Inverter is already in the correct state, no action needed");
+            log.info("No action needed, inverter is already in the correct state.");
         };
     }
 

@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import me.firestone82.solaxautomation.service.solax.client.SolaxClient;
 import me.firestone82.solaxautomation.service.solax.model.InverterMode;
+import me.firestone82.solaxautomation.service.solax.model.ManualMode;
 import me.firestone82.solaxautomation.service.solax.register.ReadRegister;
 import me.firestone82.solaxautomation.service.solax.register.WriteRegister;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -77,6 +78,11 @@ public class SolaxService {
     public boolean changeMode(InverterMode mode) {
         log.debug("Requesting to set inverter mode to {} (unit ID: {})", mode, unitId);
         return solaxClient.write(WriteRegister.USE_MODE, unitId, mode);
+    }
+
+    public boolean changeManualMode(ManualMode mode) {
+        log.debug("Requesting to set inverter manual mode to {} (unit ID: {})", mode, unitId);
+        return solaxClient.write(WriteRegister.MANUAL_MODE, unitId, mode);
     }
 
     public Optional<InverterMode> getCurrentMode() {
