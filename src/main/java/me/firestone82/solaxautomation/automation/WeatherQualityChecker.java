@@ -1,5 +1,6 @@
 package me.firestone82.solaxautomation.automation;
 
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.firestone82.solaxautomation.service.meteosource.MeteoSourceService;
@@ -8,6 +9,7 @@ import me.firestone82.solaxautomation.service.meteosource.model.WeatherForecast;
 import me.firestone82.solaxautomation.service.solax.SolaxService;
 import me.firestone82.solaxautomation.service.solax.model.InverterMode;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -19,6 +21,7 @@ import java.util.function.Consumer;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(value = "automation.weather.enabled")
 public class WeatherQualityChecker {
 
     private final SolaxService solaxService;
@@ -34,6 +37,14 @@ public class WeatherQualityChecker {
     private int THUNDERSTORM_HOUR;
 
     private boolean systemChangeToBackup = false;
+
+    @PostConstruct
+    public void init() {
+        log.info(
+                "WeatherQualityChecker initialized with cloudy threshold: {}, thunderstorm threshold: {}, thunderstorm hour forecast: {}",
+                CLOUDY_THRESHOLD, THUNDERSTORM_THRESHOLD, THUNDERSTORM_HOUR
+        );
+    }
 
     @Scheduled(cron = "0 2 * * * *")
     public void adjustModeBasedOnWeather() {

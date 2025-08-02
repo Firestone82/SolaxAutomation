@@ -1,5 +1,6 @@
 package me.firestone82.solaxautomation.automation;
 
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.firestone82.solaxautomation.service.ote.OTEService;
@@ -9,6 +10,7 @@ import me.firestone82.solaxautomation.service.solax.SolaxService;
 import me.firestone82.solaxautomation.service.solax.model.InverterMode;
 import me.firestone82.solaxautomation.service.solax.model.ManualMode;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -18,6 +20,7 @@ import java.util.Optional;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(value = "automation.sell.enabled")
 public class ForceDischargeChecker {
 
     private final SolaxService solaxService;
@@ -28,6 +31,14 @@ public class ForceDischargeChecker {
 
     @Value("${automation.sell.minBattery:40}")
     private int MIN_BATTERY_LEVEL;
+
+    @PostConstruct
+    public void init() {
+        log.info(
+                "ForceDischargeChecker initialized with minimum selling price: {} CZK/kWh and minimum battery level: {}%",
+                MIN_SELLING_PRICE, MIN_BATTERY_LEVEL
+        );
+    }
 
     @Scheduled(cron = "0 1 19 * * *")
     private void checkExportPrice() {

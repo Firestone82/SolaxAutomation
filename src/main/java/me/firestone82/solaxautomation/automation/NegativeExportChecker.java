@@ -12,6 +12,7 @@ import me.firestone82.solaxautomation.service.ote.model.PowerPriceHourly;
 import me.firestone82.solaxautomation.service.raspberry.RaspberryPiService;
 import me.firestone82.solaxautomation.service.solax.SolaxService;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -24,6 +25,7 @@ import java.util.Optional;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(value = "automation.export.enabled")
 public class NegativeExportChecker {
 
     private final SolaxService solaxService;
@@ -45,6 +47,11 @@ public class NegativeExportChecker {
 
     @PostConstruct
     private void init() {
+        log.info(
+                "NegativeExportChecker initialized with min price: {}, min export limit: {}, max export limit: {}, reduced export limit: {}",
+                MIN_EXPORT_PRICE, MIN_EXPORT_LIMIT, MAX_EXPORT_LIMIT, REDUCED_EXPORT_LIMIT
+        );
+
         raspberryPiService.getConnectionSwitch().addListener(event -> {
             log.info("==".repeat(40));
             log.info("Detected switch state changed to: {}, running check for negative export", event.state().name());

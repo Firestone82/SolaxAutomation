@@ -1,9 +1,11 @@
 package me.firestone82.solaxautomation.automation;
 
+import jakarta.annotation.PostConstruct;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.firestone82.solaxautomation.service.solax.SolaxService;
 import me.firestone82.solaxautomation.service.solax.model.InverterMode;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -13,9 +15,15 @@ import java.util.Optional;
 @Slf4j
 @Component
 @AllArgsConstructor
+@ConditionalOnProperty(value = "automation.export.enabled")
 public class BatteryLevelChecker {
 
     private final SolaxService solaxService;
+
+    @PostConstruct
+    public void onit() {
+        log.info("BatteryLevelChecker initialized, will check battery levels during the day.");
+    }
 
     @Scheduled(cron = "0 5 13 * * *")
     public void adjustModeBasedOnBatteryMinLevelOfFifty() {
