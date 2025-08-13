@@ -11,11 +11,15 @@ import me.firestone82.solaxautomation.service.solax.model.InverterMode;
 import me.firestone82.solaxautomation.service.solax.model.ManualMode;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.*;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ScheduledFuture;
 
 @Slf4j
 @Component
@@ -25,74 +29,139 @@ public class ForceDischargeChecker {
 
     private final SolaxService solaxService;
     private final OTEService oteService;
+    private final TaskScheduler taskScheduler;
 
     @Value("${automation.sell.minPrice:2.5}")
-    private float MIN_SELLING_PRICE;
+    private float MIN_SELLING_PRICE; // CZK/kWh
 
     @Value("${automation.sell.minBattery:40}")
-    private int MIN_BATTERY_LEVEL;
+    private int MIN_BATTERY_LEVEL; // %
+
+    @Value("${automation.sell.window.startHour:18}")
+    private int WINDOW_START_HOUR;
+
+    @Value("${automation.sell.window.endHour:22}")
+    private int WINDOW_END_HOUR;
+
+    private volatile ScheduledFuture<?> pendingStart = null;
+    private volatile Integer scheduledBestHour = null;
+    private volatile LocalDateTime scheduledTrigger = null;
 
     @PostConstruct
-    public void init() {
+    public void init(
+            @Value("${automation.sell.armCron:0 0 16 * * *}") String armCron
+    ) {
         log.info(
-                "ForceDischargeChecker initialized with minimum selling price: {} CZK/kWh and minimum battery level: {}%",
-                MIN_SELLING_PRICE, MIN_BATTERY_LEVEL
+                "ForceDischargeChecker ready. minPrice={} CZK/kWh, minBattery={}%, window {}–{}, arm daily at cron '{}'.",
+                MIN_SELLING_PRICE, MIN_BATTERY_LEVEL, WINDOW_START_HOUR, WINDOW_END_HOUR, armCron
         );
     }
 
-    @Scheduled(cron = "0 1 19 * * *")
-    private void checkExportPrice() {
+    /**
+     * ARM ONCE PER DAY FOR *TODAY*:
+     * At ~16:00 we look at today's prices (already known from day-ahead),
+     * pick the highest hour in [WINDOW_START_HOUR, WINDOW_END_HOUR],
+     * and schedule a one-shot action 30 minutes before that hour.
+     */
+    @Scheduled(cron = "${automation.sell.armCron:0 0 16 * * *}")
+    public synchronized void armForToday() {
         log.info("==".repeat(40));
         log.info("Running export check to force battery discharge if price is high");
 
-        Optional<InverterMode> modeOpt = solaxService.getCurrentMode();
-        if (modeOpt.isEmpty()) {
-            log.warn("Could not retrieve current inverter mode, aborting check.");
-            return;
-        }
-
-        InverterMode currentMode = modeOpt.get();
-        log.info("- Current inverter mode: {}", currentMode);
-
         // Fetch current prices from OTE API
-        Optional<PowerForecast> optPrice = oteService.getPrices();
-        if (optPrice.isEmpty()) {
+        Optional<PowerForecast> optForecast = oteService.getPrices();
+        if (optForecast.isEmpty()) {
             log.warn("Could not retrieve price from OTE API, aborting check.");
             return;
         }
 
-        int startingHour = 19;
-        int endingHour = 21;
-
-        List<PowerPriceHourly> hours = optPrice.get().getHourlyBetween(startingHour, endingHour);
-        double avgPrice = hours.stream()
-                .mapToDouble(price -> price.getPriceCZK() / 1000.0) // Convert from MWh to kWh
-                .average()
-                .orElse(0.0);
-
-        log.info("- Average price between {}:00 and {}:00 is: {} CZK/kWh", startingHour, endingHour, avgPrice);
-
-        if (currentMode != InverterMode.FEED_IN_PRIORITY && currentMode != InverterMode.SELF_USE) {
-            log.warn("Inverter mode is not FEED_IN_PRIORITY or SELF_USE, aborting check.");
+        List<PowerPriceHourly> hours = optForecast.get().getHourlyBetween(WINDOW_START_HOUR, WINDOW_END_HOUR);
+        if (hours == null || hours.isEmpty()) {
+            log.warn("No hourly prices available for window {}–{}; cannot arm.", WINDOW_START_HOUR, WINDOW_END_HOUR);
             return;
         }
 
-        if (avgPrice >= MIN_SELLING_PRICE) {
-            log.info("Forcing battery export mode due to high price: {} CZK/kWh", avgPrice);
-            setMode(InverterMode.MANUAL);
+        PowerPriceHourly best = hours.stream()
+                .max(Comparator.<PowerPriceHourly>comparingDouble(h -> h.getPriceCZK() / 1000.0) // CZK/MWh -> CZK/kWh
+                        .thenComparing(PowerPriceHourly::getHour))
+                .orElse(null);
+
+        double bestCzkPerKwh = best.getPriceCZK() / 1000.0;
+        int bestHour = best.getHour();
+
+        if (bestCzkPerKwh < MIN_SELLING_PRICE) {
+            cancelPending("Best hour below MIN_SELLING_PRICE");
+            log.info("Not arming, best hour ({}:00 is {} CZK/kWh < {} CZK/kWh)", bestHour, bestCzkPerKwh, MIN_SELLING_PRICE);
+            return;
+        }
+
+        LocalDateTime trigger = LocalDateTime.of(LocalDate.now(), LocalTime.of(bestHour, 0)).minusMinutes(30);
+        if (trigger.isBefore(LocalDateTime.now())) {
+            // Shouldn’t happen with 18–22 window, but guard just in case.
+            log.info("Computed trigger {} already passed; not arming.", trigger);
+            return;
+        }
+
+        Instant triggerInstant = trigger.atZone(ZoneId.systemDefault()).toInstant();
+
+        cancelPending("Arming for today");
+        pendingStart = taskScheduler.schedule(this::startExportIfBatteryOk, triggerInstant);
+        scheduledBestHour = bestHour;
+        scheduledTrigger = trigger;
+
+        log.info("Armed export at {}, best hour {}:00 (price {} CZK/kWh).", trigger, bestHour, bestCzkPerKwh);
+    }
+
+    /**
+     * One-shot trigger: start export if battery is OK.
+     */
+    private void startExportIfBatteryOk() {
+        log.info("==".repeat(40));
+        log.info("Export start triggered at {} for best hour {}:00", scheduledTrigger, scheduledBestHour);
+
+        try {
+            Optional<Integer> batteryOpt = solaxService.getBatteryLevel();
+            if (batteryOpt.isEmpty()) {
+                log.warn("Battery level unknown at trigger {}; aborting export start.", scheduledTrigger);
+                return;
+            }
+
+            int battery = batteryOpt.get();
+            if (battery < MIN_BATTERY_LEVEL) {
+                log.info("At trigger {}, battery {}% < {}% — not starting export.", scheduledTrigger, battery, MIN_BATTERY_LEVEL);
+                return;
+            }
+
+            Optional<InverterMode> modeOpt = solaxService.getCurrentMode();
+            if (modeOpt.isEmpty()) {
+                log.warn("Inverter mode unknown at trigger {}; aborting export start.", scheduledTrigger);
+                return;
+            }
+
+            if (modeOpt.get() != InverterMode.MANUAL) {
+                log.info("Trigger {} reached; switching to MANUAL for best hour {}:00.", scheduledTrigger, scheduledBestHour);
+                setMode(InverterMode.MANUAL);
+            } else {
+                log.info("Already in MANUAL at trigger {}; ensuring FORCE_DISCHARGE.", scheduledTrigger);
+            }
 
             if (solaxService.changeManualMode(ManualMode.FORCE_DISCHARGE)) {
-                log.info(" - Inverter mode set to FORCE_DISCHARGE successfully");
+                log.info(" - FORCE_DISCHARGE set successfully (armed for {}:00).", scheduledBestHour);
             } else {
-                log.error(" - Failed to set inverter mode to FORCE_DISCHARGE");
+                log.error(" - Failed to set FORCE_DISCHARGE at trigger {}.", scheduledTrigger);
             }
-        } else {
-            log.info("No action needed, average price is below {} CZK/kWh for selling.", MIN_SELLING_PRICE);
+        } catch (Exception e) {
+            log.error("Error during scheduled export start: {}", e.getMessage(), e);
+        } finally {
+            clearScheduleState();
         }
     }
 
-    @Scheduled(cron = "0 */10 18-22 * * *")
-    private void checkBatteryLevel() {
+    /**
+     * Battery guard — stop exporting once under MIN_BATTERY_LEVEL.
+     */
+    @Scheduled(cron = "0 */5 18-23 * * *")
+    public void batteryGuard() {
         log.info("==".repeat(40));
         log.info("Checking battery level, to ensure it is above threshold while selling");
 
@@ -126,6 +195,21 @@ public class ForceDischargeChecker {
         } else {
             log.info("No action needed, inverter is not in MANUAL mode.");
         }
+    }
+
+    private synchronized void cancelPending(String reason) {
+        if (pendingStart != null && !pendingStart.isDone()) {
+            pendingStart.cancel(false);
+            log.info("Cancelled pending start ({})", reason);
+        }
+
+        clearScheduleState();
+    }
+
+    private synchronized void clearScheduleState() {
+        pendingStart = null;
+        scheduledBestHour = null;
+        scheduledTrigger = null;
     }
 
     private void setMode(InverterMode mode) {
