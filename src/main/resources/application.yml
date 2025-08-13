@@ -43,6 +43,10 @@ automation:
     enabled: true
     minPrice: 2.5
     minBattery: 40
+    window:
+      startHour: 18
+      endHour: 22
+    armCron: 0 0 16 * * *
   weather:
     enabled: true
     threshold:

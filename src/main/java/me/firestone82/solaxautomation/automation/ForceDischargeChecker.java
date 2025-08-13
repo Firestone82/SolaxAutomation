@@ -43,14 +43,15 @@ public class ForceDischargeChecker {
     @Value("${automation.sell.window.endHour:22}")
     private int WINDOW_END_HOUR;
 
+    @Value("${automation.sell.armCron:0 0 16 * * *}")
+    String armCron;
+
     private volatile ScheduledFuture<?> pendingStart = null;
     private volatile Integer scheduledBestHour = null;
     private volatile LocalDateTime scheduledTrigger = null;
 
     @PostConstruct
-    public void init(
-            @Value("${automation.sell.armCron:0 0 16 * * *}") String armCron
-    ) {
+    public void init() {
         log.info(
                 "ForceDischargeChecker ready. minPrice={} CZK/kWh, minBattery={}%, window {}–{}, arm daily at cron '{}'.",
                 MIN_SELLING_PRICE, MIN_BATTERY_LEVEL, WINDOW_START_HOUR, WINDOW_END_HOUR, armCron
