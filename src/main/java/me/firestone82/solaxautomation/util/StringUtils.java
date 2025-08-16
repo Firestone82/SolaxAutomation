@@ -24,4 +24,13 @@ public class StringUtils {
 
         return sb.toString();
     }
+
+    public static double parseNumber(String text) {
+        try {
+            String numeric = text.trim().replaceAll("[^\\d,]", "").replace(",", ".");
+            return Double.parseDouble(numeric);
+        } catch (NumberFormatException e) {
+            return -1.0;
+        }
+    }
 }
