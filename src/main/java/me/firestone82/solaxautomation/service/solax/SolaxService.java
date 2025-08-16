@@ -60,12 +60,6 @@ public class SolaxService {
                 System.exit(1);
             }
 
-            Optional<Integer> test = solaxClient.read(ReadRegister.BMS_USER_SOC, unitId);
-            log.info("- Test1: {}", test.orElseGet(() -> -1));
-
-            Optional<Integer> test2 = solaxClient.read(ReadRegister.BMS_USER_SOH, unitId);
-            log.info("- Test1: {}", test2.orElseGet(() -> -1));
-
             // Unlock the inverter if found locked
             unlock(password);
         } else {

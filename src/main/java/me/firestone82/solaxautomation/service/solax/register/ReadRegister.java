@@ -17,6 +17,7 @@ public class ReadRegister<T> extends Register<T> {
     public static ReadRegister<Integer> POWER_CONTROL = new ReadRegister<>("ModbusPowerControl", 0x0100, 1, Integer.class, ReadRegistryType.INPUT);
     public static ReadRegister<Integer> BMS_USER_SOC = new ReadRegister<>("BMS_UserSOC", 0x00BE, 1, Integer.class, ReadRegistryType.INPUT);
     public static ReadRegister<Integer> BMS_USER_SOH = new ReadRegister<>("BMS_UserSOH", 0x00BF, 1, Integer.class, ReadRegistryType.INPUT);
+    public static ReadRegister<Integer> BMS_BATTERY_CAPACITY = new ReadRegister<>("BMS_BatteryCapacity", 0x0026, 2, Integer.class, ReadRegistryType.INPUT);
 
     private final ReadRegistryType type;
 
