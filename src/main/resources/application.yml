@@ -11,31 +11,11 @@ solax:
   unitId: 1
   # Advanced password for the inverter
   password: 2014
-  url:
-    portal: "https://global.solaxcloud.com/user-center/"
-    report: "https://global.solaxcloud.com/blue/#/plant-list"
-    exportedData: "https://global.solaxcloud.com/blue/#/task-list"
-  credentials:
-    username: "YOUR_USERNAME"
-    password: "YOUR_PASSWORD"
 
 # API for electricity prices provided to grid
 # - Documentation: https://spotovaelektrina.cz/api
 ote:
   baseUrl: "https://spotovaelektrina.cz"
-
-cez:
-  url:
-    portal: "https://dip.cezdistribuce.cz/irj/portal/"
-    export: "https://pnd.cezdistribuce.cz/cezpnd2/external/data/export"
-  meterId: 123456789
-  credentials:
-    username: "YOUR_USERNAME"
-    password: "YOUR_PASSWORD"
-
-data:
-  # Path to the directory where the data will be stored
-  directory: "data"
 
 # API for weather data
 # - Documentation: https://www.meteosource.com/documentation

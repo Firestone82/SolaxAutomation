@@ -5,17 +5,12 @@ import lombok.extern.slf4j.Slf4j;
 import me.firestone82.solaxautomation.service.solax.client.SolaxClient;
 import me.firestone82.solaxautomation.service.solax.model.InverterMode;
 import me.firestone82.solaxautomation.service.solax.model.ManualMode;
-import me.firestone82.solaxautomation.service.solax.model.StatisticsEntry;
 import me.firestone82.solaxautomation.service.solax.register.ReadRegister;
 import me.firestone82.solaxautomation.service.solax.register.WriteRegister;
-import me.firestone82.solaxautomation.util.CsvUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.io.File;
-import java.time.YearMonth;
-import java.util.List;
 import java.util.Optional;
 
 @Slf4j
@@ -24,29 +19,17 @@ import java.util.Optional;
 public class SolaxService {
 
     private final SolaxClient solaxClient;
-    private final SolaxScraper solaxScraper;
     private final int unitId;
-    private final File dataDir;
 
     public SolaxService(
             @Autowired SolaxClient solaxClient,
-            @Autowired SolaxScraper solaxScraper,
-            @Value("${data.directory}") String storagePath,
             @Value("${solax.unitId}") int unitId,
             @Value("${solax.password}") Integer password
     ) {
         log.info("Initializing Solax service");
 
         this.solaxClient = solaxClient;
-        this.solaxScraper = solaxScraper;
         this.unitId = unitId;
-        this.dataDir = new File(storagePath, "solax");
-
-        if (!dataDir.exists() && !dataDir.mkdirs()) {
-            log.error("Failed to create data directory: {}", dataDir.getAbsolutePath());
-        } else {
-            log.debug("Data directory initialized at: {}", dataDir.getAbsolutePath());
-        }
 
         if (solaxClient.connect()) {
             log.info("Successfully connected to Solax inverter (unit ID: {})", unitId);
@@ -130,35 +113,5 @@ public class SolaxService {
     public Optional<Integer[]> getInverterPower() {
         log.debug("Requesting to read current inverter power (unit ID: {})", unitId);
         return solaxClient.read(ReadRegister.POWER_DC, unitId);
-    }
-
-    public Optional<List<StatisticsEntry>> getStatistics(YearMonth yearMonth) {
-        log.debug("Requesting to get solax statistics data (unit ID: {})", unitId);
-
-        String fileName = String.format("consumption_%s.csv", yearMonth);
-        File file = new File(dataDir, fileName);
-
-        if (file.exists()) {
-            log.debug("Loading cached electricity consumption data from file: {}", file.getAbsolutePath());
-
-            Optional<List<StatisticsEntry>> foundDataEntries = CsvUtils.loadFromCsv(file, StatisticsEntry.class);
-            foundDataEntries.ifPresent(entries -> log.debug("Loaded {} consumption entries from cache", entries.size()));
-            return foundDataEntries;
-        }
-
-        log.debug("No cached data found for {}, scraping new data", yearMonth);
-        Optional<List<StatisticsEntry>> scrapedDataEntries = solaxScraper.scrapeData(yearMonth);
-
-        if (scrapedDataEntries.isPresent()) {
-            List<StatisticsEntry> entries = scrapedDataEntries.get();
-            log.debug("Scraped {} consumption entries for {} from Solax", entries.size(), yearMonth);
-
-            CsvUtils.saveToCsv(entries, file);
-            log.debug("Saved scraped data to file: {}", file.getAbsolutePath());
-        } else {
-            log.warn("No data scraped for {}, returning empty list", yearMonth);
-        }
-
-        return scrapedDataEntries;
     }
 }
