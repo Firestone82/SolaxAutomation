@@ -11,11 +11,17 @@ import me.firestone82.solaxautomation.service.solax.model.InverterMode;
 import me.firestone82.solaxautomation.service.solax.model.ManualMode;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.time.*;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -58,6 +64,17 @@ public class ForceDischargeChecker {
         );
     }
 
+    @EventListener(classes = {ApplicationReadyEvent.class})
+    public void armForTodayIfUnderEvening() {
+        LocalTime now = LocalTime.now();
+        if (now.isAfter(LocalTime.of(WINDOW_START_HOUR, 0))) {
+            log.info("Not arming for today, current time {} is after window start {}:00", now.truncatedTo(ChronoUnit.MINUTES), WINDOW_START_HOUR);
+            return;
+        }
+
+        armForToday();
+    }
+
     /**
      * ARM ONCE PER DAY FOR *TODAY*:
      * At ~16:00 we look at today's prices (already known from day-ahead),
@@ -96,17 +113,31 @@ public class ForceDischargeChecker {
             return;
         }
 
-        LocalDateTime trigger = LocalDateTime.of(LocalDate.now(), LocalTime.of(bestHour, 0)).minusMinutes(30);
+        LocalDateTime trigger = LocalDateTime.of(LocalDate.now(), LocalTime.of(bestHour, 0));
         if (trigger.isBefore(LocalDateTime.now())) {
             // Shouldn’t happen with 18–22 window, but guard just in case.
             log.info("Computed trigger {} already passed; not arming.", trigger);
             return;
         }
 
-        Instant triggerInstant = trigger.atZone(ZoneId.systemDefault()).toInstant();
+        // Get previous powerPriceHour before best hour, if any
+        PowerPriceHourly previous = hours.stream()
+                .filter(h -> h.getHour() == best.getHour() - 1)
+                .findFirst()
+                .orElse(null);
+
+        // Start 30 minutes before the hour, if previous hour exists and is approximately same as best hour
+        if (previous != null) {
+            double previousCzkPerKwh = previous.getPriceCZK() / 1000.0;
+
+            if (Math.abs(previousCzkPerKwh - bestCzkPerKwh) < 0.2) {
+                log.info("Previous hour ({}:00, {} CZK/kWh) is close to best hour price; starting 30 minutes earlier.", previous.getHour(), previousCzkPerKwh);
+                trigger = trigger.minusMinutes(30);
+            }
+        }
 
         cancelPending("Arming for today");
-        pendingStart = taskScheduler.schedule(this::startExportIfBatteryOk, triggerInstant);
+        pendingStart = taskScheduler.schedule(this::startExportIfBatteryOk, trigger.atZone(ZoneId.systemDefault()).toInstant());
         scheduledBestHour = bestHour;
         scheduledTrigger = trigger;
 
