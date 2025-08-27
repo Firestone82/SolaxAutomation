@@ -192,7 +192,7 @@ public class ForceDischargeChecker {
     /**
      * Battery guard — stop exporting once under MIN_BATTERY_LEVEL.
      */
-    @Scheduled(cron = "0 */5 18-23 * * *")
+    @Scheduled(cron = "0 */1 18-23 * * *")
     public void batteryGuard() {
         log.info("==".repeat(40));
         log.info("Checking battery level, to ensure it is above threshold while selling");
