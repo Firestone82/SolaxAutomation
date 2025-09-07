@@ -17,11 +17,11 @@ public enum WeatherType {
     PARTLY_SUNNY(null, 4, 1.5),
 
     // CLOUDY
-    MOSTLY_CLOUDY(null, 5, 2.5),
-    CLOUDY(null, 6, 3.0),
-    OVERCAST(null, 7, 3.5),
-    OVERCAST_WITH_LOW_CLOUDS(null, 8, 3.5),
-    FOG(null, 9, 3.5),
+    MOSTLY_CLOUDY(null, 5, 3),
+    CLOUDY(null, 6, 3.5),
+    OVERCAST(null, 7, 4.0),
+    OVERCAST_WITH_LOW_CLOUDS(null, 8, 4.0),
+    FOG(null, 9, 5.0),
 
     // RAIN
     POSSIBLE_RAIN("PSBL_RAIN", 12, 4),
