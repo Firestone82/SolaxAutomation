@@ -37,6 +37,9 @@ automation:
       min: 100
       max: 3950
       reduced: 2000
+    reduced-window:
+      start-hour: 12
+      end-hour: 14
     minPrice: 0.5
   battery:
     enabled: true

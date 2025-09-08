@@ -10,9 +10,9 @@ import org.springframework.validation.annotation.Validated;
 public class NegativeExportProperties {
 
     private boolean enabled = false;
-    private Power power;
+    private Power power = new Power();
     private double minPrice = 0.5;
-    private Window reducedWindow;
+    private Window reducedWindow = new Window();
 
     @Data
     public static class Power {
