@@ -3,12 +3,12 @@ package me.firestone82.solaxautomation.automation;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.firestone82.solaxautomation.automation.properties.WeatherQualityProperties;
 import me.firestone82.solaxautomation.service.meteosource.MeteoSourceService;
 import me.firestone82.solaxautomation.service.meteosource.model.MeteoDayHourly;
 import me.firestone82.solaxautomation.service.meteosource.model.WeatherForecast;
 import me.firestone82.solaxautomation.service.solax.SolaxService;
 import me.firestone82.solaxautomation.service.solax.model.InverterMode;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 @Slf4j
@@ -23,171 +24,207 @@ import java.util.function.Consumer;
 @RequiredArgsConstructor
 @ConditionalOnProperty(value = "automation.weather.enabled")
 public class WeatherQualityChecker {
-
     private final SolaxService solaxService;
     private final MeteoSourceService meteoSourceService;
+    private final WeatherQualityProperties properties;
 
-    @Value("${automation.weather.threshold.cloudy:5.0}")
-    private double CLOUDY_THRESHOLD;
-
-    @Value("${automation.weather.threshold.thunderstorm:10.0}")
-    private double THUNDERSTORM_THRESHOLD;
-
-    @Value("${automation.weather.thunderstormHourForecast:2}")
-    private int THUNDERSTORM_HOUR;
-
-    private boolean systemChangeToBackup = false;
+    // Tracks if BACKUP was set by this component (vs. manual)
+    private final AtomicBoolean systemChangedToBackup = new AtomicBoolean(false);
 
     @PostConstruct
     public void init() {
-        log.info(
-                "WeatherQualityChecker initialized with cloudy threshold: {}, thunderstorm threshold: {}, thunderstorm hour forecast: {}",
-                CLOUDY_THRESHOLD, THUNDERSTORM_THRESHOLD, THUNDERSTORM_HOUR
-        );
+        log.info("WeatherQualityChecker initialized | props={}", properties);
     }
 
     @Scheduled(cron = "0 2 * * * *")
     public void adjustModeBasedOnWeather() {
-        LocalDateTime now = LocalDateTime.now();
+        final LocalDateTime now = LocalDateTime.now();
 
         if (now.getHour() == 7) {
-            log.info("==".repeat(40));
-            log.info("Running morning weather forecast check");
-            runCheck(now.withHour(9), now.withHour(14), CLOUDY_THRESHOLD, weatherCheck());
+            logSeparator("Morning weather forecast check");
+            runCheck(now.withHour(9), now.withHour(14), properties.getThreshold().getCloud(), 10, weatherCheck());
             return;
         }
 
         if (now.getHour() == 11) {
-            log.info("==".repeat(40));
-            log.info("Running noon weather forecast check");
-            runCheck(now.withHour(12), now.withHour(16), CLOUDY_THRESHOLD - 0.5, weatherCheck());
+            logSeparator("Noon weather forecast check");
+            runCheck(now.withHour(12), now.withHour(16), properties.getThreshold().getCloud() - 0.5, 50, weatherCheck());
             return;
         }
 
-        log.info("==".repeat(40));
-        log.info("Running outage forecast check");
-        runCheck(now, now.plusHours(THUNDERSTORM_HOUR), THUNDERSTORM_THRESHOLD, outageCheck());
+        logSeparator("Outage/thunderstorm forecast check");
+        runCheck(now, now.plusHours(properties.getThunderstormHourWindow()), properties.getThreshold().getThunderstorm(), 0, outageCheck());
     }
 
     /**
-     * Switch inverter mode based on current weather forecast, if the weather is
-     * cloudy (raining, ...), switch to self-use mode to charge batteries, otherwise switch to
-     * feed-in priority mode for grid export.
+     * Generic runner that loads current state and invokes the provided decision function.
      *
-     * @param start      start of the forecast to check
-     * @param end        end of the forecast to check
-     * @param minQuality minimum quality to consider the weather as cloudy
-     * @param function   function to run with the current inverter mode and weather quality
+     * @param start      start of the forecast window
+     * @param end        end of the forecast window
+     * @param minQuality threshold for action
+     * @param minBattery min battery % to allow FEED_IN_PRIORITY
+     * @param decision   handler with full state
      */
-    public void runCheck(LocalDateTime start, LocalDateTime end, double minQuality, Consumer<FunctionData> function) {
+    public void runCheck(LocalDateTime start, LocalDateTime end, double minQuality, int minBattery, Consumer<Ctx> decision) {
         Optional<WeatherForecast> forecastOpt = meteoSourceService.getCurrentWeather();
         if (forecastOpt.isEmpty()) {
-            log.warn("Could not retrieve weather forecast, aborting check.");
+            log.warn("Weather forecast not available; aborting check.");
             return;
         }
 
-        if (forecastOpt.get().getHourly().isEmpty()) {
-            log.warn("Weather forecast is empty, unable to show weather.");
+        Optional<Integer> batteryOpt = solaxService.getBatteryLevel();
+        if (batteryOpt.isEmpty()) {
+            log.warn("Battery level not available; aborting check.");
             return;
         }
-
-        List<MeteoDayHourly> hours = forecastOpt.get().getHourlyBetween(start, end);
-        double avgQuality = hours.stream()
-                .mapToDouble(MeteoDayHourly::getQuality)
-                .average()
-                .orElse(0.0);
-
-        log.info("- Weather forecast for today ({}–{}h):", start.getHour(), end.getHour());
-        hours.forEach(hour -> log.info("  | {}", hour.toString()));
-        log.info("- Average quality calculated: {} - required: {}", avgQuality, minQuality);
 
         Optional<InverterMode> modeOpt = solaxService.getCurrentMode();
         if (modeOpt.isEmpty()) {
-            log.warn("Could not retrieve current inverter mode, aborting check.");
+            log.warn("Current inverter mode not available; aborting check.");
+            return;
+        }
+
+        WeatherForecast forecast = forecastOpt.get();
+        if (forecast.getHourly().isEmpty()) {
+            log.warn("Weather forecast has no hourly data; aborting check.");
+            return;
+        }
+
+        List<MeteoDayHourly> hours = forecast.getHourlyBetween(start, end);
+        if (hours == null || hours.isEmpty()) {
+            log.info("- No forecast hours in window {}–{}; aborting check.", start, end);
             return;
         }
 
         InverterMode currentMode = modeOpt.get();
+        int batteryLevel = batteryOpt.get();
+        double avgQuality = MeteoDayHourly.avgQuality(hours);
+
+        log.info("- Window: {}–{} ({}–{}h)", start, end, start.getHour(), end.getHour());
+        hours.forEach(h -> log.info("  | {}", h));
+        log.info("- Computed avg quality: {} (required: {})", avgQuality, minQuality);
+        log.info("- Battery: {}% (min for FEED_IN_PRIORITY: {}%)", batteryLevel, minBattery);
         log.info("- Current inverter mode: {}", currentMode);
 
-        FunctionData data = new FunctionData(currentMode, hours, avgQuality, minQuality);
-        function.accept(data);
+        Ctx ctx = new Ctx(currentMode, hours, avgQuality, minQuality, batteryLevel, minBattery);
+        decision.accept(ctx);
     }
 
-    private Consumer<FunctionData> weatherCheck() {
-        return data -> {
-            InverterMode mode = data.mode();
+    /**
+     * Decision for regular weather (cloudy vs. sunny).
+     */
+    private Consumer<Ctx> weatherCheck() {
+        return ctx -> {
+            InverterMode mode = ctx.mode();
 
-            if (data.avgQuality() > THUNDERSTORM_THRESHOLD) {
-                log.debug("Weather quality detected as thunderstorm, proceeding with outage check");
-                log.info("--".repeat(20));
-
+            // If severe weather, immediately branch to outage check for the near-term window
+            if (ctx.avgQuality() >= properties.getThreshold().getThunderstorm()) {
+                log.debug("Thunderstorm-quality detected in weather check; delegating to outage check.");
                 LocalDateTime now = LocalDateTime.now();
-                runCheck(now, now.plusHours(THUNDERSTORM_HOUR), THUNDERSTORM_THRESHOLD, outageCheck());
+                runCheck(now, now.plusHours(properties.getThunderstormHourWindow()), properties.getThreshold().getThunderstorm(), ctx.minBattery(), outageCheck());
                 return;
             }
 
             if (mode != InverterMode.FEED_IN_PRIORITY && mode != InverterMode.SELF_USE) {
-                log.warn("Inverter mode is not FEED_IN_PRIORITY or SELF_USE, aborting check.");
+                log.warn("Unsupported mode for weather check: {}; no action.", mode);
                 return;
             }
 
-            if (data.avgQuality() > data.minQuality() && mode == InverterMode.FEED_IN_PRIORITY) {
-                log.info("Weather quality detected as cloudy, switching inverter mode to SELF_USE");
-                setMode(InverterMode.SELF_USE);
+            // Cloudy (quality above min) -> prefer SELF_USE
+            if (ctx.avgQuality() > ctx.minQuality() && mode == InverterMode.FEED_IN_PRIORITY) {
+                log.info("Cloudy conditions detected -> switching to SELF_USE.");
+                setModeSafe(InverterMode.SELF_USE);
                 return;
             }
 
-            if (data.avgQuality() <= data.minQuality() && mode == InverterMode.SELF_USE) {
-                log.info("Weather quality detected as sunny, switching inverter mode to FEED_IN_PRIORITY");
-                setMode(InverterMode.FEED_IN_PRIORITY);
+            // Sunny (quality below/equal min) -> prefer FEED_IN_PRIORITY if battery is healthy
+            if (ctx.avgQuality() <= ctx.minQuality() && mode == InverterMode.SELF_USE) {
+                if (ctx.currentBattery() >= ctx.minBattery()) {
+                    log.info("Sunny & battery >= {}% -> switching to FEED_IN_PRIORITY.", ctx.minBattery());
+                    setModeSafe(InverterMode.FEED_IN_PRIORITY);
+                } else {
+                    log.info("Sunny but battery {}% < {}% -> staying in SELF_USE.", ctx.currentBattery(), ctx.minBattery());
+                }
+
                 return;
             }
 
-            log.info("No action needed, inverter is already in the correct state.");
+            log.info("No change needed.");
         };
     }
 
-    private Consumer<FunctionData> outageCheck() {
-        return data -> {
-            InverterMode mode = data.mode();
+    /**
+     * Decision for outage/thunderstorm handling.
+     */
+    private Consumer<Ctx> outageCheck() {
+        return ctx -> {
+            InverterMode mode = ctx.mode();
 
-            if (!systemChangeToBackup && mode == InverterMode.BACKUP) {
-                log.warn("Inverter was change to BACKUP mode manually, aborting check.");
+            // If user manually switched to BACKUP while our flag is false, respect it and stop.
+            if (!systemChangedToBackup.get() && mode == InverterMode.BACKUP) {
+                log.warn("Detected BACKUP mode set manually; skipping automation this cycle.");
                 return;
             }
 
-            if (data.avgQuality() > data.minQuality() && mode != InverterMode.BACKUP) {
-                log.info("Weather quality detected as thunderstorm, switching inverter mode to BACKUP");
-                setMode(InverterMode.BACKUP);
-                systemChangeToBackup = true;
+            // Thunderstorm likely -> go BACKUP
+            if (ctx.avgQuality() > ctx.minQuality() && mode != InverterMode.BACKUP) {
+                log.info("Thunderstorm-quality detected -> switching to BACKUP.");
+
+                if (setModeSafe(InverterMode.BACKUP)) {
+                    systemChangedToBackup.set(true);
+                }
+
                 return;
             }
 
-            if (data.avgQuality() <= data.minQuality() && mode == InverterMode.BACKUP) {
-                if (data.hours().getFirst().getQuality() > (THUNDERSTORM_THRESHOLD - 1.5)) {
-                    log.info("Weather quality is falling, but currently still thunderstorm, waiting for next hour");
+            // Thunderstorm ended -> leave BACKUP
+            if (ctx.avgQuality() <= ctx.minQuality() && mode == InverterMode.BACKUP) {
+                // Small hysteresis to avoid flapping if the *first* hour is still high
+                double firstHourQ = ctx.hours().getFirst().getQuality();
+
+                if (firstHourQ > (properties.getThreshold().getThunderstorm() - 1.5)) {
+                    log.info("Quality trending down but still elevated ({}). Waiting for next hour.", firstHourQ);
                     return;
                 }
 
-                log.info("Weather quality detected as no thunderstorm, switching inverter mode to SELF_USE");
-                setMode(InverterMode.SELF_USE);
-                systemChangeToBackup = false;
+                log.info("No thunderstorm detected -> switching to SELF_USE.");
+                if (setModeSafe(InverterMode.SELF_USE)) {
+                    systemChangedToBackup.set(false);
+                }
                 return;
             }
 
-            log.info("No action needed, inverter is already in the correct state.");
+            log.info("No change needed.");
         };
     }
 
-    private void setMode(InverterMode mode) {
+    // ---- helpers ----
+
+    private boolean setModeSafe(InverterMode mode) {
         if (solaxService.changeMode(mode)) {
-            log.info(" - Inverter mode set to {} successfully", mode);
+            log.info(" - Inverter mode set to {} successfully.", mode);
+            return true;
         } else {
-            log.error(" - Failed to set inverter mode to {}", mode);
+            log.error(" - Failed to set inverter mode to {}.", mode);
+            return false;
         }
     }
 
-    public record FunctionData(InverterMode mode, List<MeteoDayHourly> hours, double avgQuality, double minQuality) {
+    private static void logSeparator(String title) {
+        log.info("==".repeat(40));
+        log.info(title);
+    }
+
+    /**
+     * Immutable context passed to decision functions.
+     */
+    public record Ctx(
+            InverterMode mode,
+            List<MeteoDayHourly> hours,
+            double avgQuality,
+            double minQuality,
+            int currentBattery,
+            int minBattery
+    ) {
     }
 }

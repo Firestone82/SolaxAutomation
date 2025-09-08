@@ -38,6 +38,13 @@ automation:
       max: 3950
       reduced: 2000
     minPrice: 0.5
+  battery:
+    enabled: true
+    times:
+      12: 40
+      14: 50
+      15: 70
+    weekIncrease: 10
   sell:
     enabled: true
     minPrice: 2.5

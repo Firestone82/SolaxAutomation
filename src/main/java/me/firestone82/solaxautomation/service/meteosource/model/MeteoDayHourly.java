@@ -8,6 +8,7 @@ import me.firestone82.solaxautomation.service.meteosource.model.type.Wind;
 import me.firestone82.solaxautomation.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 public class MeteoDayHourly {
@@ -30,5 +31,9 @@ public class MeteoDayHourly {
                 "Hour {}: Weather: {}, Cloud cover: {}%, Quality level: {}",
                 date.getHour(), weather.name(), cloud_cover.getTotal(), getQuality()
         );
+    }
+
+    public static double avgQuality(List<MeteoDayHourly> hours) {
+        return hours.stream().mapToDouble(MeteoDayHourly::getQuality).average().orElse(0.0);
     }
 }

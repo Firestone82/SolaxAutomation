@@ -4,6 +4,7 @@ import com.pi4j.io.gpio.digital.DigitalState;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.firestone82.solaxautomation.automation.properties.NegativeExportProperties;
 import me.firestone82.solaxautomation.service.meteosource.MeteoSourceService;
 import me.firestone82.solaxautomation.service.meteosource.model.MeteoDayHourly;
 import me.firestone82.solaxautomation.service.meteosource.model.WeatherForecast;
@@ -11,13 +12,11 @@ import me.firestone82.solaxautomation.service.ote.OTEService;
 import me.firestone82.solaxautomation.service.ote.model.PowerPriceHourly;
 import me.firestone82.solaxautomation.service.raspberry.RaspberryPiService;
 import me.firestone82.solaxautomation.service.solax.SolaxService;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
@@ -27,45 +26,32 @@ import java.util.Optional;
 @RequiredArgsConstructor
 @ConditionalOnProperty(value = "automation.export.enabled")
 public class NegativeExportChecker {
-
     private final SolaxService solaxService;
     private final OTEService oteService;
     private final RaspberryPiService raspberryPiService;
     private final MeteoSourceService meteoSourceService;
-
-    @Value("${automation.export.minPrice:0}")
-    private double MIN_EXPORT_PRICE; // 0 CZK/kWh
-
-    @Value("${automation.export.power.min:0}")
-    private int MIN_EXPORT_LIMIT;
-
-    @Value("${automation.export.power.max:3950}")
-    private int MAX_EXPORT_LIMIT;
-
-    @Value("${automation.export.power.reduced:2000}")
-    private int REDUCED_EXPORT_LIMIT;
+    private final NegativeExportProperties properties;
 
     @PostConstruct
     private void init() {
-        log.info(
-                "NegativeExportChecker initialized with min price: {}, min export limit: {}, max export limit: {}, reduced export limit: {}",
-                MIN_EXPORT_PRICE, MIN_EXPORT_LIMIT, MAX_EXPORT_LIMIT, REDUCED_EXPORT_LIMIT
-        );
+        log.info("NegativeExportChecker initialized | props={}", properties);
 
         raspberryPiService.getConnectionSwitch().addListener(event -> {
-            log.info("==".repeat(40));
-            log.info("Detected switch state changed to: {}, running check for negative export", event.state().name());
+            logSeparator("GPIO switch event");
 
-            if (raspberryPiService.getPreviousConnectionSwitchState() == event.state()) {
-                log.warn("State change to the same state, ignoring event");
+            DigitalState newState = event.state();
+            log.info("Detected switch state change to: {}", newState.name());
+
+            if (raspberryPiService.getPreviousConnectionSwitchState() == newState) {
+                log.warn("State change is identical to previous; ignoring.");
                 return;
             }
 
-            raspberryPiService.setPreviousConnectionSwitchState(event.state());
+            raspberryPiService.setPreviousConnectionSwitchState(newState);
+            int hour = LocalDateTime.now().getHour();
 
-            LocalDateTime now = LocalDateTime.now();
-            if (now.getHour() < 4 || now.getHour() > 20) {
-                log.warn("Detected night time, ignoring event");
+            if (hour < 4 || hour > 20) {
+                log.warn("Night-time (outside 04–20h); ignoring event.");
                 return;
             }
 
@@ -73,106 +59,109 @@ public class NegativeExportChecker {
         });
     }
 
+    /**
+     * Runs hourly at HH:04 between 04:00 and 20:59.
+     */
     @Scheduled(cron = "0 4 4-20 * * *")
     public void adjustExportLimitBasedOnPrice() {
-        log.info("==".repeat(40));
-        log.info("Running period negative export check to adjust export limit based on current price");
+        logSeparator("Periodic negative export check");
         runCheck();
     }
 
     /**
-     * Disable negative export if price for export is not worth selling. But ignore it,
-     * if switch is @{@link DigitalState#LOW} (not connected to grid).
+     * Disable negative export if export price is not worth selling, unless the physical switch is LOW (disconnected).
+     * If LOW between 12:00 and 15:00 and weather quality is low, apply reduced export limit.
      */
     private void runCheck() {
-        // Check connection state
-        DigitalState connectionState = raspberryPiService.getConnectionSwitch().state();
-        log.info(" - Connection switch state: {}", connectionState.name());
+        LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS);
+        int currentHour = now.getHour();
 
-        // Determine override window
-        int currentHour = LocalTime.now().getHour();
-        boolean isOverrideWindow = connectionState.isLow() && currentHour >= 12 && currentHour < 15;
+        LocalDateTime start = now.minusHours(1);
+        LocalDateTime end = now.plusHours(2);
 
-        // Fetch current price from OTE API
         Optional<PowerPriceHourly> optPrice = oteService.getCurrentHourPrices();
         if (optPrice.isEmpty()) {
-            log.warn("Could not retrieve price from OTE API, aborting check.");
+            log.warn("OTE price unavailable; aborting.");
             return;
         }
 
-        double currentPrice = optPrice.get().getPriceCZK() / 1000.0;
-        log.info(" - Current price: {} CZK/kWh", currentPrice);
-
-        // Fetch current limit for idempotency check
         Optional<Integer> optLimit = solaxService.getCurrentExportLimit();
         if (optLimit.isEmpty()) {
-            log.warn("Could not retrieve current export limit, aborting set.");
+            log.warn("Current export limit unavailable; aborting.");
             return;
         }
 
-        int newExportLimit;
-        int currentExportLimit = optLimit.get();
-        log.info(" - Current export limit: {} W", currentExportLimit);
-
-        // Fetch current weather forecast
         Optional<WeatherForecast> forecastOpt = meteoSourceService.getCurrentWeather();
         if (forecastOpt.isEmpty()) {
-            log.warn("Could not retrieve weather forecast, aborting check.");
+            log.warn("Weather forecast unavailable; aborting.");
             return;
         }
 
-        if (forecastOpt.get().getHourly().isEmpty()) {
-            log.warn("Weather forecast is empty, unable to show weather.");
+        WeatherForecast forecast = forecastOpt.get();
+        if (forecast.getHourly().isEmpty()) {
+            log.warn("Weather forecast has no hourly data; aborting.");
             return;
         }
 
-        LocalDateTime currentTime = LocalDateTime.now();
-        List<MeteoDayHourly> hours = forecastOpt.get().getHourlyBetween(
-                currentTime.truncatedTo(ChronoUnit.HOURS).minusHours(1),
-                currentTime.truncatedTo(ChronoUnit.HOURS).plusHours(2)
-        );
-        double avgQuality = hours.stream()
-                .mapToDouble(MeteoDayHourly::getQuality)
-                .average()
-                .orElse(0.0);
+        List<MeteoDayHourly> hours = forecast.getHourlyBetween(start, end);
+        if (hours == null || hours.isEmpty()) {
+            log.info("- No forecast hours in window {}–{}; aborting check.", start, end);
+            return;
+        }
 
-        log.info(" - Average weather quality in the next hour: {}", avgQuality);
+        DigitalState connectionState = raspberryPiService.getConnectionSwitch().state();
+        boolean isOverrideWindow = connectionState.isLow() && currentHour >= properties.getReducedWindow().getStartHour() && currentHour <= properties.getReducedWindow().getEndHour();
+        double currentPriceCZKPerKWh = optPrice.get().getPriceCZK() / 1000.0;
+        int currentExportLimitW = optLimit.get();
+        double avgQuality = MeteoDayHourly.avgQuality(hours);
 
-        // Decide new limit
-        if (currentPrice < MIN_EXPORT_PRICE) {
+        log.info("- Window: {}–{} ({}–{}h)", start, end, start.getHour(), end.getHour());
+        hours.forEach(h -> log.info("  | {}", h));
+        log.info(" - Connection switch: {}", connectionState.name());
+        log.info(" - Current price: {} CZK/kWh", currentPriceCZKPerKWh);
+        log.info(" - Current export limit: {} W", currentExportLimitW);
+        log.info(" - Avg weather quality (next ~hour): {}", avgQuality);
+
+        int newExportLimitW;
+
+        if (currentPriceCZKPerKWh < properties.getMinPrice()) {
             if (connectionState.isHigh()) {
                 // Price low & grid connected -> disable export
-                newExportLimit = MIN_EXPORT_LIMIT;
-                log.info("Price below threshold and state HIGH -> disabling export");
+                newExportLimitW = properties.getPower().getMin();
+                log.info("Price below threshold AND state HIGH -> disabling export.");
             } else {
                 // Price low & grid disconnected -> enable export
-                newExportLimit = MAX_EXPORT_LIMIT;
-                log.info("Price below threshold and state LOW -> enabling export");
+                newExportLimitW = properties.getPower().getMax();
+                log.info("Price below threshold AND state LOW -> enabling export.");
             }
         } else {
             // Price sufficient -> enable export
-            newExportLimit = MAX_EXPORT_LIMIT;
-            log.info("Price above threshold -> enabling export");
+            newExportLimitW = properties.getPower().getMax();
+            log.info("Price at/above threshold -> enabling export.");
         }
 
-        // Apply override reduction if in the window and enabling export
-        if (isOverrideWindow && newExportLimit > MIN_EXPORT_LIMIT && avgQuality <= 3.0) {
-            newExportLimit = REDUCED_EXPORT_LIMIT;
-            log.info("Between 12:00 and 15:00 with state LOW and quality {} -> reducing export by {}W to {}W", avgQuality, REDUCED_EXPORT_LIMIT, newExportLimit);
+        // Optional override reduction (hours + enabling export + low quality)
+        if (isOverrideWindow && newExportLimitW > properties.getPower().getMin() && avgQuality <= 3.0) {
+            log.info("Override hours (12–15, LOW) & quality {} -> reducing export to {} W.", avgQuality, properties.getPower().getReduced());
+            newExportLimitW = properties.getPower().getReduced();
         }
 
-        if (currentExportLimit != newExportLimit) {
-            setExport(newExportLimit);
+        // Apply new limit if changed
+        if (currentExportLimitW != newExportLimitW) {
+            if (solaxService.setExportLimit(newExportLimitW)) {
+                log.info(" - Export limit set to {} W successfully.", newExportLimitW);
+            } else {
+                log.error(" - Failed to set export limit to {} W.", newExportLimitW);
+            }
         } else {
-            log.info("No action needed, export limit is already set to {}W", currentExportLimit);
+            log.info("No change required; export limit already {} W.", currentExportLimitW);
         }
     }
 
-    private void setExport(int limit) {
-        if (solaxService.setExportLimit(limit)) {
-            log.info(" - Export limit set to {} successfully", limit);
-        } else {
-            log.error(" - Failed to set export limit to {}", limit);
-        }
+    // ---- helpers ----
+
+    private static void logSeparator(String title) {
+        log.info("==".repeat(40));
+        log.info(title);
     }
 }
