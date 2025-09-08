@@ -58,7 +58,7 @@ automation:
     threshold:
       cloudy: 5
       thunderstorm: 10
-    thunderstormHourForecast: 2
+    thunderstormHourWindow: 2
 
 # Logging configuration
 logging:

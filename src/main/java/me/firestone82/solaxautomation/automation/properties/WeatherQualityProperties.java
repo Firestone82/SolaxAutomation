@@ -15,7 +15,7 @@ public class WeatherQualityProperties {
 
     @Data
     public static class Threshold {
-        private int cloud = 5;
+        private int cloudy = 5;
         private int thunderstorm = 10;
     }
 }

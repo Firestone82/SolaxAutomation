@@ -42,13 +42,13 @@ public class WeatherQualityChecker {
 
         if (now.getHour() == 7) {
             logSeparator("Morning weather forecast check");
-            runCheck(now.withHour(9), now.withHour(14), properties.getThreshold().getCloud(), 10, weatherCheck());
+            runCheck(now.withHour(9), now.withHour(14), properties.getThreshold().getCloudy(), 10, weatherCheck());
             return;
         }
 
         if (now.getHour() == 11) {
             logSeparator("Noon weather forecast check");
-            runCheck(now.withHour(12), now.withHour(16), properties.getThreshold().getCloud() - 0.5, 50, weatherCheck());
+            runCheck(now.withHour(12), now.withHour(16), properties.getThreshold().getCloudy() - 0.5, 50, weatherCheck());
             return;
         }
 
