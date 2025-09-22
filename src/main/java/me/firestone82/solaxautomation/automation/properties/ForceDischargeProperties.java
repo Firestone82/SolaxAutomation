@@ -11,7 +11,8 @@ public class ForceDischargeProperties {
 
     private boolean enabled = false;
     private double minPrice = 2.5;
-    private int minBattery = 40;
+    private int targetBattery = 40;
+    private int minBattery = 80;
     private Window window;
     private String armCron = "0 0 16 * * *";
     private int earlyStartMinutes = 30;

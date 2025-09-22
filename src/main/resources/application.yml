@@ -51,7 +51,8 @@ automation:
   sell:
     enabled: true
     minPrice: 2.5
-    minBattery: 40
+    minBattery: 80
+    targetBattery: 40
     window:
       startHour: 18
       endHour: 22

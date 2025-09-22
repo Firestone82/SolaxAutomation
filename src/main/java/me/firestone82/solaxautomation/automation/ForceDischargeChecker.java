@@ -150,7 +150,7 @@ public class ForceDischargeChecker {
             log.info(" - Current battery level: {}%", batteryLevel);
 
             if (batteryLevel < properties.getMinBattery()) {
-                log.info("Battery {}% < {}%; not discharging.", batteryLevel, properties.getMinBattery());
+                log.info("Battery bellow min level. ({}% < {}%); not discharging.", batteryLevel, properties.getMinBattery());
                 return;
             }
 
@@ -175,7 +175,7 @@ public class ForceDischargeChecker {
 
     @Scheduled(cron = "0 */1 18-23 * * *")
     public void batteryGuard() {
-        logSeparator(StringUtils.parseArgs("Battery guard: ensuring level stays above {}%.", properties.getMinBattery()));
+        logSeparator(StringUtils.parseArgs("Battery guard: ensuring level stays above {}%.", properties.getTargetBattery()));
 
         Optional<Integer> batteryOpt = solaxService.getBatteryLevel();
         if (batteryOpt.isEmpty()) {
@@ -196,7 +196,7 @@ public class ForceDischargeChecker {
         log.info(" - Current battery level: {}%", battery);
 
         if (mode == InverterMode.MANUAL) {
-            if (battery < properties.getMinBattery()) {
+            if (battery < properties.getTargetBattery()) {
                 log.info("Battery low, switching to SELF_USE.");
                 setModeSafe(InverterMode.SELF_USE);
                 return;
