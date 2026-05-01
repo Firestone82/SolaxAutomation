@@ -54,7 +54,7 @@ public class WeatherQualityChecker {
 
         if (now.getHour() == 11) {
             logSeparator("Noon weather forecast check");
-            runCheck(now.withHour(12), now.withHour(16), properties.getThreshold().getCloudy() - 0.5, 40, weatherCheck());
+            runCheck(now.withHour(12), now.withHour(16), properties.getThreshold().getCloudy(), 40, weatherCheck());
             return;
         }
 
