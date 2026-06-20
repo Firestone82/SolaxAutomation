@@ -2,7 +2,7 @@
 
 Raspberry Pi automation for a Solax X3-Hybrid-G4 solar inverter — optimizes self-consumption using real-time weather forecasts and spot electricity prices.
 
-![Java](https://img.shields.io/badge/Java-17%2B-orange) ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-blue) ![Platform](https://img.shields.io/badge/Platform-Raspberry%20Pi%204B-red)
+![Java](https://img.shields.io/badge/Java-17%2B-orange) ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-blue) ![Platform](https://img.shields.io/badge/Raspberry%20Pi%204B-red)
 
 ## About
 
@@ -10,9 +10,11 @@ SolaxAutomation runs on a Raspberry Pi 4B and controls a Solax X3-Hybrid-G4 inve
 
 ## Features
 
-- Dynamic inverter control via Modbus TCP and GPIO
+- Dynamic inverter control via Modbus TCP
 - Weather-aware operation using Meteosource API forecasts
 - Price-driven scheduling via spotovaelektrina.cz spot prices
+- Battery charge/sell automation based on time-of-day and price thresholds
+- Configurable power export limits and reduced-output windows
 - Daily log rotation with compression
 
 ## Requirements
@@ -26,22 +28,39 @@ SolaxAutomation runs on a Raspberry Pi 4B and controls a Solax X3-Hybrid-G4 inve
 - Java 17+
 - Maven 3.x
 
-**API keys**
-- [Meteosource](https://www.meteosource.com/) account
-- Access to [spotovaelektrina.cz](https://www.spotovaelektrina.cz/)
+**API access**
+- [Meteosource](https://www.meteosource.com/) API key (free tier available)
+- [spotovaelektrina.cz](https://www.spotovaelektrina.cz/) (no key required)
 
 ## Setup
 
-```bash
-git clone https://github.com/Firestone82/SolaxAutomation.git
-cd SolaxAutomation
-cp src/main/resources/application.yml.example application.yml
-# Edit application.yml with your inverter address, API keys, and coordinates
-mvn clean package
-java -jar target/solax-automation-*.jar
-```
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/Firestone82/SolaxAutomation.git
+   cd SolaxAutomation
+   ```
 
-To run as a systemd service, copy the provided unit file and enable it with `systemctl enable solax-automation`.
+2. Copy the example config and fill in your inverter address, Meteosource API key, and location coordinates:
+   ```bash
+   cp src/main/resources/application.yml.example src/main/resources/application.yml
+   ```
+
+3. Build the project:
+   ```bash
+   mvn clean package -DskipTests
+   ```
+
+4. Run:
+   ```bash
+   java -jar target/solax-automation-*.jar
+   ```
+
+5. *(Optional)* Run as a systemd service for automatic start on boot:
+   ```bash
+   sudo cp solax-automation.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now solax-automation
+   ```
 
 ## License
 
