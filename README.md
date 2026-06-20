@@ -42,7 +42,7 @@ SolaxAutomation runs on a Raspberry Pi 4B and controls a Solax X3-Hybrid-G4 inve
 
 2. Copy the example config and fill in your inverter address, Meteosource API key, and location coordinates:
    ```bash
-   cp src/main/resources/application.yml.example src/main/resources/application.yml
+   cp src/main/resources/application.yml.example application.yml
    ```
 
 3. Build the project:
@@ -55,12 +55,33 @@ SolaxAutomation runs on a Raspberry Pi 4B and controls a Solax X3-Hybrid-G4 inve
    java -jar target/solax-automation-*.jar
    ```
 
-5. *(Optional)* Run as a systemd service for automatic start on boot:
+5. *(Optional)* Install as a systemd service for automatic startup:
+
+   Create `/etc/systemd/system/solax-automation.service`:
+   ```ini
+   [Unit]
+   Description=Solax Automation
+   After=network.target
+
+   [Service]
+   User=pi
+   ExecStart=/usr/bin/java -jar /home/pi/SolaxAutomation/target/solax-automation-*.jar
+   WorkingDirectory=/home/pi/SolaxAutomation
+   Restart=on-failure
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+   Then enable and start it:
    ```bash
-   sudo cp solax-automation.service /etc/systemd/system/
    sudo systemctl daemon-reload
    sudo systemctl enable --now solax-automation
    ```
+
+## Logs
+
+Logs are written to both console and the `logs/` directory. Log files rotate daily with automatic compression.
 
 ## License
 
