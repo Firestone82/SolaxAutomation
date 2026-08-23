@@ -1,7 +1,7 @@
 solax:
   modbus:
     # Modbus TCP connection
-    host: 192.168.0.31
+    host: 192.168.0.30
     port: 502
     # Time management required for modbus
     time:
