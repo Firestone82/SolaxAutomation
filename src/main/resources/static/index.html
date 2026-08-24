@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
+    <title>Solax Automation</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☀️</text></svg>">
+    <link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+
+<header class="topbar">
+    <div class="brand">
+        <span class="brand-mark" aria-hidden="true">◧</span>
+        <span class="brand-name">Solax Automation</span>
+    </div>
+
+    <nav class="tabs" role="tablist">
+        <button class="tab" data-page="overview" role="tab" data-i18n="nav.overview">Overview</button>
+        <button class="tab" data-page="modules" role="tab" data-i18n="nav.modules">Modules</button>
+    </nav>
+
+    <div class="topbar-actions">
+        <span id="connection" class="pill pill-muted" data-i18n="status.connecting">Connecting…</span>
+
+        <label class="visually-hidden" for="language" data-i18n="a11y.language">Language</label>
+        <select id="language" class="control">
+            <option value="en">English</option>
+            <option value="cs">Čeština</option>
+        </select>
+
+        <button id="theme-toggle" class="control icon-button" title="Theme" aria-label="Toggle theme">
+            <span id="theme-icon">◐</span>
+        </button>
+    </div>
+</header>
+
+<main>
+    <!-- ============================================================ OVERVIEW -->
+    <section id="page-overview" class="page">
+
+        <div class="grid grid-stats" id="stat-tiles"></div>
+
+        <div class="grid grid-two">
+            <article class="card">
+                <header class="card-head">
+                    <h2 data-i18n="prices.title">Spot price</h2>
+                    <div class="segmented" id="price-day-switch">
+                        <button class="segment is-active" data-day="today" data-i18n="prices.today">Today</button>
+                        <button class="segment" data-day="tomorrow" data-i18n="prices.tomorrow">Tomorrow</button>
+                    </div>
+                </header>
+                <p class="card-sub" id="price-summary"></p>
+                <div class="chart" id="price-chart"></div>
+                <ul class="legend">
+                    <li><i class="swatch swatch-low"></i><span data-i18n="prices.low">Low</span></li>
+                    <li><i class="swatch swatch-medium"></i><span data-i18n="prices.medium">Medium</span></li>
+                    <li><i class="swatch swatch-high"></i><span data-i18n="prices.high">High</span></li>
+                    <li><i class="swatch swatch-selling"></i><span data-i18n="prices.selling">Selling window</span></li>
+                </ul>
+            </article>
+
+            <article class="card">
+                <header class="card-head">
+                    <h2 data-i18n="weather.title">Weather quality</h2>
+                    <button type="button" id="weather-info-toggle" class="control icon-button"
+                            aria-expanded="false" aria-controls="weather-info"
+                            data-i18n-title="weather.howCalculated" title="How is this calculated?">i</button>
+                </header>
+                <p class="card-sub" data-i18n="weather.explain">
+                    Lower is sunnier. The automation compares this value against its thresholds.
+                </p>
+                <div class="chart" id="weather-chart"></div>
+                <ul class="legend" id="weather-legend"></ul>
+                <div class="formula" id="weather-info" hidden>
+                    <code id="weather-formula"></code>
+                    <p class="hint" data-i18n="weather.formulaHint">
+                        The weather type contributes its base level (0 for a clear sky, 3–5 for overcast or
+                        rain, 10+ for a thunderstorm) and the cloud cover adds up to 1 more.
+                    </p>
+                </div>
+            </article>
+        </div>
+
+        <div class="grid grid-selling">
+            <article class="card">
+                <header class="card-head">
+                    <h2 data-i18n="selling.title">Selling</h2>
+                    <span id="selling-badge" class="pill pill-muted"></span>
+                </header>
+
+                <div class="selling-hero" id="selling-hero"></div>
+
+                <dl class="facts" id="selling-facts"></dl>
+
+                <div class="button-row" id="selling-actions"></div>
+                <p class="form-message" id="arm-message" role="status"></p>
+            </article>
+
+            <!--
+                Manual overrides. Everything here talks to the inverter directly, without
+                going through a module, for the situations the automation cannot know
+                about - a car to charge tonight, a storm the forecast missed.
+            -->
+            <article class="card">
+                <header class="card-head">
+                    <h2 data-i18n="quick.title">Quick actions</h2>
+                    <span id="quick-mode" class="pill pill-muted"></span>
+                </header>
+
+                <section class="quick-group">
+                    <h3 class="quick-group-title" data-i18n="quick.workMode">Work mode</h3>
+                    <p class="quick-hint" data-i18n="quick.workModeHint">
+                        Persistent. It survives a restart, and a module may move it again at its next run.
+                    </p>
+                    <div class="button-row" id="quick-modes"></div>
+                </section>
+
+                <section class="quick-group">
+                    <h3 class="quick-group-title" data-i18n="quick.remoteControl">Remote control</h3>
+                    <p class="quick-hint" data-i18n="quick.remoteControlHint">
+                        Runs for a set time and hands the inverter back on its own, even if this
+                        application stops. The work mode is left alone.
+                    </p>
+                    <div class="field-row quick-duration-row">
+                        <label class="field field-narrow">
+                            <span data-i18n="quick.duration">For</span>
+                            <select id="quick-duration" class="control">
+                                <option value="30">30 min</option>
+                                <option value="60" selected>1 h</option>
+                                <option value="120">2 h</option>
+                                <option value="180">3 h</option>
+                                <option value="240">4 h</option>
+                            </select>
+                        </label>
+                        <label class="field field-narrow">
+                            <span data-i18n="quick.power">Power (W)</span>
+                            <input type="number" id="quick-watts" class="control" min="100" step="50" value="3000">
+                        </label>
+                        <label class="field field-narrow">
+                            <span data-i18n="quick.targetSoc">To SOC (%)</span>
+                            <input type="number" id="quick-target-soc" class="control"
+                                   min="1" max="100" step="5" placeholder="—">
+                        </label>
+                    </div>
+                    <p class="quick-hint" id="quick-charge-preview"></p>
+                    <div class="button-row" id="quick-actions"></div>
+                </section>
+
+                <p class="quick-note" id="quick-note"></p>
+                <p class="form-message" id="quick-message" role="status"></p>
+            </article>
+        </div>
+
+        <article class="card">
+            <header class="card-head">
+                <h2 data-i18n="timeline.title">Planned actions</h2>
+                <span class="card-hint" data-i18n="timeline.hint">Next 24 hours</span>
+            </header>
+            <div class="chart" id="timeline-chart"></div>
+            <ol class="timeline-list" id="timeline-planned"></ol>
+            <div class="pager" id="timeline-planned-pager" hidden></div>
+        </article>
+
+        <article class="card">
+            <header class="card-head">
+                <h2 data-i18n="history.title">Recent activity</h2>
+            </header>
+            <ol class="timeline-list" id="timeline-history"></ol>
+            <div class="pager" id="timeline-history-pager" hidden></div>
+        </article>
+    </section>
+
+    <!-- ============================================================ MODULES -->
+    <section id="page-modules" class="page" hidden>
+        <p class="page-intro" data-i18n="modules.intro">
+            Every automation is an independent module. Switch one off here to stop it acting until the
+            application restarts; change its configuration section to make that permanent.
+        </p>
+        <div class="grid grid-modules" id="module-grid"></div>
+    </section>
+</main>
+
+<!--
+    Arming dialog. A native <dialog> rather than a hand-rolled overlay: it brings the
+    backdrop, focus trap and Escape-to-close with it.
+-->
+<dialog id="arm-dialog" class="modal">
+    <form method="dialog" id="arm-form">
+        <header class="modal-head">
+            <h2 id="arm-dialog-title" data-i18n="selling.armTitle">Arm a selling window</h2>
+            <button type="button" class="control icon-button" id="arm-close" aria-label="Close">×</button>
+        </header>
+
+        <div class="modal-body">
+            <div class="segmented modal-modes" id="arm-mode">
+                <button type="button" class="segment is-active" data-mode="window"
+                        data-i18n="selling.modeWindow">Between times</button>
+                <button type="button" class="segment" data-mode="now"
+                        data-i18n="selling.modeNow">Start now</button>
+            </div>
+
+            <div class="field-row" data-mode-panel="window">
+                <label class="field">
+                    <span data-i18n="selling.from">From</span>
+                    <input type="datetime-local" id="arm-from" class="control">
+                </label>
+                <label class="field">
+                    <span data-i18n="selling.to">To</span>
+                    <input type="datetime-local" id="arm-to" class="control">
+                </label>
+            </div>
+
+            <div class="field-row" data-mode-panel="now" hidden>
+                <label class="field">
+                    <span data-i18n="selling.duration">Sell for</span>
+                    <select id="arm-duration" class="control">
+                        <option value="30">30 min</option>
+                        <option value="45">45 min</option>
+                        <option value="60" selected>1 h</option>
+                        <option value="90">1 h 30 min</option>
+                        <option value="120">2 h</option>
+                        <option value="180">3 h</option>
+                        <option value="240">4 h</option>
+                    </select>
+                </label>
+            </div>
+
+            <div class="field-row">
+                <label class="field field-narrow">
+                    <span data-i18n="selling.power">Power (W)</span>
+                    <input type="number" id="arm-watts" class="control" min="100" step="50">
+                </label>
+            </div>
+
+            <p class="modal-hint" id="arm-preview"></p>
+            <p class="form-message" id="arm-dialog-message" role="status"></p>
+        </div>
+
+        <footer class="modal-foot">
+            <button type="button" class="button" id="arm-cancel" data-i18n="common.cancel">Cancel</button>
+            <button type="submit" class="button button-primary" id="arm-submit" data-i18n="selling.arm">Arm window</button>
+        </footer>
+    </form>
+</dialog>
+
+<footer class="footer">
+    <span data-i18n="footer.updated">Updated</span>
+    <span id="last-updated">—</span>
+</footer>
+
+<script src="assets/i18n.js"></script>
+<script src="assets/api.js"></script>
+<script src="assets/charts.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>

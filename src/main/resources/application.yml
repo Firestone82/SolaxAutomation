@@ -1,69 +1,342 @@
+# =============================================================================
+#  Solax Automation
+#
+#  Every automation is an independent module with its own section under
+#  `automation:`. Each one can be switched off with its `enabled` flag without
+#  touching the others, and everything a module decides on is configurable here
+#  - no code change should ever be needed to retune the installation.
+#
+#  Secrets (API keys, cloud credentials) are better supplied as environment
+#  variables than written into this file; every value below can be overridden
+#  with the matching SPRING_APPLICATION_JSON entry or a SOLAX_CLOUD_CLIENT_ID
+#  style variable.
+# =============================================================================
+
+server:
+  # Port the dashboard listens on.
+  port: 8080
+
+spring:
+  # Several modules schedule work at the same minute; one thread would serialise them.
+  task:
+    scheduling:
+      pool:
+        size: 4
+  jackson:
+    # ISO-8601 strings rather than epoch arrays, which is what the dashboard parses.
+    serialization:
+      write-dates-as-timestamps: false
+  mvc:
+    converters:
+      # Gson is on the classpath for the Retrofit clients; the web layer uses Jackson.
+      preferred-json-mapper: jackson
+
+# GPIO input reporting which supply the house is connected to.
+raspberry:
+  enabled: true
+  # BCM 17 is physical pin 11.
+  connection-switch-pin: 17
+  debounce: 500ms
+
+# -----------------------------------------------------------------------------
+#  Inverter
+# -----------------------------------------------------------------------------
 solax:
+
+  # Which transport carries which kind of operation. See SolaxControlProperties
+  # for why work mode goes over Modbus and selling over the cloud.
+  control:
+    # AUTO   - authoritative values (battery, work mode, export limit) from Modbus,
+    #          everything else from the cloud
+    # MODBUS - Modbus only; the dashboard then shows fewer values
+    # CLOUD  - cloud only; the work mode is inferred from the device status
+    read-source: AUTO
+
+    # Persistent work mode changes. Keep on MODBUS - a cloud command is queued
+    # and can take a minute to reach the inverter.
+    work-mode-source: MODBUS
+
+    # The cloud export limit endpoint only supports NEO and EMS1000+AELIO,
+    # so a hybrid inverter has to use MODBUS.
+    export-limit-source: MODBUS
+
+    # How long one combined reading is reused. The dashboard polls far more
+    # often than the inverter changes.
+    snapshot-cache: 30s
+
+    # The cloud work mode endpoints require SOC bounds; these are sent with them.
+    # Ignored entirely while work-mode-source is MODBUS.
+    cloud-work-mode:
+      min-soc: 10
+      charge-upper-soc: 100
+
+  # Local Modbus TCP link. Authoritative, instant, but every write wears the
+  # inverter's flash - hence the write budget.
   modbus:
-    # Modbus TCP connection
+    enabled: true
     host: 192.168.0.30
     port: 502
-    # Time management required for modbus
-    time:
-      # Delay between two requests
-      delay: 1000
-  # ID of the inverter in modbus, can differ if you have multiple inverters
-  unitId: 1
-  # Advanced password for the inverter
-  password: 2014
+    # Only matters when several inverters share one RS485 gateway.
+    unit-id: 1
+    # Advanced password used to unlock the inverter for writes; factory default is 2014.
+    password: 2014
+    # The inverter drops requests that arrive faster than this.
+    request-delay: 1000ms
+    # The inverter closes idle connections on its own, usually within a minute, and not
+    # always cleanly enough for the client to notice. Recycling below that means the
+    # connection is re-opened deliberately instead of dying mid-request.
+    idle-timeout: 30s
+    # Stop the application when the inverter cannot be reached at start-up.
+    # Set to false to keep the dashboard reachable with the inverter offline.
+    fail-fast: true
+    # Safety limits; exceeding either shuts the application down rather than
+    # letting a bug hammer the hardware.
+    max-consecutive-failures: 5
+    max-writes-per-window: 10
+    write-window: 12h
 
-# API for electricity prices provided to grid
-# - Documentation: https://spotovaelektrina.cz/api
+  # SolaX Cloud OpenAPI. Free to call, and the only transport that can drive
+  # remote control - which is how this application sells to the grid.
+  # Credentials come from an application in https://developer.solaxcloud.com
+  cloud:
+    enabled: false
+    # "My Account" in the developer portal shows the URL for your account.
+    base-url: https://openapi-eu.solaxcloud.com
+    client-id: ""
+    client-secret: ""
+    # Optional; enables plant level daily totals on the dashboard.
+    plant-id: ""
+    # Serial number of the inverter that is controlled.
+    inverter-sn: ""
+    # Leave empty to look the battery up through the inverter serial number.
+    battery-sn: ""
+    # 1 = residential, 4 = commercial and industrial
+    business-type: 1
+    # The cloud only refreshes every few minutes and the API is rate limited.
+    cache-ttl: 60s
+    timeout: 20s
+    token-refresh-margin: 6h
+    # Follows every "exit remote control" with the documented exit transition: one second
+    # at 0 W with nextMotion 160. The cloud reports exit_vpp_mode successful as soon as it
+    # has queued it, and some inverters stay in their remote-control running state -
+    # "Normal Mode(R-n)" in the SolaX app - until that transition actually runs. One second
+    # at 0 W changes nothing about the battery. Turn off if your inverter leaves remote
+    # control on exit_vpp_mode alone.
+    exit-with-push-power: true
+    # Logs full cloud request/response bodies at DEBUG. Only for troubleshooting.
+    log-requests: false
+
+# -----------------------------------------------------------------------------
+#  Electricity prices - https://spotovaelektrina.cz/api
+#  The market settles in 15 minute intervals, so the quarter-hour endpoint is
+#  used throughout (the hourly one is deprecated).
+# -----------------------------------------------------------------------------
 ote:
-  baseUrl: "https://spotovaelektrina.cz"
+  base-url: https://spotovaelektrina.cz
+  # Prices never change once published; this mainly controls how quickly
+  # tomorrow's prices are picked up after the afternoon auction.
+  cache-ttl: 15m
+  timeout: 15s
 
-# API for weather data
-# - Documentation: https://www.meteosource.com/documentation
+# -----------------------------------------------------------------------------
+#  Weather forecast - https://www.meteosource.com/documentation
+# -----------------------------------------------------------------------------
 meteosource:
-  api:
-    url: "https://www.meteosource.com/api/"
-    key: "YOUR_API_KEY"
-  # Location for weather data. Lat and lon is always better. How to find is described in the documentation
+  url: https://www.meteosource.com/api/
+  key: "YOUR_API_KEY"
   location:
-    placeId: "prague"
-    # Coordinates for the location
+    # Coordinates are more precise and are used whenever both are set.
     lat: 50.0755
     lon: 14.4378
+    # Fallback when no coordinates are given.
+    place-id: prague
+  cache-ttl: 15m
+  timeout: 15s
 
+# -----------------------------------------------------------------------------
+#  Dashboard
+# -----------------------------------------------------------------------------
+dashboard:
+  enabled: true
+  # Opening language when the browser has no stored preference: en or cs
+  default-language: cs
+  # light, dark or system
+  default-theme: system
+  # How often the browser re-fetches. A minute matches how fast the values move:
+  # the cloud refreshes every few minutes and prices change every quarter hour.
+  refresh-seconds: 60
+  # Allows arming/cancelling selling and toggling modules from the browser.
+  # Turn off if the dashboard is reachable from outside the local network -
+  # the application has no authentication of its own.
+  allow-control: true
+  currency: CZK
+  # Modules kept out of the combined "Planned actions" list on the overview page.
+  # The export limit is re-checked every quarter of an hour and the weather work mode
+  # every hour, nearly always with the same outcome, so listing every firing buries the
+  # entries that actually say something. Each module's own widget still shows them all.
+  # Empty the list to see everything.
+  quiet-modules:
+    - export
+    - weather
+
+# -----------------------------------------------------------------------------
+#  Activity history shown on the dashboard
+# -----------------------------------------------------------------------------
+timeline:
+  # Carry the most recent entries across restarts. The rolling log files remain
+  # the durable record; this is only so the dashboard is not blank after a restart.
+  persist: true
+  file: data/timeline.json
+  # How many entries survive a restart. The dashboard shows more while running.
+  persisted-events: 30
+  # How many are held in memory for the current run.
+  memory-events: 100
+
+# =============================================================================
+#  Automation modules
+# =============================================================================
 automation:
-  export:
-    enabled: true
-    power:
-      min: 100
-      max: 3950
-      reduced: 2000
-    reduced-window:
-      start-hour: 12
-      end-hour: 14
-    minPrice: 0.5
+
+  # ---------------------------------------------------------------------------
+  #  Battery charge guard
+  #  Checks the battery against charge targets during the day and stops feeding
+  #  the grid when it is behind schedule. Only ever moves away from feed-in
+  #  priority - going back is the weather module's decision.
+  # ---------------------------------------------------------------------------
   battery:
     enabled: true
-    times:
-      12: 40
-      14: 50
-      15: 70
-    weekIncrease: 10
-  sell:
+    # Hour of day -> state of charge the battery should have reached by then.
+    thresholds:
+      13: 50
+      14: 70
+      15: 90
+    # Added to every target at weekends, when consumption is higher.
+    weekend-increase: 10
+    # Minute of the hour the check runs at; kept apart from the other modules.
+    check-minute: 5
+
+  # ---------------------------------------------------------------------------
+  #  Export limit
+  #  Closes the export limit while the spot price is too low to be worth
+  #  selling, and throttles it around midday on dull days.
+  # ---------------------------------------------------------------------------
+  export:
     enabled: true
-    minPrice: 2.5
-    minBattery: 80
-    targetBattery: 40
-    window:
-      startHour: 18
-      endHour: 22
-    armCron: 0 0 16 * * *
+    # Below this price exporting is not worth it (and may cost money).
+    min-price: 0.5
+    active-hours:
+      from: 4
+      to: 20
+    power:
+      # "Do not export" - not zero, so the meter stays stable.
+      minimum: 20
+      # Full export - what this installation is allowed to put on the grid.
+      maximum: 3950
+      # Used during the midday reduction window. Equal to maximum here, which
+      # turns the reduction into a no-op; lower it to hold production back for
+      # the battery on dull middays.
+      reduced: 3950
+    reduced-window:
+      enabled: true
+      from: 12
+      to: 14
+      # Reduce only while the forecast quality is at or below this (lower is sunnier).
+      max-weather-quality: 3.0
+    # How often the export limit is checked. The price is in 15 minute intervals, so
+    # the check is run every quarter hour.
+    check-cron: "0 */15 * * * *"
+
+  # ---------------------------------------------------------------------------
+  #  Weather work mode
+  #  Switches between feed-in priority and self use based on how sunny the
+  #  coming hours look, and moves to backup ahead of a thunderstorm.
+  #  Quality scale: 0 clear sky, 3-5 overcast or rain, 10+ thunderstorm.
+  # ---------------------------------------------------------------------------
   weather:
     enabled: true
-    threshold:
-      cloudy: 5
-      thunderstorm: 10
-    thunderstormHourWindow: 2
+    check-minute: 2
+    # At or below this the coming hours count as sunny -> feed-in priority pays off.
+    # Quality is the weather type level plus cloud cover / 100, so 2.2 is roughly
+    # "mostly clear": anything duller keeps production in the battery.
+    cloudy-threshold: 2.2
+    # Above this a thunderstorm is likely -> hold the battery as an outage reserve.
+    storm-threshold: 10.0
+    storm-look-ahead-hours: 2
+    # How far below the storm threshold the next hour has to fall before backup
+    # mode is left again; without it the mode flaps while a front passes over.
+    storm-clear-hysteresis: 1.5
+    # Scheduled looks at the forecast. Later checks look further ahead and want a
+    # fuller battery, because there is less of the day left to recover a wrong call.
+    forecast-checks:
+      - at: 7
+        from: 9
+        to: 12
+        min-battery: 10
+      - at: 9
+        from: 10
+        to: 14
+        min-battery: 20
+      - at: 11
+        from: 12
+        to: 16
+        min-battery: 40
 
-# Logging configuration
+  # ---------------------------------------------------------------------------
+  #  Grid selling
+  #  Finds the most valuable quarter-hour window of the day and discharges the
+  #  battery into it through a remote control session, which expires on its own
+  #  and therefore never leaves the inverter stuck in a discharge mode.
+  #  Requires solax.cloud to be configured.
+  # ---------------------------------------------------------------------------
+  discharge:
+    enabled: true
+    # Evaluated after the day-ahead auction publishes (around 14:00).
+    arm-cron: "0 0 15 * * *"
+    search-from: "15:00"
+    search-to: "23:45"
+    # Do not sell at all unless the peak reaches this price. Below it the battery is
+    # worth more kept for the evening's own consumption than sold.
+    min-price: 8.0
+    # How far below the peak an interval may be and still be sold into. This is
+    # what makes the module sell across a broad evening plateau instead of a
+    # single 15 minute spike. Raise it to sell longer at slightly lower prices.
+    price-tolerance: 1.0
+    # Never arm shorter than 2 intervals (30 min) or longer than 8 (2 h).
+    min-slots: 2
+    max-slots: 8
+    # Battery bounds.
+    # min-battery is checked when the window OPENS, not when it is planned: planning
+    # runs in the afternoon with the battery still charging, so a window is always
+    # armed on price and simply dropped at its start if the battery did not get there.
+    min-battery: 50
+    # Charge assumed for working out how long the window may be. The level at planning
+    # time is used instead whenever it is already higher. Set to 0 to always size on
+    # the current level - the window will then usually be too short to use the peak.
+    expected-battery: 90
+    target-battery: 40
+    battery-capacity: 11.6
+    # Must not exceed what the installation may actually export - normally the same
+    # ceiling as automation.export.power.maximum. Too high and the planner assumes more
+    # energy per interval than the inverter can deliver, arming too short a window.
+    discharge-power: 3950
+    efficiency: 0.92
+    # How often the battery is checked while a discharge runs.
+    guard-interval: 5m
+    # Falls back to the persistent MANUAL work mode when remote control is
+    # unavailable. Off by default: a crash mid-sale would then leave the
+    # inverter discharging until someone notices.
+    fallback-to-manual-mode: false
+    mode-after-fallback: SELF_USE
+
+# -----------------------------------------------------------------------------
+#  Logging
+#  Appenders are in log4j2.xml. Despite the name that file is logback configuration
+#  and always has been - logback is the backend Spring Boot brings in by default.
+# -----------------------------------------------------------------------------
 logging:
   config: classpath:log4j2.xml
+  level:
+    root: INFO
+    me.firestone82.solaxautomation: INFO
+    # Set to DEBUG to see every Modbus register access and cloud call.
+    me.firestone82.solaxautomation.integration: INFO
