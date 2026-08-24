@@ -13,7 +13,6 @@
 # =============================================================================
 
 server:
-  # Port the dashboard listens on.
   port: 8080
 
 spring:
@@ -106,7 +105,6 @@ solax:
     client-secret: ""
     # Optional; enables plant level daily totals on the dashboard.
     plant-id: ""
-    # Serial number of the inverter that is controlled.
     inverter-sn: ""
     # Leave empty to look the battery up through the inverter serial number.
     battery-sn: ""
@@ -170,14 +168,6 @@ dashboard:
   # the application has no authentication of its own.
   allow-control: true
   currency: CZK
-  # Modules kept out of the combined "Planned actions" list on the overview page.
-  # The export limit is re-checked every quarter of an hour and the weather work mode
-  # every hour, nearly always with the same outcome, so listing every firing buries the
-  # entries that actually say something. Each module's own widget still shows them all.
-  # Empty the list to see everything.
-  quiet-modules:
-    - export
-    - weather
 
 # -----------------------------------------------------------------------------
 #  Activity history shown on the dashboard
@@ -230,7 +220,8 @@ automation:
     power:
       # "Do not export" - not zero, so the meter stays stable.
       minimum: 20
-      # Full export - what this installation is allowed to put on the grid.
+      # Full export - what this installation is allowed to put on the grid. Also the
+      # power the discharge module sells at; a sale can never leave more than this.
       maximum: 3950
       # Used during the midday reduction window. Equal to maximum here, which
       # turns the reduction into a no-op; lower it to hold production back for
@@ -304,21 +295,17 @@ automation:
     # Never arm shorter than 2 intervals (30 min) or longer than 8 (2 h).
     min-slots: 2
     max-slots: 8
-    # Battery bounds.
-    # min-battery is checked when the window OPENS, not when it is planned: planning
-    # runs in the afternoon with the battery still charging, so a window is always
-    # armed on price and simply dropped at its start if the battery did not get there.
+    # State of charge the sale requires. Used twice: it sizes how long the window is
+    # planned for (the level at planning time is used instead whenever it is already
+    # higher), and it is checked again when the window opens - planning runs in the
+    # afternoon with the battery still charging, so a window is always armed on price
+    # and simply dropped at its start if the battery did not get there.
     min-battery: 50
-    # Charge assumed for working out how long the window may be. The level at planning
-    # time is used instead whenever it is already higher. Set to 0 to always size on
-    # the current level - the window will then usually be too short to use the peak.
-    expected-battery: 90
+    # Reserve left for the night; the discharge stops here.
     target-battery: 40
     battery-capacity: 11.6
-    # Must not exceed what the installation may actually export - normally the same
-    # ceiling as automation.export.power.maximum. Too high and the planner assumes more
-    # energy per interval than the inverter can deliver, arming too short a window.
-    discharge-power: 3950
+    # Round-trip conversion loss applied when sizing the window, so the plan does not
+    # promise more energy than the inverter actually delivers.
     efficiency: 0.92
     # How often the battery is checked while a discharge runs.
     guard-interval: 5m

@@ -19,7 +19,7 @@ import me.firestone82.solaxautomation.integration.solax.cloud.model.DeviceStatus
 import me.firestone82.solaxautomation.integration.solax.model.InverterSnapshot;
 import me.firestone82.solaxautomation.module.discharge.ArmedWindow;
 import me.firestone82.solaxautomation.module.discharge.DischargeModule;
-import me.firestone82.solaxautomation.module.discharge.DischargeProperties;
+import me.firestone82.solaxautomation.module.export.ExportProperties;
 import me.firestone82.solaxautomation.module.weather.WeatherProperties;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
@@ -45,15 +45,25 @@ import java.util.Locale;
 @RequiredArgsConstructor
 public class DashboardService {
 
+    /**
+     * Modules left out of the combined "Planned actions" list on the overview page.
+     * <p>
+     * Both run on a fixed schedule and almost always decide the same thing - the export limit
+     * is re-checked every quarter of an hour, the weather work mode every hour - so listing
+     * every firing would bury the handful of entries that actually say something, like
+     * tonight's selling window. Their own widget on the modules page still shows the full
+     * schedule; only this shared list is filtered.
+     */
+    private static final List<String> QUIET_MODULES = List.of("export", "weather");
+
     private final ModuleRegistry moduleRegistry;
     private final TimelineService timeline;
     private final InverterGateway inverter;
     private final OteService oteService;
     private final MeteoSourceService weatherService;
     private final WeatherProperties weatherProperties;
-    private final DashboardProperties dashboardProperties;
     private final RaspberryPiService raspberryPi;
-    private final DischargeProperties dischargeProperties;
+    private final ExportProperties exportProperties;
     private final ObjectProvider<DischargeModule> dischargeModule;
 
     // ------------------------------------------------------------------ overview
@@ -183,13 +193,8 @@ public class DashboardService {
     // ------------------------------------------------------------------ timeline
 
     public Timeline getTimeline() {
-        // The quiet modules fire on a fixed schedule and nearly always decide the same
-        // thing, so their entries would bury the ones worth reading here. Their own
-        // widget still lists them in full.
-        List<String> quiet = dashboardProperties.getQuietModules();
-
         List<PlannedEntry> planned = moduleRegistry.getPlannedActions().stream()
-                .filter(action -> !quiet.contains(action.moduleId()))
+                .filter(action -> !QUIET_MODULES.contains(action.moduleId()))
                 .map(DashboardService::toPlannedEntry)
                 .toList();
 
@@ -244,7 +249,7 @@ public class DashboardService {
             return new SellingState(false, false, false, false, null, null, null, null,
                     "The selling module is not loaded", "plan.notLoaded", Map.of(),
                     inverter.isRemoteControlAvailable(), null,
-                    dischargeProperties.getDischargePower(), List.of());
+                    exportProperties.getPower().getMaximum(), List.of());
         }
 
         DischargeModule module = moduleOpt.get();
@@ -271,7 +276,7 @@ public class DashboardService {
                 module.getLastPlan().reasonParams(),
                 inverter.isRemoteControlAvailable(),
                 module.nextPlanningTime().orElse(null),
-                dischargeProperties.getDischargePower(),
+                exportProperties.getPower().getMaximum(),
                 window
         );
     }

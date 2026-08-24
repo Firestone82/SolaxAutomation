@@ -107,12 +107,13 @@ Trh se vypořádává po **15 minutách**, den má tedy 96 cen. Plánovač postu
 
 **Plánovač se na baterii nedívá.** Běží v 15:00, tedy hodiny před večerní špičkou a ještě za
 slunce — nabití změřené v tu chvíli neříká nic o nabití v 19:00. Okno se proto plánuje jen podle
-ceny a délku určuje `(očekávané nabití − 40 % rezerva) × 11,6 kWh × 0,92 ÷ 3 950 W`, nejvýše
-4 hodiny. `expected-battery` je 100 % — nabití, kterého baterie podle očekávání do začátku okna
-dosáhne; když už je vyšší, počítá se to skutečné. Nadhodnotit ho je bezpečné, hlídač prodej stejně
-ukončí na rezervě; podhodnotit ne, okno by bylo příliš krátké na využití špičky.
+ceny a délku určuje `(min-battery − 40 % rezerva) × 11,6 kWh × 0,92 ÷ 3 950 W`, nejvýše 4 hodiny.
+`min-battery` je 50 % — nabití, které prodej stejně vyžaduje; když už je baterie výš, počítá se
+to skutečné. Nadhodnotit se nedá, protože stejná hodnota je i práh pro zahájení; podhodnotit ne,
+okno by bylo příliš krátké na využití špičky.
 
-Jestli se prodej vůbec vyplatí zahájit, se rozhoduje **až při otevření okna**:
+Jestli se prodej vůbec vyplatí zahájit, se rozhoduje **znovu při otevření okna**, proti té samé
+hodnotě:
 
 > **POKUD** je při startu baterie **< 50 %** (`min-battery`)
 > **PROVEĎ:** okno zahoď a napiš do logu proč.
@@ -120,8 +121,8 @@ Jestli se prodej vůbec vyplatí zahájit, se rozhoduje **až při otevření ok
 Okno naplánované ručně z nástěnky tuhle hranici ignoruje — je to rozhodnutí člověka —, rezervu
 ale nikdy.
 
-Vybíjecí výkon nesmí přesáhnout to, co smí instalace opravdu dodat do sítě — tedy stejný strop
-jako `automation.export.power.maximum`.
+Vybíjecí výkon se nekonfiguruje zvlášť — je to `automation.export.power.maximum`, protože prodej
+nemůže z instalace odejít rychleji, než kolik smí ven do sítě.
 
 Prodej se provádí **dálkovým řízením**, ne změnou režimu střídače: relace má vlastní dobu trvání a
 střídač se po ní sám vrátí do svého režimu — i kdyby tahle aplikace mezitím spadla. Hlídač kontroluje

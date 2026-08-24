@@ -1,6 +1,7 @@
 package me.firestone82.solaxautomation.module.discharge;
 
 import me.firestone82.solaxautomation.integration.ote.model.PriceSlot;
+import me.firestone82.solaxautomation.module.export.ExportProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class DischargeWindowPlannerTest {
 
     private DischargeProperties properties;
+    private ExportProperties exportProperties;
     private DischargeWindowPlanner planner;
 
     @BeforeEach
@@ -29,16 +31,17 @@ class DischargeWindowPlannerTest {
         properties.setPriceTolerance(1.0);
         properties.setMinSlots(2);
         properties.setMaxSlots(16);
-        properties.setMinBattery(80);
         properties.setTargetBattery(40);
         // Each test states the charge it wants sized on; 0 turns off the production
-        // assumption that the battery will have finished charging by the window.
-        properties.setExpectedBattery(0);
+        // assumption that the battery will have reached min-battery by the window.
+        properties.setMinBattery(0);
         properties.setBatteryCapacity(10.0);
-        properties.setDischargePower(4000);
         properties.setEfficiency(1.0);
 
-        planner = new DischargeWindowPlanner(properties);
+        exportProperties = new ExportProperties();
+        exportProperties.getPower().setMaximum(4000);
+
+        planner = new DischargeWindowPlanner(properties, exportProperties);
     }
 
     /** Builds consecutive quarter-hour slots starting at {@code start}. */
@@ -144,18 +147,18 @@ class DischargeWindowPlannerTest {
     }
 
     @Test
-    @DisplayName("sizes the window from the charge the battery is expected to reach")
+    @DisplayName("sizes the window from min-battery when it is not yet reached")
     void sizesTheWindowFromTheExpectedCharge() {
         // 3 kWh at 4 kW is 3 intervals; 8 kWh is 8, more than the plateau holds.
         List<PriceSlot> prices = slots(LocalTime.of(18, 0), 4.0, 4.1, 4.2, 4.1, 4.0, 4.1);
 
-        properties.setExpectedBattery(0);
+        properties.setMinBattery(0);
         assertEquals(3, planner.plan(prices, 70, LocalTime.of(0, 0)).window().getSlotCount(),
                 "sized on the 70 % read at planning time");
 
-        properties.setExpectedBattery(100);
+        properties.setMinBattery(100);
         assertEquals(6, planner.plan(prices, 70, LocalTime.of(0, 0)).window().getSlotCount(),
-                "sized on the charge the afternoon is expected to add");
+                "sized on the charge the sale requires anyway");
     }
 
     @Test
@@ -163,8 +166,8 @@ class DischargeWindowPlannerTest {
     void expectedChargeIsOnlyAFloor() {
         List<PriceSlot> prices = slots(LocalTime.of(18, 0), 4.0, 4.1, 4.2, 4.1, 4.0, 4.1);
 
-        // Expecting less than the battery already holds must not shorten the window.
-        properties.setExpectedBattery(50);
+        // A min-battery below what the battery already holds must not shorten the window.
+        properties.setMinBattery(50);
         DischargePlan plan = planner.plan(prices, 100, LocalTime.of(0, 0));
 
         assertEquals(6, plan.window().getSlotCount(), plan.reason());
@@ -174,7 +177,7 @@ class DischargeWindowPlannerTest {
     @DisplayName("does not arm when the usable energy covers fewer slots than the minimum")
     void rejectsTooLittleEnergy() {
         properties.setTargetBattery(79);
-        properties.setExpectedBattery(81);
+        properties.setMinBattery(81);
         List<PriceSlot> prices = slots(LocalTime.of(18, 0), 4.0, 4.1, 4.2, 4.0);
 
         // 81 % - 79 % of 10 kWh = 0.2 kWh, which is not even one 1 kWh slot.
@@ -252,12 +255,12 @@ class DischargeWindowPlannerTest {
                 5.60, 5.90, 6.04, 6.09, 5.75, 5.30);
 
         // 3950 W is what this inverter may actually export: 0.9875 kWh per interval.
-        properties.setDischargePower(3950);
+        exportProperties.getPower().setMaximum(3950);
         DischargePlan atExportLimit = planner.plan(prices, 86, LocalTime.of(0, 0));
 
-        // Assuming 5000 W would promise 1.25 kWh per interval the inverter cannot deliver,
-        // and would therefore arm a shorter window than the battery can actually sustain.
-        properties.setDischargePower(5000);
+        // A higher export limit would promise 1.25 kWh per interval the inverter cannot
+        // deliver, and would therefore arm a shorter window than the battery can sustain.
+        exportProperties.getPower().setMaximum(5000);
         DischargePlan tooOptimistic = planner.plan(prices, 86, LocalTime.of(0, 0));
 
         assertTrue(atExportLimit.armable(), atExportLimit.reason());

@@ -114,19 +114,17 @@ steps:
 
 **Planning never looks at the battery.** It runs at 15:00, hours before the evening peak, with the
 sun still charging — the level read then says nothing about the level at 19:00. So a window is armed
-on price alone, and `soc` in the formula above is `expected-battery` (100 % by default: the charge the
-battery is assumed to have reached by the time the window opens), floored at whatever it already has.
-Whether the sale is actually worth starting is decided **when the window opens**, against
-`min-battery`: too little charge and the window is simply dropped, with the reason in the log. A
-window armed by hand from the dashboard skips that threshold — it is the person's call — but never
-the reserve.
+on price alone, and `soc` in the formula above is `min-battery` (50 % by default: the charge the sale
+requires anyway), floored at whatever the battery already has. Whether the sale is actually worth
+starting is decided again **when the window opens**, against that same `min-battery`: too little
+charge and the window is simply dropped, with the reason in the log. A window armed by hand from the
+dashboard skips that check — it is the person's call — but never the reserve.
 
-Over-estimating `expected-battery` is safe: the guard ends the sale as soon as the reserve is reached.
+Over-estimating is safe either way: the guard ends the sale as soon as the reserve is reached.
 Under-estimating is not, because it arms a window too short to use the peak.
 
-`discharge-power` must not exceed what the installation may actually export (the same ceiling as
-`automation.export.power.maximum`, 3950 W here). Set it too high and the planner assumes more energy
-per interval than the inverter can deliver, so it arms a window that is too short.
+`discharge-power` is not configured separately — it is `automation.export.power.maximum`, since a sale
+can never leave the installation faster than that ceiling allows anyway.
 
 At the window's start a remote control session is opened for exactly the window's length. A guard
 checks the battery every `guard-interval` and ends the session early once the reserve is reached. If
@@ -149,10 +147,9 @@ with the armed selling window highlighted; the weather quality curve with the th
 compare against; a 24 hour timeline of what every module intends to do; and recent activity.
 
 The timeline shows every run each module has coming up, not just the next one. Two modules are left
-out of it by default: the export limit is re-checked every quarter of an hour and the weather work
-mode every hour, nearly always with the same outcome, and 92 identical rows bury the handful that say
-something. `dashboard.quiet-modules` lists them; empty it to see everything. Their own widget on the
-modules page always shows the full schedule.
+out of it: the export limit is re-checked every quarter of an hour and the weather work mode every
+hour, nearly always with the same outcome, and 92 identical rows bury the handful that say something.
+Their own widget on the modules page always shows the full schedule.
 
 The list beneath the chart pages in tens, so a long plan stays one screen tall. The page you are on
 survives a refresh.

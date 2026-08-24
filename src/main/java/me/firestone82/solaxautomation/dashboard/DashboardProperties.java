@@ -4,9 +4,6 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
-import java.util.ArrayList;
-import java.util.List;
-
 /**
  * Configuration of the built-in web dashboard.
  * <p>
@@ -45,18 +42,4 @@ public class DashboardProperties {
 
     /** Currency label shown next to prices. */
     private String currency = "CZK";
-
-    /**
-     * Modules left out of the combined "Planned actions" list on the overview page.
-     * <p>
-     * Some modules run on a fixed schedule and almost always decide the same thing - the
-     * export limit is re-checked every quarter of an hour, the weather work mode every
-     * hour - so listing every firing buries the handful of entries that actually say
-     * something, like tonight's selling window. Their own widget on the modules page still
-     * shows the full schedule; only the shared list is filtered.
-     * <p>
-     * Values are module ids ({@code export}, {@code weather}, {@code battery},
-     * {@code discharge}). Empty the list to see everything.
-     */
-    private List<String> quietModules = new ArrayList<>(List.of("export", "weather"));
 }

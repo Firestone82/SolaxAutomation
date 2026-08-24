@@ -10,6 +10,7 @@ import me.firestone82.solaxautomation.integration.ote.model.PriceSlot;
 import me.firestone82.solaxautomation.integration.solax.InverterGateway;
 import me.firestone82.solaxautomation.integration.solax.model.InverterMode;
 import me.firestone82.solaxautomation.integration.solax.model.ManualMode;
+import me.firestone82.solaxautomation.module.export.ExportProperties;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.TaskScheduler;
@@ -55,6 +56,7 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
     private final OteService oteService;
     private final TaskScheduler taskScheduler;
     private final TimelineService timeline;
+    private final ExportProperties exportProperties;
     private final DischargeWindowPlanner planner;
 
     /** Last planning result, kept so the dashboard can explain why nothing is armed. */
@@ -69,14 +71,16 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
             InverterGateway inverter,
             OteService oteService,
             TaskScheduler taskScheduler,
-            TimelineService timeline
+            TimelineService timeline,
+            ExportProperties exportProperties
     ) {
         super(properties);
         this.inverter = inverter;
         this.oteService = oteService;
         this.taskScheduler = taskScheduler;
         this.timeline = timeline;
-        this.planner = new DischargeWindowPlanner(properties);
+        this.exportProperties = exportProperties;
+        this.planner = new DischargeWindowPlanner(properties, exportProperties);
     }
 
     // ------------------------------------------------------------------ module metadata
@@ -116,13 +120,11 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
                 ConfigEntry.of("automation.discharge.price-tolerance", "Peak tolerance", properties.getPriceTolerance(), "CZK/kWh",
                         "How far below the peak an interval may be and still be sold into"),
                 ConfigEntry.of("automation.discharge.min-battery", "Minimum battery", properties.getMinBattery(), "%",
-                        "State of charge required before the sale starts; the window is armed regardless"),
-                ConfigEntry.of("automation.discharge.expected-battery", "Expected battery", properties.getExpectedBattery(), "%",
-                        "Charge the battery is assumed to reach by the time the window opens, used for its length"),
+                        "State of charge required for the sale to happen; sizes the window and gates its start"),
                 ConfigEntry.of("automation.discharge.target-battery", "Reserve", properties.getTargetBattery(), "%",
                         "State of charge the discharge stops at"),
-                ConfigEntry.of("automation.discharge.discharge-power", "Discharge power", properties.getDischargePower(), "W",
-                        "Power the battery is discharged at"),
+                ConfigEntry.of("automation.discharge.discharge-power", "Discharge power", exportProperties.getPower().getMaximum(), "W",
+                        "Power the battery is discharged at; taken from automation.export.power.maximum, since a sale can never leave more than that"),
                 ConfigEntry.of("automation.discharge.battery-capacity", "Battery capacity", properties.getBatteryCapacity(), "kWh",
                         "Usable capacity, used to work out how long the battery lasts"),
                 ConfigEntry.of("automation.discharge.max-slots", "Maximum length", properties.getMaxSlots() * PriceSlot.SLOT_MINUTES, "min",
@@ -219,7 +221,7 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
         LocalTime notBefore = LocalTime.now().plusMinutes(1);
 
         log.detail("Battery", "{} % now, planning for {} % (need {} % to sell, reserve {} %)",
-                soc, Math.max(soc, properties.getExpectedBattery()), properties.getMinBattery(), properties.getTargetBattery());
+                soc, Math.max(soc, properties.getMinBattery()), properties.getMinBattery(), properties.getTargetBattery());
         log.detail("Search window", "{} - {} ({} intervals)", properties.getSearchFrom(), properties.getSearchTo(), candidates.size());
 
         DischargePlan plan = planner.plan(candidates, soc, notBefore);
@@ -283,7 +285,7 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
                     .build());
         }
 
-        int power = watts == null ? properties.getDischargePower() : watts;
+        int power = watts == null ? exportProperties.getPower().getMaximum() : watts;
         double revenue = estimateRevenue(from, to, power);
 
         log.header("Manual selling window armed from the dashboard");

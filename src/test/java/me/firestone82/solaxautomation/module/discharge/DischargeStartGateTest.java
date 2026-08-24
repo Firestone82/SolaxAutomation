@@ -4,6 +4,7 @@ import me.firestone82.solaxautomation.core.timeline.TimelineProperties;
 import me.firestone82.solaxautomation.core.timeline.TimelineService;
 import me.firestone82.solaxautomation.integration.ote.OteService;
 import me.firestone82.solaxautomation.integration.solax.InverterGateway;
+import me.firestone82.solaxautomation.module.export.ExportProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -55,7 +56,7 @@ class DischargeStartGateTest {
         timelineProperties.setFile(directory.resolve("timeline.json"));
 
         module = new DischargeModule(properties, inverter, prices,
-                new SimpleAsyncTaskScheduler(), new TimelineService(timelineProperties));
+                new SimpleAsyncTaskScheduler(), new TimelineService(timelineProperties), new ExportProperties());
     }
 
     /** Arms a window that is already open, so arming runs the start straight away. */

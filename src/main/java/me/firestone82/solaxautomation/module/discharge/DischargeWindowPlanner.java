@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import me.firestone82.solaxautomation.core.module.PlannedAction.Message;
 import me.firestone82.solaxautomation.integration.ote.model.PriceSlot;
 import me.firestone82.solaxautomation.integration.ote.model.PriceWindow;
+import me.firestone82.solaxautomation.module.export.ExportProperties;
 
 import java.time.LocalTime;
 import java.util.ArrayList;
@@ -41,6 +42,13 @@ import java.util.Locale;
 public class DischargeWindowPlanner {
 
     private final DischargeProperties properties;
+
+    /**
+     * Discharge power is read from here rather than duplicated on {@link DischargeProperties}:
+     * it must never exceed what the installation may actually export, and that ceiling is
+     * already {@code automation.export.power.maximum}.
+     */
+    private final ExportProperties exportProperties;
 
     /**
      * Plans a discharge window.
@@ -89,7 +97,7 @@ public class DischargeWindowPlanner {
         // ---- 3. fit to the energy the battery can actually give up ---------
         int planningSoc = sizingSoc(batterySoc);
         double availableEnergyKwh = availableEnergyKwh(planningSoc);
-        int watts = properties.getDischargePower();
+        int watts = exportProperties.getPower().getMaximum();
         int maxSlots = slotsCoveredBy(availableEnergyKwh, watts);
 
         if (maxSlots < properties.getMinSlots()) {
@@ -192,14 +200,12 @@ public class DischargeWindowPlanner {
      * Planning runs in the afternoon, hours before the evening peak, with the sun still
      * charging the battery - so the level read right now is not the level the window will
      * have to work with. Sizing on it would arm a window far shorter than the evening can
-     * actually sustain. {@code expected-battery} is the level the battery is expected to
-     * reach by the time the window opens; the current level is only used as a floor, so a
-     * battery already fuller than expected still gets the longer window.
-     * <p>
-     * Over-estimating is safe: the guard ends the sale as soon as the reserve is reached.
+     * actually sustain, so {@code min-battery} - the level the sale requires anyway - is used
+     * as the assumption instead. The current level is only used as a floor, so a battery
+     * already fuller than that still gets the longer window.
      */
     private int sizingSoc(int batterySoc) {
-        return Math.max(batterySoc, properties.getExpectedBattery());
+        return Math.max(batterySoc, properties.getMinBattery());
     }
 
     /**

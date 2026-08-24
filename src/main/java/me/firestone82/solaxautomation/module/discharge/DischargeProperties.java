@@ -64,47 +64,29 @@ public class DischargeProperties implements ModuleProperties {
     // ------------------------------------------------------------------ battery
 
     /**
-     * State of charge required before the sale actually starts, %.
+     * State of charge required for the sale to happen, %.
      * <p>
-     * This is a start-time gate, not a planning one. A window is planned in the afternoon,
-     * hours before it opens and with the sun still charging the battery, so refusing to plan
-     * on the level read at that moment would skip evenings the battery comfortably reaches.
-     * The window is therefore always armed on price, and dropped when it opens if the
-     * battery did not get there. A window armed by hand from the dashboard ignores this.
+     * A window is planned in the afternoon, hours before it opens and with the sun still
+     * charging the battery, so it is always armed on price alone - the level read at planning
+     * time says nothing about the level hours later. This value does the actual gatekeeping in
+     * two ways: it sizes how long the window is planned for (the current level is used instead
+     * whenever it is already higher), and it is checked again when the window opens, dropping
+     * the sale if the battery did not get there. A window armed by hand from the dashboard
+     * skips the start-time check.
      */
     private int minBattery = 50;
 
     /** State of charge the discharge stops at, leaving a reserve for the night, %. */
     private int targetBattery = 40;
 
-    /**
-     * State of charge the battery is expected to have reached by the time the window opens, %.
-     * <p>
-     * The window length is worked out from this rather than from the level at planning time,
-     * which is measured in the afternoon while the battery is still charging. Over-estimating
-     * costs nothing - the guard ends the sale as soon as the reserve is reached - whereas
-     * under-estimating arms a window too short to use the peak.
-     * <p>
-     * Set to {@code 0} to size the window from the level at planning time instead. The current
-     * level is always used as a floor, so a battery already fuller than this still gets the
-     * longer window.
-     */
-    private int expectedBattery = 100;
-
     /** Usable battery capacity, kWh. Used to work out how long the battery can sustain the sale. */
     private double batteryCapacity = 11.6;
 
     /**
-     * Power the battery is discharged at, W.
-     * <p>
-     * This must not exceed what the installation is actually allowed to export - normally the
-     * same ceiling as {@code automation.export.power.maximum}. A higher value makes the
-     * planner assume more energy per interval than the inverter can deliver, so it arms a
-     * window that is too short and the battery never empties into the peak.
+     * Fraction of the battery's energy that actually reaches the grid, accounting for the
+     * inverter's conversion losses. Applied when sizing the window, so the planner does not
+     * promise more intervals than the battery can really sustain.
      */
-    private int dischargePower = 3950;
-
-    /** Fraction of the battery energy that reaches the grid, accounting for conversion losses. */
     private double efficiency = 0.92;
 
     // ------------------------------------------------------------------ execution
