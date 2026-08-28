@@ -47,7 +47,7 @@ public record ConfigEntry(
 
     /**
      * Turns a property key into a translation key: drops the {@code automation.} prefix and
-     * collapses any index, so {@code automation.battery.thresholds.12} and
+     * collapses any index, so {@code automation.battery.self-use-thresholds.12} and
      * {@code automation.weather.forecast-checks[07:02]} share one translation with their siblings.
      */
     private static String deriveI18nKey(String key) {

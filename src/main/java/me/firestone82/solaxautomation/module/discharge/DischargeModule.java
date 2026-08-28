@@ -55,7 +55,6 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
     private final InverterGateway inverter;
     private final OteService oteService;
     private final TaskScheduler taskScheduler;
-    private final TimelineService timeline;
     private final ExportProperties exportProperties;
     private final DischargeWindowPlanner planner;
 
@@ -74,11 +73,10 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
             TimelineService timeline,
             ExportProperties exportProperties
     ) {
-        super(properties);
+        super(properties, timeline);
         this.inverter = inverter;
         this.oteService = oteService;
         this.taskScheduler = taskScheduler;
-        this.timeline = timeline;
         this.exportProperties = exportProperties;
         this.planner = new DischargeWindowPlanner(properties, exportProperties);
     }

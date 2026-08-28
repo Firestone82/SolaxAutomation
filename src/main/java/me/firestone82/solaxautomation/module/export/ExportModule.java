@@ -46,7 +46,10 @@ public class ExportModule extends AbstractAutomationModule<ExportProperties> {
     private final OteService oteService;
     private final MeteoSourceService weatherService;
     private final RaspberryPiService raspberryPi;
-    private final TimelineService timeline;
+
+    /** Own dedup state for {@link #subscribeToConnectionSwitch()}, separate from
+     * {@link RaspberryPiService}'s tracking so the two concerns don't share mutable state. */
+    private volatile DigitalState previousSwitchState;
 
     public ExportModule(
             ExportProperties properties,
@@ -56,17 +59,18 @@ public class ExportModule extends AbstractAutomationModule<ExportProperties> {
             RaspberryPiService raspberryPi,
             TimelineService timeline
     ) {
-        super(properties);
+        super(properties, timeline);
         this.inverter = inverter;
         this.oteService = oteService;
         this.weatherService = weatherService;
         this.raspberryPi = raspberryPi;
-        this.timeline = timeline;
     }
 
     /** Reacts to the physical supply switch as well as to the hourly schedule. */
     @PostConstruct
     void subscribeToConnectionSwitch() {
+        this.previousSwitchState = raspberryPi.getConnectionSwitchState();
+
         raspberryPi.getConnectionSwitch().addListener(event -> {
             if (!isEnabled()) {
                 return;
@@ -74,12 +78,12 @@ public class ExportModule extends AbstractAutomationModule<ExportProperties> {
 
             DigitalState newState = event.state();
 
-            if (raspberryPi.getPreviousConnectionSwitchState() == newState) {
+            if (previousSwitchState == newState) {
                 log.debug("Connection switch reported {} again, ignoring", newState);
                 return;
             }
 
-            raspberryPi.setPreviousConnectionSwitchState(newState);
+            previousSwitchState = newState;
 
             int hour = LocalTime.now().getHour();
             if (!properties.getActiveHours().contains(hour)) {

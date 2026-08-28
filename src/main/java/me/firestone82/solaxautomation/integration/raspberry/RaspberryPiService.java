@@ -6,8 +6,10 @@ import com.pi4j.io.gpio.digital.DigitalInput;
 import com.pi4j.io.gpio.digital.DigitalState;
 import com.pi4j.io.gpio.digital.PullResistance;
 import lombok.Getter;
-import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import me.firestone82.solaxautomation.core.module.ActionType;
+import me.firestone82.solaxautomation.core.module.PlannedAction.Message;
+import me.firestone82.solaxautomation.core.timeline.TimelineService;
 import org.apache.commons.lang3.SystemUtils;
 import org.mockito.ArgumentMatchers;
 import org.springframework.stereotype.Service;
@@ -31,12 +33,14 @@ import static org.mockito.Mockito.when;
  * application can be developed and the dashboard demonstrated on any machine.
  */
 @Getter
-@Setter
 @Slf4j
 @Service
 public class RaspberryPiService {
 
+    private static final String ID = "raspberry";
+
     private final RaspberryPiProperties properties;
+    private final TimelineService timeline;
 
     private DigitalInput connectionSwitch;
     private DigitalState previousConnectionSwitchState;
@@ -44,8 +48,9 @@ public class RaspberryPiService {
     /** Set when the input is the stub rather than a real pin. */
     private boolean simulated;
 
-    public RaspberryPiService(RaspberryPiProperties properties) {
+    public RaspberryPiService(RaspberryPiProperties properties, TimelineService timeline) {
         this.properties = properties;
+        this.timeline = timeline;
 
         log.info("Initializing GPIO service");
         log.info(" - Host ............. {} ({})", SystemUtils.OS_NAME, SystemUtils.OS_ARCH);
@@ -70,6 +75,36 @@ public class RaspberryPiService {
         this.previousConnectionSwitchState = connectionSwitch.state();
         log.info(" - Connection switch  {}", previousConnectionSwitchState);
         log.info("GPIO service initialized");
+
+        trackConnectionSwitchChanges();
+    }
+
+    /**
+     * Records every transition of the connection switch, independent of whatever business
+     * logic reacts to it - so the history shows when the house's supply actually changed even
+     * if no module is currently enabled to act on it. The stub never fires this, since it has
+     * no state to transition from.
+     */
+    private void trackConnectionSwitchChanges() {
+        connectionSwitch.addListener(event -> {
+            DigitalState newState = event.state();
+
+            if (previousConnectionSwitchState == newState) {
+                return;
+            }
+
+            DigitalState oldState = previousConnectionSwitchState;
+            previousConnectionSwitchState = newState;
+
+            log.info("Connection switch changed from {} to {}", oldState, newState);
+
+            timeline.record(ID, ActionType.GPIO_STATE_CHANGE, Message
+                            .key("history.raspberry.switch", "Connection switch " + oldState + " -> " + newState)
+                            .with("from", oldState)
+                            .with("to", newState)
+                            .build(),
+                    true, newState.isHigh() ? "metered grid" : "second supply");
+        });
     }
 
     private void initialisePi4J() {

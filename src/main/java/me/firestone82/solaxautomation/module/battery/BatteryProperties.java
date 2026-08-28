@@ -31,7 +31,7 @@ public class BatteryProperties implements ModuleProperties {
      * energy away and switches the inverter to self use so the remaining sun charges the
      * battery instead.
      */
-    private Map<Integer, Integer> thresholds = new LinkedHashMap<>();
+    private Map<Integer, Integer> selfUseThresholds = new LinkedHashMap<>();
 
     /**
      * Added to every threshold at weekends, %.
@@ -40,6 +40,16 @@ public class BatteryProperties implements ModuleProperties {
      * expected to be fuller at the same time of day.
      */
     private int weekendIncrease = 0;
+
+    /**
+     * Ahead-of-schedule checkpoints: hour of day mapped to the state of charge at or above
+     * which self use switches to feed-in priority, %.
+     * <p>
+     * The mirror image of {@link #selfUseThresholds} - while self use is charging the battery
+     * ahead of what a checkpoint needs, the surplus production is better sold than wasted.
+     * Covers different hours than {@link #selfUseThresholds} on purpose; not adjusted for weekends.
+     */
+    private Map<Integer, Integer> feedInThresholds = new LinkedHashMap<>();
 
     /**
      * Minute of the hour the check runs at.

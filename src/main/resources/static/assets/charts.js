@@ -433,6 +433,7 @@ const Charts = (() => {
         GRID_CHARGE: 'var(--charge)',
         EXPORT_LIMIT: 'var(--warning)',
         REMOTE_CONTROL_EXIT: 'var(--text-faint)',
+        GPIO_STATE_CHANGE: 'var(--text-faint)',
         CHECK: 'var(--border-strong)'
     };
 

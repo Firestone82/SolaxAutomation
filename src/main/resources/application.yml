@@ -189,19 +189,27 @@ automation:
 
   # ---------------------------------------------------------------------------
   #  Battery charge guard
-  #  Checks the battery against charge targets during the day and stops feeding
-  #  the grid when it is behind schedule. Only ever moves away from feed-in
-  #  priority - going back is the weather module's decision.
+  #  Checks the battery against charge targets during the day: drops feed-in
+  #  priority back to self use when behind schedule, and switches self use to
+  #  feed-in priority when comfortably ahead of it, so surplus production gets
+  #  sold instead of wasted once the battery no longer needs it.
   # ---------------------------------------------------------------------------
   battery:
     enabled: true
     # Hour of day -> state of charge the battery should have reached by then.
-    thresholds:
+    # Behind this while in feed-in priority, the module drops back to self use.
+    self-use-thresholds:
       13: 50
       14: 70
       15: 90
     # Added to every target at weekends, when consumption is higher.
     weekend-increase: 10
+    # Hour of day -> state of charge at or above which self use switches to
+    # feed-in priority. Independent of self-use-thresholds above - covers the
+    # morning, where being this far ahead already means production is wasted.
+    feed-in-thresholds:
+      9: 50
+      10: 70
     # Minute of the hour the check runs at; kept apart from the other modules.
     check-minute: 5
 

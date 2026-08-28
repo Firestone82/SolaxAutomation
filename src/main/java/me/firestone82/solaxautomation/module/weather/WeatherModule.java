@@ -44,7 +44,6 @@ public class WeatherModule extends AbstractAutomationModule<WeatherProperties> {
 
     private final InverterGateway inverter;
     private final MeteoSourceService weatherService;
-    private final TimelineService timeline;
 
     /** Distinguishes a backup mode this module entered from one a person set. */
     private final AtomicBoolean backupSetByModule = new AtomicBoolean(false);
@@ -55,10 +54,9 @@ public class WeatherModule extends AbstractAutomationModule<WeatherProperties> {
             MeteoSourceService weatherService,
             TimelineService timeline
     ) {
-        super(properties);
+        super(properties, timeline);
         this.inverter = inverter;
         this.weatherService = weatherService;
-        this.timeline = timeline;
     }
 
     // ------------------------------------------------------------------ module metadata

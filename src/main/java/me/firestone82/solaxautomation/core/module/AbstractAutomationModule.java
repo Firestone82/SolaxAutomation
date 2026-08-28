@@ -3,6 +3,7 @@ package me.firestone82.solaxautomation.core.module;
 import jakarta.annotation.PostConstruct;
 import me.firestone82.solaxautomation.core.log.ModuleLog;
 import me.firestone82.solaxautomation.core.module.PlannedAction.Message;
+import me.firestone82.solaxautomation.core.timeline.TimelineService;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -21,6 +22,7 @@ public abstract class AbstractAutomationModule<P extends ModuleProperties> imple
 
     protected final P properties;
     protected final ModuleLog log;
+    protected final TimelineService timeline;
 
     private final AtomicLong runCount = new AtomicLong();
     private final AtomicLong failCount = new AtomicLong();
@@ -31,8 +33,9 @@ public abstract class AbstractAutomationModule<P extends ModuleProperties> imple
     private volatile LocalDateTime lastRunAt = null;
     private volatile String lastError = null;
 
-    protected AbstractAutomationModule(P properties) {
+    protected AbstractAutomationModule(P properties, TimelineService timeline) {
         this.properties = properties;
+        this.timeline = timeline;
         this.log = ModuleLog.of(getClass(), getId());
     }
 
@@ -90,12 +93,21 @@ public abstract class AbstractAutomationModule<P extends ModuleProperties> imple
             if (outcome.state() == ModuleState.DEGRADED) {
                 log.abort(outcome.summary());
             }
+
+            // Changes record their own, more specific timeline entry (work mode change,
+            // export limit, ...). A check that decided against changing anything, or one that
+            // could not run at all, would otherwise leave no trace beyond this run's status
+            // line - recorded here so the dashboard shows why nothing happened too.
+            if (outcome.state() != ModuleState.ACTIVE) {
+                timeline.record(getId(), ActionType.CHECK, summary, outcome.state() != ModuleState.DEGRADED);
+            }
         } catch (Exception e) {
             failCount.incrementAndGet();
             state = ModuleState.FAILED;
             summary = Message.of("Run failed: " + e.getMessage());
             lastError = e.getMessage();
             log.error(e, "Unhandled error during '{}': {}", title, e.getMessage());
+            timeline.record(getId(), ActionType.CHECK, summary, false);
         }
     }
 

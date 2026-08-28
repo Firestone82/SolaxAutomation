@@ -158,9 +158,11 @@ const I18N = (() => {
             'action.GRID_CHARGE': 'Charging from grid',
             'action.EXPORT_LIMIT': 'Export limit',
             'action.REMOTE_CONTROL_EXIT': 'Remote control ends',
+            'action.GPIO_STATE_CHANGE': 'Connection switch',
             'action.CHECK': 'Check',
 
             'module.dashboard.name': 'Dashboard',
+            'module.raspberry.name': 'GPIO',
             'history.quick.workMode': 'Work mode set to {mode}',
             'history.quick.charge': 'Charging {watts} W from the grid for {minutes} min',
             'history.quick.chargeToSoc': 'Charging {watts} W from the grid to {targetSoc} %',
@@ -194,6 +196,7 @@ const I18N = (() => {
             'module.discharge.description': 'Finds the most valuable quarter-hour window of the day and discharges the battery into the grid through a self-expiring remote control session.',
 
             'planned.battery.check': 'Check the battery reached {target}%, otherwise switch to self use',
+            'planned.battery.feedInCheck': 'Check the battery reached {target}%, otherwise stay in self use',
             'planned.export.check': 'Compare the spot price against {price} CZK/kWh and set the export limit',
             'planned.weather.forecast': 'Forecast {from}–{to} decides between feed-in priority and self use',
             'planned.weather.storm': 'Storm check for the next {hours} h',
@@ -203,7 +206,9 @@ const I18N = (() => {
             'planned.discharge.exit': 'Remote control ends, inverter returns to its work mode',
 
             'history.battery.selfUse': 'Feed-in priority → self use, battery behind schedule',
+            'history.battery.feedIn': 'Self use → feed-in priority, battery ahead of schedule',
             'history.export.limit': 'Export limit {from} W → {to} W',
+            'history.raspberry.switch': 'Connection switch {from} → {to}',
             'history.weather.modeChange': '{from} → {to}',
             'history.discharge.armed': 'Selling window armed',
             'history.discharge.armedManual': 'Selling window armed manually',
@@ -213,8 +218,9 @@ const I18N = (() => {
             'history.discharge.finished': 'Selling window finished',
             'history.discharge.reserveReached': 'Discharge stopped at the battery reserve',
 
-            'config.battery.thresholds': 'Target at {index}',
+            'config.battery.self-use-thresholds': 'Target at {index}',
             'config.battery.weekend-increase': 'Weekend bonus',
+            'config.battery.feed-in-thresholds': 'Feed-in at {index}',
             'config.export.check-cron': 'Checked',
             'config.export.check-cron.desc': 'When the export limit is evaluated',
             'config.export.min-price': 'Minimum price',
@@ -240,8 +246,9 @@ const I18N = (() => {
             'config.discharge.fallback-to-manual-mode': 'Modbus fallback',
 
 
-            'config.battery.thresholds.desc': 'State of charge the battery should have reached by this time',
+            'config.battery.self-use-thresholds.desc': 'State of charge the battery should have reached by this time',
             'config.battery.weekend-increase.desc': 'Added to every target on Saturday and Sunday',
+            'config.battery.feed-in-thresholds.desc': 'State of charge at or above which self use switches to feed-in priority',
             'config.export.min-price.desc': 'Below this price the export limit is closed',
             'config.export.active-hours.desc': 'Outside these hours the export limit is left untouched',
             'config.export.power.maximum.desc': 'Export limit while exporting is worth it',
@@ -467,9 +474,11 @@ const I18N = (() => {
             'action.GRID_CHARGE': 'Nabíjení ze sítě',
             'action.EXPORT_LIMIT': 'Limit dodávky',
             'action.REMOTE_CONTROL_EXIT': 'Konec dálkového řízení',
+            'action.GPIO_STATE_CHANGE': 'Přepínač přípojky',
             'action.CHECK': 'Kontrola',
 
             'module.dashboard.name': 'Nástěnka',
+            'module.raspberry.name': 'GPIO',
             'history.quick.workMode': 'Režim střídače nastaven na {mode}',
             'history.quick.charge': 'Nabíjím {watts} W ze sítě po dobu {minutes} min',
             'history.quick.chargeToSoc': 'Nabíjím {watts} W ze sítě do {targetSoc} %',
@@ -503,6 +512,7 @@ const I18N = (() => {
             'module.discharge.description': 'Najde nejcennější čtvrthodinové okno dne a vybije do něj baterii pomocí dálkového řízení, které samo vyprší.',
 
             'planned.battery.check': 'Kontrola, zda baterie dosáhla {target} %, jinak přepnout na vlastní spotřebu',
+            'planned.battery.feedInCheck': 'Kontrola, zda baterie dosáhla {target} %, jinak zůstat na vlastní spotřebě',
             'planned.export.check': 'Porovnat spotovou cenu s {price} CZK/kWh a nastavit limit dodávky',
             'planned.weather.forecast': 'Předpověď {from}–{to} rozhodne mezi prioritou dodávky a vlastní spotřebou',
             'planned.weather.storm': 'Kontrola bouřky na dalších {hours} h',
@@ -512,7 +522,9 @@ const I18N = (() => {
             'planned.discharge.exit': 'Konec dálkového řízení, střídač se vrátí do svého režimu',
 
             'history.battery.selfUse': 'Priorita dodávky → vlastní spotřeba, baterie zaostává',
+            'history.battery.feedIn': 'Vlastní spotřeba → priorita dodávky, baterie napřed oproti plánu',
             'history.export.limit': 'Limit dodávky {from} W → {to} W',
+            'history.raspberry.switch': 'Přepínač přípojky {from} → {to}',
             'history.weather.modeChange': '{from} → {to}',
             'history.discharge.armed': 'Okno prodeje naplánováno',
             'history.discharge.armedManual': 'Okno prodeje naplánováno ručně',
@@ -522,8 +534,9 @@ const I18N = (() => {
             'history.discharge.finished': 'Okno prodeje dokončeno',
             'history.discharge.reserveReached': 'Vybíjení ukončeno na rezervě baterie',
 
-            'config.battery.thresholds': 'Cíl v {index}',
+            'config.battery.self-use-thresholds': 'Cíl v {index}',
             'config.battery.weekend-increase': 'Víkendový příplatek',
+            'config.battery.feed-in-thresholds': 'Priorita dodávky v {index}',
             'config.export.check-cron': 'Kontrola',
             'config.export.check-cron.desc': 'Kdy se limit dodávky vyhodnocuje',
             'config.export.min-price': 'Minimální cena',
@@ -549,8 +562,9 @@ const I18N = (() => {
             'config.discharge.fallback-to-manual-mode': 'Záložní Modbus režim',
 
 
-            'config.battery.thresholds.desc': 'Nabití, kterého má baterie do této doby dosáhnout',
+            'config.battery.self-use-thresholds.desc': 'Nabití, kterého má baterie do této doby dosáhnout',
             'config.battery.weekend-increase.desc': 'Přičítá se ke každému cíli v sobotu a v neděli',
+            'config.battery.feed-in-thresholds.desc': 'Nabití, při kterém vlastní spotřeba přepne na prioritu dodávky',
             'config.export.min-price.desc': 'Pod touto cenou se limit dodávky uzavře',
             'config.export.active-hours.desc': 'Mimo tyto hodiny se limit dodávky nemění',
             'config.export.power.maximum.desc': 'Limit dodávky, když se prodej vyplatí',

@@ -11,16 +11,30 @@ Každý modul lze vypnout jeho `enabled` přepínačem, nebo dočasně z nástě
 
 Běží každou hodinu v `:05` a jedná jen v nastavených kontrolních bodech.
 
+**Pozadu za plánem** — `self-use-thresholds`, jedná jen v režimu _FEED_IN_PRIORITY_:
+
 | Čas | Požadované nabití | O víkendu |
 |-----|-------------------|-----------|
+| 13:05 | 50 % | 60 % |
 | 14:05 | 70 % | 80 % |
 | 15:05 | 90 % | 100 % |
 
 > **POKUD** je baterie pod cílem **a** střídač je v režimu _FEED_IN_PRIORITY_
 > **PROVEĎ:** přepni na _SELF_USE_, aby zbytek výroby šel do baterie.
 
-Modul se pohybuje jen jedním směrem — pryč od priority dodávky. Návrat zpět je rozhodnutí modulu
-počasí, který jediný ví, kolik slunce ještě zbývá.
+**Napřed před plánem** — `feed-in-thresholds`, jedná jen v režimu _SELF_USE_:
+
+| Čas | Nabití pro přepnutí |
+|-----|----------------------|
+| 09:05 | 50 % |
+| 10:05 | 70 % |
+
+> **POKUD** je baterie na cíli nebo nad ním **a** střídač je v režimu _SELF_USE_
+> **PROVEĎ:** přepni na _FEED_IN_PRIORITY_, aby se přebytek prodal místo aby propadl.
+
+Obě kontroly reagují na skutečně naměřené nabití, ne na předpověď — zachytí i slunečnější
+dopoledne, než čekala předpověďová kontrola modulu počasí. Každý kontrolní bod jedná jen ve
+"svém" režimu; ostatní režimy (např. _BACKUP_) nechává být.
 
 ---
 

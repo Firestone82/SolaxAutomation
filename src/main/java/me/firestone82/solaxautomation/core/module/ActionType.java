@@ -22,5 +22,8 @@ public enum ActionType {
     REMOTE_CONTROL_EXIT,
 
     /** A scheduled evaluation that may or may not result in a change. */
-    CHECK
+    CHECK,
+
+    /** Physical GPIO input switched to a new state. */
+    GPIO_STATE_CHANGE
 }
