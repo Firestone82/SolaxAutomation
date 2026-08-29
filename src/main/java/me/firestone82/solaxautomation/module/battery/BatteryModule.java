@@ -34,7 +34,9 @@ import java.util.Locale;
  *       battery no longer needs it.</li>
  * </ul>
  * Both react to the battery level actually measured, not a forecast, so they catch a sunnier
- * morning than the weather module's forecast-based check expected. Each checkpoint only ever
+ * morning than the weather module's forecast-based check expected. A checkpoint is met as soon
+ * as the battery is within {@link BatteryProperties#getTolerance()} of it, so a battery one or
+ * two percent short is not treated as behind schedule. Each checkpoint only ever
  * acts on the work mode it owns - a checkpoint whose hour is not configured, or whose
  * direction does not match the current mode, is left alone.
  */
@@ -93,6 +95,10 @@ public class BatteryModule extends AbstractAutomationModule<BatteryProperties> {
         entries.add(ConfigEntry.of("automation.battery.weekend-increase", "Weekend bonus",
                 properties.getWeekendIncrease(), "%", "Added to every target on Saturday and Sunday"));
 
+        entries.add(ConfigEntry.of("automation.battery.tolerance", "Tolerance",
+                properties.getTolerance(), "%",
+                "How far under a checkpoint the battery may be and still count as having reached it"));
+
         properties.getFeedInThresholds().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .forEach(entry -> {
@@ -131,8 +137,10 @@ public class BatteryModule extends AbstractAutomationModule<BatteryProperties> {
 
             return PlannedAction.at(ID, at, ActionType.CHECK, Message
                     .key("planned.battery.check", String.format(Locale.ROOT,
-                            "Check the battery reached %d %%, otherwise switch to self use", target))
+                            "Check the battery reached %d %% (tolerance %d %%), otherwise switch to self use",
+                            target, properties.getTolerance()))
                     .with("target", target)
+                    .with("tolerance", properties.getTolerance())
                     .build());
         }
 
@@ -140,8 +148,10 @@ public class BatteryModule extends AbstractAutomationModule<BatteryProperties> {
 
         return PlannedAction.at(ID, at, ActionType.CHECK, Message
                 .key("planned.battery.feedInCheck", String.format(Locale.ROOT,
-                        "Check the battery reached %d %%, otherwise stay in self use", target))
+                        "Check the battery reached %d %% (tolerance %d %%), otherwise stay in self use",
+                        target, properties.getTolerance()))
                 .with("target", target)
+                .with("tolerance", properties.getTolerance())
                 .build());
     }
 
@@ -164,18 +174,35 @@ public class BatteryModule extends AbstractAutomationModule<BatteryProperties> {
             return;
         }
 
-        run(String.format(Locale.ROOT, "Battery checkpoint at %02d:%02d", hour, properties.getCheckMinute()), () -> evaluate(hour));
+        runCheckpoint(hour);
+    }
+
+    /**
+     * One checkpoint run. Package-private rather than inlined above so the tolerance rules can
+     * be tested at a chosen hour, which the scheduled entry point takes from the wall clock.
+     */
+    void runCheckpoint(int hour) {
+        String at = checkpointTime(hour);
+
+        run(Message.key("running.battery.check", "Battery checkpoint at " + at).with("time", at).build(),
+                () -> evaluate(hour));
     }
 
     private RunOutcome evaluate(int hour) {
         Optional<Integer> socOpt = inverter.getBatterySoc();
         if (socOpt.isEmpty()) {
-            return RunOutcome.incomplete("the battery level could not be read");
+            return RunOutcome.incomplete(
+                    Message.key("outcome.battery.skipped", "Checkpoint skipped").build(),
+                    Message.key("outcome.battery.noSoc",
+                            "The battery level could not be read from the inverter, so the checkpoint was skipped.").build());
         }
 
         Optional<InverterMode> modeOpt = inverter.getWorkMode();
         if (modeOpt.isEmpty()) {
-            return RunOutcome.incomplete("the inverter work mode could not be read");
+            return RunOutcome.incomplete(
+                    Message.key("outcome.battery.skipped", "Checkpoint skipped").build(),
+                    Message.key("outcome.battery.noMode",
+                            "The inverter work mode could not be read, so the checkpoint was skipped.").build());
         }
 
         int soc = socOpt.get();
@@ -193,75 +220,169 @@ public class BatteryModule extends AbstractAutomationModule<BatteryProperties> {
         }
 
         log.noAction("work mode is {}, which this module does not interfere with", mode);
-        return RunOutcome.unchanged("Left " + mode + " alone");
+
+        return RunOutcome.unchanged(
+                Message.key("outcome.battery.otherMode", "Nothing to do in " + mode)
+                        .with("mode", mode.name())
+                        .build(),
+                Message.key("outcome.battery.otherMode.detail", String.format(Locale.ROOT,
+                                "The guard only moves between feed-in priority and self use. The inverter is in %s, so it was left alone.", mode))
+                        .with("mode", mode.name())
+                        .build());
     }
 
     /** In feed-in priority: behind the checkpoint, drop back to self use. */
     private RunOutcome evaluateBehindSchedule(int hour, int soc) {
         Integer baseTarget = properties.getSelfUseThresholds().get(hour);
+        String at = checkpointTime(hour);
 
         if (baseTarget == null) {
             log.noAction("no self-use checkpoint configured for {}:00", hour);
-            return RunOutcome.unchanged(String.format(Locale.ROOT, "No self-use checkpoint at %02d:00", hour));
+
+            return RunOutcome.unchanged(
+                    Message.key("outcome.battery.noTarget", "No charge target at " + at).with("time", at).build(),
+                    Message.key("outcome.battery.noSelfUseTarget", String.format(Locale.ROOT,
+                                    "The inverter is in feed-in priority but no charge target is configured for %s, so nothing was checked.", at))
+                            .with("time", at)
+                            .build());
         }
 
         int target = requiredLevel(baseTarget, LocalDate.now());
-        log.detail("Target", "{} % to stay in feed-in priority{}", target, isWeekend(LocalDate.now())
-                ? ", weekend +" + properties.getWeekendIncrease() + " %" : "");
+        int tolerance = properties.getTolerance();
+
+        log.detail("Target", "{} % to stay in feed-in priority (tolerance {} %){}", target, tolerance,
+                isWeekend(LocalDate.now()) ? ", weekend +" + properties.getWeekendIncrease() + " %" : "");
 
         if (soc >= target) {
             log.noAction("battery is on schedule");
-            return RunOutcome.unchanged(String.format(Locale.ROOT, "Battery at %d %%, on schedule for %d %%", soc, target));
+
+            return RunOutcome.unchanged(
+                    Message.key("outcome.battery.onSchedule", "Battery on schedule").build(),
+                    Message.key("outcome.battery.onSchedule.detail", String.format(Locale.ROOT,
+                                    "Battery is at %d %%, at or above the %d %% expected by %s, so feed-in priority stays on and surplus keeps going to the grid.",
+                                    soc, target, at))
+                            .with("soc", soc)
+                            .with("target", target)
+                            .with("time", at)
+                            .build());
         }
 
-        log.action("Battery is {} % short of the {} % target, switching to self use", target - soc, target);
+        if (soc >= target - tolerance) {
+            log.noAction("battery is {} % short of the {} % target, within the {} % tolerance", target - soc, target, tolerance);
+
+            return RunOutcome.unchanged(
+                    Message.key("outcome.battery.withinTolerance", "Battery within tolerance").build(),
+                    Message.key("outcome.battery.withinTolerance.detail", String.format(Locale.ROOT,
+                                    "Battery is at %d %%, %d %% under the %d %% expected by %s but inside the %d %% tolerance, so feed-in priority stays on.",
+                                    soc, target - soc, target, at, tolerance))
+                            .with("soc", soc)
+                            .with("short", target - soc)
+                            .with("target", target)
+                            .with("time", at)
+                            .with("tolerance", tolerance)
+                            .build());
+        }
+
+        log.action("Battery is {} % short of the {} % target (tolerance {} %), switching to self use", target - soc, target, tolerance);
 
         return switchMode(InverterMode.SELF_USE, soc, target,
                 "history.battery.selfUse", "Feed-in priority -> self use, battery behind schedule",
-                String.format(Locale.ROOT, "Switched to self use, battery %d %% of %d %%", soc, target));
+                Message.key("outcome.battery.switchedSelfUse", "Switched to self use").build(),
+                Message.key("outcome.battery.switchedSelfUse.detail", String.format(Locale.ROOT,
+                                "Battery is at %d %%, below the %d %% expected by %s (tolerance %d %%), so the rest of the day's production charges the battery instead of going to the grid.",
+                                soc, target, at, tolerance))
+                        .with("soc", soc)
+                        .with("target", target)
+                        .with("time", at)
+                        .with("tolerance", tolerance)
+                        .build());
     }
 
     /** In self use: ahead of the checkpoint, switch to feed-in priority so surplus is sold. */
     private RunOutcome evaluateAheadOfSchedule(int hour, int soc) {
         Integer target = properties.getFeedInThresholds().get(hour);
+        String at = checkpointTime(hour);
 
         if (target == null) {
             log.noAction("no feed-in checkpoint configured for {}:00", hour);
-            return RunOutcome.unchanged(String.format(Locale.ROOT, "No feed-in checkpoint at %02d:00", hour));
+
+            return RunOutcome.unchanged(
+                    Message.key("outcome.battery.noTarget", "No charge target at " + at).with("time", at).build(),
+                    Message.key("outcome.battery.noFeedInTarget", String.format(Locale.ROOT,
+                                    "The inverter is in self use but no feed-in checkpoint is configured for %s, so nothing was checked.", at))
+                            .with("time", at)
+                            .build());
         }
 
-        log.detail("Target", "{} % to switch to feed-in priority", target);
+        int tolerance = properties.getTolerance();
+        log.detail("Target", "{} % to switch to feed-in priority (tolerance {} %)", target, tolerance);
 
-        if (soc < target) {
+        if (soc < target - tolerance) {
             log.noAction("battery at {} %, below the {} % needed to give surplus away", soc, target);
-            return RunOutcome.unchanged(String.format(Locale.ROOT, "Battery at %d %% of %d %%, staying in self use", soc, target));
+
+            return RunOutcome.unchanged(
+                    Message.key("outcome.battery.stayingSelfUse", "Staying in self use").build(),
+                    Message.key("outcome.battery.stayingSelfUse.detail", String.format(Locale.ROOT,
+                                    "Battery is at %d %%, below the %d %% the %s checkpoint needs before surplus is given to the grid (tolerance %d %%), so production keeps charging the battery.",
+                                    soc, target, at, tolerance))
+                            .with("soc", soc)
+                            .with("target", target)
+                            .with("time", at)
+                            .with("tolerance", tolerance)
+                            .build());
         }
 
-        log.action("Battery is {} % ahead of the {} % checkpoint, switching to feed-in priority so surplus is sold rather than wasted",
-                soc - target, target);
+        log.action("Battery is at {} % against the {} % checkpoint (tolerance {} %), switching to feed-in priority so surplus is sold rather than wasted",
+                soc, target, tolerance);
 
         return switchMode(InverterMode.FEED_IN_PRIORITY, soc, target,
                 "history.battery.feedIn", "Self use -> feed-in priority, battery ahead of schedule",
-                String.format(Locale.ROOT, "Switched to feed-in priority, battery %d %% of %d %%", soc, target));
+                Message.key("outcome.battery.switchedFeedIn", "Switched to feed-in priority").build(),
+                Message.key("outcome.battery.switchedFeedIn.detail", String.format(Locale.ROOT,
+                                "Battery is at %d %%, at the %d %% checkpoint for %s (tolerance %d %%), so the surplus is sold instead of being wasted.",
+                                soc, target, at, tolerance))
+                        .with("soc", soc)
+                        .with("target", target)
+                        .with("time", at)
+                        .with("tolerance", tolerance)
+                        .build());
     }
 
-    private RunOutcome switchMode(InverterMode target, int soc, int checkpoint, String historyKey, String historyText, String successSummary) {
+    private RunOutcome switchMode(
+            InverterMode target,
+            int soc,
+            int checkpoint,
+            String historyKey,
+            String historyText,
+            Message summary,
+            Message detail
+    ) {
         boolean changed = inverter.setWorkMode(target);
 
         timeline.record(ID, ActionType.WORK_MODE_CHANGE,
-                Message.key(historyKey, historyText).build(),
-                changed, String.format(Locale.ROOT, "battery %d %%, checkpoint %d %%", soc, checkpoint));
+                Message.key(historyKey, historyText).build(), changed, detail);
 
         if (!changed) {
             log.error("The inverter did not accept the work mode change");
-            return RunOutcome.incomplete("the inverter did not accept the work mode change");
+
+            return RunOutcome.incomplete(
+                    Message.key("outcome.inverter.modeRejected", "Work mode change refused").build(),
+                    Message.key("outcome.inverter.modeRejected.detail",
+                                    "The inverter did not accept the change to " + target + ".")
+                            .with("mode", target.name())
+                            .build());
         }
 
-        log.success("Work mode set to {}", target);
-        return RunOutcome.changed(successSummary);
+        log.success("Work mode set to {} (battery {} %, checkpoint {} %)", target, soc, checkpoint);
+        return RunOutcome.changed(summary, detail);
     }
 
     // ------------------------------------------------------------------ helpers
+
+    /** The wall clock time a checkpoint hour actually runs at, e.g. {@code 13:05}. */
+    private String checkpointTime(int hour) {
+        return String.format(Locale.ROOT, "%02d:%02d", hour, properties.getCheckMinute());
+    }
 
     /** Target for a given day, including the weekend bonus. Capped at 100 %. */
     private int requiredLevel(int baseTarget, LocalDate date) {

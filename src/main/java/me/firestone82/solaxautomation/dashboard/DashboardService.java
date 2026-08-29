@@ -19,6 +19,7 @@ import me.firestone82.solaxautomation.integration.solax.cloud.model.DeviceStatus
 import me.firestone82.solaxautomation.integration.solax.model.InverterSnapshot;
 import me.firestone82.solaxautomation.module.discharge.ArmedWindow;
 import me.firestone82.solaxautomation.module.discharge.DischargeModule;
+import me.firestone82.solaxautomation.module.discharge.DischargeProperties;
 import me.firestone82.solaxautomation.module.export.ExportProperties;
 import me.firestone82.solaxautomation.module.weather.WeatherProperties;
 import org.springframework.beans.factory.ObjectProvider;
@@ -64,6 +65,7 @@ public class DashboardService {
     private final WeatherProperties weatherProperties;
     private final RaspberryPiService raspberryPi;
     private final ExportProperties exportProperties;
+    private final DischargeProperties dischargeProperties;
     private final ObjectProvider<DischargeModule> dischargeModule;
 
     // ------------------------------------------------------------------ overview
@@ -78,7 +80,7 @@ public class DashboardService {
             return new Overview(
                     LocalDateTime.now(), null, null,
                     null, null, null, null, null,
-                    null, null, null, null,
+                    null, null, null, null, null,
                     null, null, null, null, null,
                     null, null, null, null, null, null,
                     priceOpt.map(PriceSlot::getPriceCzkPerKwh).orElse(null),
@@ -103,6 +105,7 @@ public class DashboardService {
                 snapshot.getBatteryTemperature(),
                 snapshot.getWorkMode() == null ? null : snapshot.getWorkMode().name(),
                 DeviceStatus.describe(snapshot.getDeviceStatus()),
+                snapshot.getDeviceStatus(),
                 snapshot.getRemoteControlActive(),
                 snapshot.getExportLimit(),
                 snapshot.getPvPower(),
@@ -130,7 +133,9 @@ public class DashboardService {
         Optional<PriceForecast> forecastOpt = oteService.getForecast();
 
         if (forecastOpt.isEmpty()) {
-            return new Prices(List.of(), List.of(), null, null, null, null, false);
+            return new Prices(List.of(), List.of(), null, null, null, null, false,
+                    exportProperties.getMinPrice(), dischargeProperties.getMinPrice(),
+                    format(dischargeProperties.getSearchFrom()), format(dischargeProperties.getSearchTo()));
         }
 
         PriceForecast forecast = forecastOpt.get();
@@ -152,23 +157,33 @@ public class DashboardService {
                 forecast.cheapestToday().map(PriceSlot::getPriceCzkPerKwh).orElse(null),
                 forecast.mostExpensiveToday().map(PriceSlot::getPriceCzkPerKwh).orElse(null),
                 forecast.mostExpensiveToday().map(slot -> format(slot.getStart())).orElse(null),
-                forecast.hasTomorrow()
+                forecast.hasTomorrow(),
+                exportProperties.getMinPrice(),
+                dischargeProperties.getMinPrice(),
+                format(dischargeProperties.getSearchFrom()),
+                format(dischargeProperties.getSearchTo())
         );
     }
 
     // ------------------------------------------------------------------ weather
 
+    /**
+     * The forecast curve, from the start of today through the next day and a half.
+     * <p>
+     * It reaches back to midnight rather than starting at the current hour so the dashboard
+     * can show the day as a whole - how the morning actually turned out is what makes the
+     * afternoon's forecast worth reading. The hours before now come from what the weather
+     * service recorded as they passed, so early in a run there are simply fewer of them.
+     */
     public Weather getWeather() {
-        Optional<me.firestone82.solaxautomation.integration.meteosource.model.WeatherForecast> forecastOpt =
-                weatherService.getForecast();
+        LocalDateTime currentHour = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS);
+        List<MeteoDayHourly> hours = weatherService.getHoursBetween(
+                LocalDate.now().atStartOfDay(), currentHour.plusHours(36));
 
-        if (forecastOpt.isEmpty()) {
+        if (hours.isEmpty()) {
             return new Weather(List.of(), null, weatherProperties.getCloudyThreshold(),
                     weatherProperties.getStormThreshold(), qualityFormula());
         }
-
-        LocalDateTime from = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS);
-        List<MeteoDayHourly> hours = forecastOpt.get().getHourlyBetween(from, from.plusHours(36));
 
         List<WeatherPoint> points = hours.stream()
                 .map(hour -> new WeatherPoint(
@@ -183,7 +198,12 @@ public class DashboardService {
 
         return new Weather(
                 points,
-                points.isEmpty() ? null : points.getFirst().quality(),
+                // The hour running now, not the first one drawn - the curve starts at midnight.
+                points.stream()
+                        .filter(point -> point.dateTime().truncatedTo(ChronoUnit.HOURS).isEqual(currentHour))
+                        .map(WeatherPoint::quality)
+                        .findFirst()
+                        .orElse(null),
                 weatherProperties.getCloudyThreshold(),
                 weatherProperties.getStormThreshold(),
                 qualityFormula()
@@ -198,10 +218,12 @@ public class DashboardService {
                 .map(DashboardService::toPlannedEntry)
                 .toList();
 
-        List<HistoryEntry> history = timeline.getEvents(60).stream()
+        // Enough to cover the day behind us on the chart, not only the activity list.
+        List<HistoryEntry> history = timeline.getEvents(300).stream()
                 .map(event -> new HistoryEntry(
                         event.at(), event.moduleId(), event.type(), event.summary(),
-                        event.messageKey(), event.params(), event.success(), event.detail()))
+                        event.messageKey(), event.params(), event.success(),
+                        event.detail(), event.detailKey(), event.detailParams()))
                 .toList();
 
         return new Timeline(planned, history);
@@ -230,6 +252,9 @@ public class DashboardService {
                 status.summary(),
                 status.summaryKey(),
                 status.summaryParams(),
+                status.detail(),
+                status.detailKey(),
+                status.detailParams(),
                 status.lastRunAt(),
                 status.nextRunAt(),
                 status.lastError(),
@@ -293,7 +318,7 @@ public class DashboardService {
                 action.summary(), action.messageKey(), action.params(), action.certain());
     }
 
-    private static PricePoint toPricePoint(PriceSlot slot, boolean current, boolean selling) {
+    private PricePoint toPricePoint(PriceSlot slot, boolean current, boolean selling) {
         return new PricePoint(
                 format(slot.getStart()),
                 slot.getHour(),
@@ -303,9 +328,54 @@ public class DashboardService {
                 slot.getLevel(),
                 slot.getLevelNum96(),
                 current,
-                selling
+                selling,
+                isExportable(slot),
+                isSellable(slot)
         );
     }
+
+    /**
+     * Whether the export limit module leaves the export open in this interval.
+     * <p>
+     * Only the price rule is judged here, and only inside the module's active hours: outside
+     * them it does not touch the limit at all, so a cheap interval at midnight is not an
+     * interval the export is closed in. The second supply exception is deliberately left out
+     * - which supply the house is on is where the switch happens to be right now, not a
+     * property of the day's prices.
+     */
+    private boolean isExportable(PriceSlot slot) {
+        if (!exportProperties.getActiveHours().contains(slot.getHour())) {
+            return true;
+        }
+
+        return slot.getPriceCzkPerKwh() >= exportProperties.getMinPrice();
+    }
+
+    /**
+     * Whether the selling module may sell the battery into this interval at all: inside the
+     * hours it searches, and at or above the minimum price a sale has to reach.
+     * <p>
+     * Whether one of these intervals is actually chosen is a different question - that
+     * depends on the peak, the plateau around it and the charge in the battery, and only the
+     * planner can answer it.
+     */
+    private boolean isSellable(PriceSlot slot) {
+        return withinSearchWindow(slot.getStart())
+                && slot.getPriceCzkPerKwh() >= dischargeProperties.getMinPrice();
+    }
+
+    /** {@code search-to} of {@code 00:00} means "search to the end of the day". */
+    private boolean withinSearchWindow(LocalTime start) {
+        LocalTime from = dischargeProperties.getSearchFrom();
+        LocalTime to = dischargeProperties.getSearchTo();
+
+        if (start.isBefore(from)) {
+            return false;
+        }
+
+        return to.equals(LocalTime.MIDNIGHT) || !start.isAfter(to);
+    }
+
 
     private static boolean isCurrent(PriceSlot slot, LocalTime now) {
         return !now.isBefore(slot.getStart()) && now.isBefore(slot.getStart().plusMinutes(PriceSlot.SLOT_MINUTES));

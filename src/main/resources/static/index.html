@@ -58,20 +58,39 @@
                     <li><i class="swatch swatch-medium"></i><span data-i18n="prices.medium">Medium</span></li>
                     <li><i class="swatch swatch-high"></i><span data-i18n="prices.high">High</span></li>
                     <li><i class="swatch swatch-selling"></i><span data-i18n="prices.selling">Selling window</span></li>
+                    <!-- What the two automations make of the day. Each names a mark whose
+                         meaning is not self-evident, and each is hidden until its module's
+                         rules are known. -->
+                    <li id="legend-export-blocked" hidden>
+                        <i class="swatch swatch-blocked"></i><span id="legend-export-blocked-text"></span>
+                    </li>
+                    <li id="legend-sellable" hidden>
+                        <i class="swatch swatch-sellable"></i><span id="legend-sellable-text"></span>
+                    </li>
+                    <li id="legend-sell-threshold" hidden>
+                        <i class="swatch line-sell"></i><span id="legend-sell-threshold-text"></span>
+                    </li>
                 </ul>
             </article>
 
             <article class="card">
                 <header class="card-head">
                     <h2 data-i18n="weather.title">Weather quality</h2>
-                    <button type="button" id="weather-info-toggle" class="control icon-button"
-                            aria-expanded="false" aria-controls="weather-info"
-                            data-i18n-title="weather.howCalculated" title="How is this calculated?">i</button>
+                    <div class="card-head-actions">
+                        <div class="segmented" id="weather-range">
+                            <button class="segment is-active" data-range="ahead" data-i18n="range.ahead">From now</button>
+                            <button class="segment" data-range="day" data-i18n="range.day">Whole day</button>
+                        </div>
+                        <button type="button" id="weather-info-toggle" class="control icon-button"
+                                aria-expanded="false" aria-controls="weather-info"
+                                data-i18n-title="weather.howCalculated" title="How is this calculated?">i</button>
+                    </div>
                 </header>
                 <p class="card-sub" data-i18n="weather.explain">
                     Lower is sunnier. The automation compares this value against its thresholds.
                 </p>
                 <div class="chart" id="weather-chart"></div>
+                <p class="chart-note" id="weather-gap" hidden></p>
                 <ul class="legend" id="weather-legend"></ul>
                 <div class="formula" id="weather-info" hidden>
                     <code id="weather-formula"></code>
@@ -156,7 +175,13 @@
         <article class="card">
             <header class="card-head">
                 <h2 data-i18n="timeline.title">Planned actions</h2>
-                <span class="card-hint" data-i18n="timeline.hint">Next 24 hours</span>
+                <div class="card-head-actions">
+                    <span class="card-hint" id="timeline-hint" data-i18n="timeline.hintAhead">Next 24 hours</span>
+                    <div class="segmented" id="timeline-range">
+                        <button class="segment is-active" data-range="ahead" data-i18n="range.ahead">From now</button>
+                        <button class="segment" data-range="day" data-i18n="range.day">Whole day</button>
+                    </div>
+                </div>
             </header>
             <div class="chart" id="timeline-chart"></div>
             <ol class="timeline-list" id="timeline-planned"></ol>
@@ -166,6 +191,10 @@
         <article class="card">
             <header class="card-head">
                 <h2 data-i18n="history.title">Recent activity</h2>
+                <label class="rows-picker">
+                    <span data-i18n="history.rows">Rows</span>
+                    <select id="history-rows" class="control"></select>
+                </label>
             </header>
             <ol class="timeline-list" id="timeline-history"></ol>
             <div class="pager" id="timeline-history-pager" hidden></div>

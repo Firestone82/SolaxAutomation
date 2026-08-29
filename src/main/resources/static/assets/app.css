@@ -300,6 +300,15 @@ main {
     margin-bottom: 4px;
 }
 
+/* A card header can carry more than one control; they stay together on the right. */
+.card-head-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
 .card-sub {
     margin: 0 0 14px;
     color: var(--text-muted);
@@ -412,16 +421,53 @@ main {
 .bar-selling { fill: var(--sell); }
 .bar-current { stroke: var(--text); stroke-width: 1.5; }
 
+/* Intervals the export limit module closes the export in: the bar keeps its price
+   colour so the day is still readable, but it steps back behind the hatch. */
+.bar-blocked { opacity: .45; }
+
+.slot-blocked { pointer-events: none; }
+.blocked-hatch-ground { fill: transparent; }
+.blocked-hatch-line   { stroke: var(--text-faint); stroke-width: 1.4; opacity: .3; }
+
+/* The other side of the same question: where the battery may be sold into. A wash
+   rather than a hatch, because it marks what the automation is looking for. */
+.slot-sellable {
+    fill: var(--sell);
+    opacity: .11;
+    pointer-events: none;
+}
+
 .threshold-sunny { stroke: var(--success); }
 .threshold-storm { stroke: var(--danger); }
+.threshold-sell  { stroke: var(--sell); }
 
 .quality-area { fill: var(--accent); opacity: .14; }
 .quality-line { stroke: var(--accent); stroke-width: 2; fill: none; }
 .quality-dot  { fill: var(--accent); }
 
+/* The hours already behind us, on the weather curve. */
+.quality-past { fill: var(--text-faint); opacity: .07; pointer-events: none; }
+.quality-now  { stroke: var(--danger); stroke-width: 1.5; stroke-dasharray: 3 3; pointer-events: none; }
+
 .timeline-track { fill: var(--surface-alt); }
-.timeline-now   { stroke: var(--danger); stroke-width: 1.5; stroke-dasharray: 3 3; }
 .timeline-label { fill: var(--text-muted); font-size: 10px; font-family: var(--font); }
+
+/* Drawn last so it stays visible over the bars - and deaf to the mouse, or it would
+   swallow the hover of whatever runs at this minute. */
+.timeline-now {
+    stroke: var(--danger);
+    stroke-width: 1.5;
+    stroke-dasharray: 3 3;
+    pointer-events: none;
+}
+
+/* A line under a chart for what the chart itself cannot say - a window it has no
+   readings for, and why. */
+.chart-note {
+    margin: 10px 0 0;
+    color: var(--text-faint);
+    font-size: .78rem;
+}
 
 .chart-empty {
     padding: 28px 0;
@@ -542,6 +588,19 @@ main {
 .swatch-selling { background: var(--sell); }
 .swatch-quality { background: var(--accent); }
 
+.swatch-sellable {
+    background: color-mix(in srgb, var(--sell) 28%, transparent);
+    border: 1px solid color-mix(in srgb, var(--sell) 55%, transparent);
+}
+
+/* The hatch from the price chart, at legend size. */
+.swatch-blocked {
+    background: repeating-linear-gradient(45deg,
+        transparent 0 2px,
+        color-mix(in srgb, var(--text-faint) 55%, transparent) 2px 3.4px);
+    border: 1px solid var(--border-strong);
+}
+
 /* Dashed strips, matching how the thresholds are drawn in the plot. */
 .line-sunny,
 .line-storm {
@@ -552,6 +611,13 @@ main {
 }
 
 .line-storm { border-top-color: var(--danger); }
+
+.line-sell {
+    width: 16px;
+    height: 0;
+    border-radius: 0;
+    border-top: 2px dashed var(--sell);
+}
 
 /* ----------------------------------------------------------------- formula */
 
@@ -758,7 +824,29 @@ main {
 }
 
 .timeline-summary { color: var(--text); }
-.timeline-summary small { display: block; color: var(--text-faint); font-size: .78rem; }
+
+/* The sentence under the headline: what the module did, and why. */
+.timeline-summary small {
+    display: block;
+    margin-top: 2px;
+    color: var(--text-muted);
+    font-size: .78rem;
+    line-height: 1.45;
+}
+
+/* Row count of the activity list, sitting in the card header next to the title. */
+.rows-picker {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-faint);
+    font-size: .78rem;
+}
+
+.rows-picker .control {
+    padding: 3px 8px;
+    font-size: .78rem;
+}
 
 /* Spans the whole row: the `li` grid above would otherwise squeeze it into the time column. */
 .empty-row {
@@ -909,6 +997,15 @@ main {
 .module-status .module-summary {
     color: var(--text);
     font-weight: 500;
+}
+
+/* Why the last run decided what it did. Sits under the status line, not inside it,
+   so a long sentence never pushes the state pill around. */
+.module-status-detail {
+    margin: 8px 0 0;
+    color: var(--text-muted);
+    font-size: .8rem;
+    line-height: 1.5;
 }
 
 .module-facts {

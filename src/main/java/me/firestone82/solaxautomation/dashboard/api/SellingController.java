@@ -113,7 +113,8 @@ public class SellingController {
 
         log.info("Dashboard is cancelling the armed selling window");
 
-        boolean cancelled = moduleOpt.get().cancelArming("cancelled from the dashboard");
+        boolean cancelled = moduleOpt.get().cancelArming(Message.key("reason.discharge.dashboardCancel",
+                "The selling window was cancelled from the dashboard.").build());
 
         return ResponseEntity.ok(cancelled
                 ? ActionResult.ok(Message.key("arm.cancelled", "Selling window cancelled").build())

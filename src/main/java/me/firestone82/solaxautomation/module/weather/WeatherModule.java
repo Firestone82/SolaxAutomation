@@ -168,12 +168,19 @@ public class WeatherModule extends AbstractAutomationModule<WeatherProperties> {
         if (checkpoint.isPresent()) {
             WeatherProperties.ForecastCheck check = checkpoint.get();
 
-            run(String.format(Locale.ROOT, "Forecast check for %02d:00-%02d:59", check.getFrom(), check.getTo()),
+            run(Message.key("running.weather.forecast", String.format(Locale.ROOT,
+                                    "Forecast check for %02d:00-%02d:59", check.getFrom(), check.getTo()))
+                            .with("from", String.format(Locale.ROOT, "%02d:00", check.getFrom()))
+                            .with("to", String.format(Locale.ROOT, "%02d:59", check.getTo()))
+                            .build(),
                     () -> evaluateProductionOutlook(check));
             return;
         }
 
-        run(String.format(Locale.ROOT, "Storm check for the next %d h", properties.getStormLookAheadHours()),
+        run(Message.key("running.weather.storm", String.format(Locale.ROOT,
+                                "Storm check for the next %d h", properties.getStormLookAheadHours()))
+                        .with("hours", properties.getStormLookAheadHours())
+                        .build(),
                 this::evaluateStormRisk);
     }
 
@@ -185,10 +192,11 @@ public class WeatherModule extends AbstractAutomationModule<WeatherProperties> {
 
         Optional<Context> contextOpt = loadContext(from, to);
         if (contextOpt.isEmpty()) {
-            return RunOutcome.incomplete("the forecast or the inverter state is unavailable");
+            return unavailable();
         }
 
         Context context = contextOpt.get();
+        String window = String.format(Locale.ROOT, "%02d:00-%02d:59", check.getFrom(), check.getTo());
 
         // A storm brewing overrides the sunny/cloudy question entirely.
         if (context.quality() >= properties.getStormThreshold()) {
@@ -199,7 +207,7 @@ public class WeatherModule extends AbstractAutomationModule<WeatherProperties> {
 
         if (context.mode() != InverterMode.FEED_IN_PRIORITY && context.mode() != InverterMode.SELF_USE) {
             log.noAction("work mode is {}, which this check does not interfere with", context.mode());
-            return RunOutcome.unchanged("Left " + context.mode() + " alone");
+            return leftAlone(context.mode());
         }
 
         boolean sunny = context.quality() <= properties.getCloudyThreshold();
@@ -210,27 +218,52 @@ public class WeatherModule extends AbstractAutomationModule<WeatherProperties> {
         if (!sunny) {
             if (context.mode() == InverterMode.SELF_USE) {
                 log.noAction("already in self use");
-                return RunOutcome.unchanged("Cloudy outlook, already in self use");
+
+                return RunOutcome.unchanged(
+                        Message.key("outcome.weather.alreadySelfUse", "Cloudy outlook, already in self use").build(),
+                        outlook("outcome.weather.alreadySelfUse.detail", String.format(Locale.ROOT,
+                                "The forecast for %s scores %.2f, above the %.2f that counts as sunny, so production belongs in the battery - the inverter is already in self use.",
+                                window, round(context.quality()), properties.getCloudyThreshold()), context, window));
             }
 
             log.action("Cloudy outlook, keeping production in the battery");
-            return applyMode(InverterMode.SELF_USE, "cloudy forecast", context);
+
+            return applyMode(InverterMode.SELF_USE, context,
+                    Message.key("outcome.weather.switchedSelfUse", "Switched to self use").build(),
+                    outlook("outcome.weather.switchedSelfUse.detail", String.format(Locale.ROOT,
+                            "The forecast for %s scores %.2f, above the %.2f that counts as sunny, so the production is kept in the battery instead of being given to the grid.",
+                            window, round(context.quality()), properties.getCloudyThreshold()), context, window));
         }
 
         if (context.mode() == InverterMode.FEED_IN_PRIORITY) {
             log.noAction("already in feed-in priority");
-            return RunOutcome.unchanged("Sunny outlook, already in feed-in priority");
+
+            return RunOutcome.unchanged(
+                    Message.key("outcome.weather.alreadyFeedIn", "Sunny outlook, already in feed-in priority").build(),
+                    outlook("outcome.weather.alreadyFeedIn.detail", String.format(Locale.ROOT,
+                            "The forecast for %s scores %.2f, at or below the %.2f that counts as sunny, so surplus is worth selling - the inverter is already in feed-in priority.",
+                            window, round(context.quality()), properties.getCloudyThreshold()), context, window));
         }
 
         if (context.battery() < check.getMinBattery()) {
             log.noAction("sunny, but the battery is at {} % and {} % is required", context.battery(), check.getMinBattery());
-            return RunOutcome.unchanged(String.format(Locale.ROOT,
-                    "Sunny outlook but battery only %d %% of %d %%, staying in self use",
-                    context.battery(), check.getMinBattery()));
+
+            return RunOutcome.unchanged(
+                    Message.key("outcome.weather.batteryTooLow", "Sunny, but staying in self use").build(),
+                    outlookBuilder("outcome.weather.batteryTooLow.detail", String.format(Locale.ROOT,
+                                    "The forecast for %s is sunny (%.2f), but the battery is at %d %% and %d %% is required before surplus is given to the grid, so production keeps charging it.",
+                                    window, round(context.quality()), context.battery(), check.getMinBattery()), context, window)
+                            .with("required", check.getMinBattery())
+                            .build());
         }
 
         log.action("Sunny outlook and battery at {} %, giving surplus to the grid", context.battery());
-        return applyMode(InverterMode.FEED_IN_PRIORITY, "sunny forecast", context);
+
+        return applyMode(InverterMode.FEED_IN_PRIORITY, context,
+                Message.key("outcome.weather.switchedFeedIn", "Switched to feed-in priority").build(),
+                outlook("outcome.weather.switchedFeedIn.detail", String.format(Locale.ROOT,
+                        "The forecast for %s scores %.2f, at or below the %.2f that counts as sunny, and the battery is at %d %%, so the surplus goes to the grid.",
+                        window, round(context.quality()), properties.getCloudyThreshold(), context.battery()), context, window));
     }
 
     /** Storm ahead? Hold the battery as an outage reserve. */
@@ -240,35 +273,56 @@ public class WeatherModule extends AbstractAutomationModule<WeatherProperties> {
 
         Optional<Context> contextOpt = loadContext(from, to);
         if (contextOpt.isEmpty()) {
-            return RunOutcome.incomplete("the forecast or the inverter state is unavailable");
+            return unavailable();
         }
 
         Context context = contextOpt.get();
         boolean stormLikely = context.quality() > properties.getStormThreshold();
+        int hours = properties.getStormLookAheadHours();
 
         log.detail("Storm risk", "{} (quality {}, threshold {})",
                 stormLikely ? "likely" : "unlikely", round(context.quality()), properties.getStormThreshold());
 
         if (context.mode() == InverterMode.BACKUP && !backupSetByModule.get()) {
             log.noAction("the inverter is in backup mode, but not because of this module - leaving it alone");
-            return RunOutcome.unchanged("Backup mode was set manually, not touching it");
+
+            return RunOutcome.unchanged(
+                    Message.key("outcome.weather.manualBackup", "Backup mode left alone").build(),
+                    Message.key("outcome.weather.manualBackup.detail",
+                            "The inverter is in backup mode, but this module did not put it there, so it is not taken out of it either.").build());
         }
 
         if (stormLikely) {
             if (context.mode() == InverterMode.BACKUP) {
                 log.noAction("already in backup mode");
-                return RunOutcome.unchanged("Storm likely, already in backup mode");
+
+                return RunOutcome.unchanged(
+                        Message.key("outcome.weather.alreadyBackup", "Storm likely, already in backup").build(),
+                        storm("outcome.weather.alreadyBackup.detail", String.format(Locale.ROOT,
+                                "The next %d h score %.2f, above the %.2f storm threshold, so the battery is held as an outage reserve - the inverter is already in backup mode.",
+                                hours, round(context.quality()), properties.getStormThreshold()), context, hours));
             }
 
             log.action("Storm likely, holding the battery as an outage reserve");
-            RunOutcome outcome = applyMode(InverterMode.BACKUP, "thunderstorm forecast", context);
+
+            RunOutcome outcome = applyMode(InverterMode.BACKUP, context,
+                    Message.key("outcome.weather.switchedBackup", "Switched to backup").build(),
+                    storm("outcome.weather.switchedBackup.detail", String.format(Locale.ROOT,
+                            "The next %d h score %.2f, above the %.2f storm threshold, so the battery is held full as a reserve for an outage.",
+                            hours, round(context.quality()), properties.getStormThreshold()), context, hours));
+
             backupSetByModule.set(outcome.state() == ModuleState.ACTIVE);
             return outcome;
         }
 
         if (context.mode() != InverterMode.BACKUP) {
             log.noAction("no storm and the inverter is not in backup mode");
-            return RunOutcome.unchanged("No storm expected");
+
+            return RunOutcome.unchanged(
+                    Message.key("outcome.weather.noStorm", "No storm expected").build(),
+                    storm("outcome.weather.noStorm.detail", String.format(Locale.ROOT,
+                            "The next %d h score %.2f, below the %.2f storm threshold, so the inverter keeps running normally.",
+                            hours, round(context.quality()), properties.getStormThreshold()), context, hours));
         }
 
         // Leaving backup too eagerly makes the mode flap while a front passes over.
@@ -278,17 +332,72 @@ public class WeatherModule extends AbstractAutomationModule<WeatherProperties> {
         if (nextHourQuality > releaseAt) {
             log.noAction("storm is clearing but the next hour is still at {} (releasing below {})",
                     round(nextHourQuality), round(releaseAt));
-            return RunOutcome.unchanged("Storm still clearing, staying in backup mode");
+
+            return RunOutcome.unchanged(
+                    Message.key("outcome.weather.stormClearing", "Storm still clearing, staying in backup").build(),
+                    Message.key("outcome.weather.stormClearing.detail", String.format(Locale.ROOT,
+                                    "The next hour still scores %.2f and backup mode is only left below %.2f, so the battery stays reserved a while longer.",
+                                    round(nextHourQuality), round(releaseAt)))
+                            .with("quality", round(nextHourQuality))
+                            .with("threshold", round(releaseAt))
+                            .build());
         }
 
         log.action("Storm has passed, releasing the battery back to normal operation");
-        RunOutcome outcome = applyMode(InverterMode.SELF_USE, "thunderstorm passed", context);
+
+        RunOutcome outcome = applyMode(InverterMode.SELF_USE, context,
+                Message.key("outcome.weather.stormPassed", "Storm passed, back to self use").build(),
+                Message.key("outcome.weather.stormPassed.detail", String.format(Locale.ROOT,
+                                "The next hour scores %.2f, below the %.2f backup mode is left at, so the battery is released back to normal operation.",
+                                round(nextHourQuality), round(releaseAt)))
+                        .with("quality", round(nextHourQuality))
+                        .with("threshold", round(releaseAt))
+                        .build());
 
         if (outcome.state() == ModuleState.ACTIVE) {
             backupSetByModule.set(false);
         }
 
         return outcome;
+    }
+
+    /** The forecast or the inverter could not be read - the same answer for both checks. */
+    private RunOutcome unavailable() {
+        return RunOutcome.incomplete(
+                Message.key("outcome.weather.skipped", "Weather check skipped").build(),
+                Message.key("outcome.weather.noData",
+                        "The forecast or the inverter state is unavailable, so the work mode was left as it is.").build());
+    }
+
+    private RunOutcome leftAlone(InverterMode mode) {
+        return RunOutcome.unchanged(
+                Message.key("outcome.weather.otherMode", "Nothing to do in " + mode).with("mode", mode.name()).build(),
+                Message.key("outcome.weather.otherMode.detail", String.format(Locale.ROOT,
+                                "This check only moves between feed-in priority and self use. The inverter is in %s, so it was left alone.", mode))
+                        .with("mode", mode.name())
+                        .build());
+    }
+
+    /** Detail of a sunny/cloudy decision, carrying the numbers it was made from. */
+    private Message outlook(String key, String text, Context context, String window) {
+        return outlookBuilder(key, text, context, window).build();
+    }
+
+    private Message.Builder outlookBuilder(String key, String text, Context context, String window) {
+        return Message.key(key, text)
+                .with("window", window)
+                .with("quality", round(context.quality()))
+                .with("threshold", properties.getCloudyThreshold())
+                .with("battery", context.battery());
+    }
+
+    /** Detail of a storm decision. */
+    private Message storm(String key, String text, Context context, int hours) {
+        return Message.key(key, text)
+                .with("hours", hours)
+                .with("quality", round(context.quality()))
+                .with("threshold", properties.getStormThreshold())
+                .build();
     }
 
     // ------------------------------------------------------------------ helpers
@@ -330,7 +439,7 @@ public class WeatherModule extends AbstractAutomationModule<WeatherProperties> {
         return Optional.of(new Context(modeOpt.get(), socOpt.get(), hours, quality));
     }
 
-    private RunOutcome applyMode(InverterMode mode, String because, Context context) {
+    private RunOutcome applyMode(InverterMode mode, Context context, Message summary, Message detail) {
         boolean changed = inverter.setWorkMode(mode);
 
         timeline.record(ID, ActionType.WORK_MODE_CHANGE, Message
@@ -338,16 +447,21 @@ public class WeatherModule extends AbstractAutomationModule<WeatherProperties> {
                         .with("from", context.mode().name())
                         .with("to", mode.name())
                         .build(),
-                changed,
-                String.format(Locale.ROOT, "%s, quality %.2f, battery %d %%", because, context.quality(), context.battery()));
+                changed, detail);
 
         if (!changed) {
             log.error("The inverter did not accept the work mode change to {}", mode);
-            return RunOutcome.incomplete("the inverter did not accept the work mode change");
+
+            return RunOutcome.incomplete(
+                    Message.key("outcome.inverter.modeRejected", "Work mode change refused").build(),
+                    Message.key("outcome.inverter.modeRejected.detail",
+                                    "The inverter did not accept the change to " + mode + ".")
+                            .with("mode", mode.name())
+                            .build());
         }
 
         log.success("Work mode set to {}", mode);
-        return RunOutcome.changed(String.format(Locale.ROOT, "%s -> %s (%s)", context.mode(), mode, because));
+        return RunOutcome.changed(summary, detail);
     }
 
     private static double round(double value) {

@@ -32,6 +32,10 @@ public final class DashboardDtos {
             Double batteryTemperature,
             String workMode,
             String deviceStatus,
+
+            /** Raw cloud status code behind {@code deviceStatus}, so the dashboard can translate it. */
+            Integer deviceStatusCode,
+
             Boolean remoteControlActive,
             Integer exportLimit,
             Double pvPower,
@@ -57,7 +61,20 @@ public final class DashboardDtos {
     ) {
     }
 
-    /** One 15 minute spot price interval. */
+    /**
+     * One 15 minute spot price interval.
+     * <p>
+     * The two automation flags answer different questions, and the chart draws them
+     * differently for exactly that reason: {@code exportable} is about the solar production
+     * leaving the house at all, {@code sellable} about emptying the battery into the grid on
+     * purpose.
+     *
+     * @param selling    the interval is inside the armed selling window
+     * @param exportable the export limit module leaves the export open here; {@code false}
+     *                   where the price is under the minimum it closes the limit at
+     * @param sellable   the selling module may sell the battery into this interval - inside
+     *                   its search hours and at or above its minimum price
+     */
     public record PricePoint(
             String time,
             int hour,
@@ -67,11 +84,20 @@ public final class DashboardDtos {
             String level,
             int rank,
             boolean current,
-            boolean selling
+            boolean selling,
+            boolean exportable,
+            boolean sellable
     ) {
     }
 
-    /** Today's and tomorrow's prices plus the headline numbers above the chart. */
+    /**
+     * Today's and tomorrow's prices plus the headline numbers above the chart.
+     *
+     * @param exportMinPrice price under which the export limit module closes the export
+     * @param sellMinPrice   price a peak has to reach before the battery is sold at all
+     * @param sellFrom       earliest interval the planner searches in, {@code HH:mm}
+     * @param sellTo         latest interval the planner searches in, {@code HH:mm}
+     */
     public record Prices(
             List<PricePoint> today,
             List<PricePoint> tomorrow,
@@ -79,7 +105,11 @@ public final class DashboardDtos {
             Double minimum,
             Double maximum,
             String peakTime,
-            boolean tomorrowPublished
+            boolean tomorrowPublished,
+            Double exportMinPrice,
+            Double sellMinPrice,
+            String sellFrom,
+            String sellTo
     ) {
     }
 
@@ -122,7 +152,12 @@ public final class DashboardDtos {
     ) {
     }
 
-    /** A past action, drawn on the timeline. */
+    /**
+     * A past action, drawn on the timeline.
+     * <p>
+     * {@code summary} is the row's headline, {@code detail} the sentence under it saying what
+     * the module actually did and why. Both carry a translation key of their own.
+     */
     public record HistoryEntry(
             LocalDateTime at,
             String moduleId,
@@ -131,7 +166,9 @@ public final class DashboardDtos {
             String messageKey,
             Map<String, Object> params,
             boolean success,
-            String detail
+            String detail,
+            String detailKey,
+            Map<String, Object> detailParams
     ) {
     }
 
@@ -150,6 +187,9 @@ public final class DashboardDtos {
             String summary,
             String summaryKey,
             Map<String, Object> summaryParams,
+            String summaryDetail,
+            String summaryDetailKey,
+            Map<String, Object> summaryDetailParams,
             LocalDateTime lastRunAt,
             LocalDateTime nextRunAt,
             String lastError,

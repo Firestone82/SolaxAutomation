@@ -91,7 +91,9 @@ public class ExportModule extends AbstractAutomationModule<ExportProperties> {
                 return;
             }
 
-            run("Connection switch changed to " + newState, this::evaluate);
+            run(Message.key("running.export.switchChanged", "Connection switch changed to " + newState)
+                    .with("state", newState.name())
+                    .build(), this::evaluate);
         });
     }
 
@@ -177,18 +179,26 @@ public class ExportModule extends AbstractAutomationModule<ExportProperties> {
             return;
         }
 
-        run(String.format(Locale.ROOT, "Export limit check for %02d:%02d", now.getHour(), now.getMinute()), this::evaluate);
+        String at = String.format(Locale.ROOT, "%02d:%02d", now.getHour(), now.getMinute());
+
+        run(Message.key("running.export.check", "Export limit check for " + at).with("time", at).build(), this::evaluate);
     }
 
     private RunOutcome evaluate() {
         Optional<PriceSlot> priceOpt = oteService.getCurrentPrice();
         if (priceOpt.isEmpty()) {
-            return RunOutcome.incomplete("the current spot price is unavailable");
+            return RunOutcome.incomplete(
+                    Message.key("outcome.export.skipped", "Export limit check skipped").build(),
+                    Message.key("outcome.export.noPrice",
+                            "The current spot price is unavailable, so the export limit was left as it is.").build());
         }
 
         Optional<Integer> currentLimitOpt = inverter.getExportLimit();
         if (currentLimitOpt.isEmpty()) {
-            return RunOutcome.incomplete("the current export limit could not be read");
+            return RunOutcome.incomplete(
+                    Message.key("outcome.export.skipped", "Export limit check skipped").build(),
+                    Message.key("outcome.export.noLimit",
+                            "The current export limit could not be read from the inverter, so nothing was changed.").build());
         }
 
         PriceSlot price = priceOpt.get();
@@ -202,17 +212,23 @@ public class ExportModule extends AbstractAutomationModule<ExportProperties> {
         log.detail("Current limit", "{} W", currentLimit);
 
         int target;
-        String because;
+        Message because;
 
         if (price.getPriceCzkPerKwh() >= properties.getMinPrice()) {
             target = properties.getPower().getMaximum();
-            because = "price is worth exporting at";
+            because = reason("reason.export.pricePaysOff", String.format(Locale.ROOT,
+                    "The spot price %.2f CZK/kWh is at or above the %.2f CZK/kWh exporting is worth it at, so the limit is fully open at %d W.",
+                    round(price.getPriceCzkPerKwh()), properties.getMinPrice(), target), price, target);
         } else if (meteredGrid) {
             target = properties.getPower().getMinimum();
-            because = "price is too low and the house is on the metered grid";
+            because = reason("reason.export.priceTooLowMetered", String.format(Locale.ROOT,
+                    "The spot price %.2f CZK/kWh is below the %.2f CZK/kWh exporting is worth it at and the house is on the metered grid, so the limit is closed to %d W.",
+                    round(price.getPriceCzkPerKwh()), properties.getMinPrice(), target), price, target);
         } else {
             target = properties.getPower().getMaximum();
-            because = "price is too low but the export does not reach the metered grid";
+            because = reason("reason.export.priceTooLowSecondSupply", String.format(Locale.ROOT,
+                    "The spot price %.2f CZK/kWh is below the %.2f CZK/kWh exporting is worth it at, but the house is on the second supply so the export is not billed - the limit stays open at %d W.",
+                    round(price.getPriceCzkPerKwh()), properties.getMinPrice(), target), price, target);
         }
 
         // Midday throttle: only while the export is open and the sky is dull.
@@ -227,7 +243,14 @@ public class ExportModule extends AbstractAutomationModule<ExportProperties> {
 
                 if (quality <= properties.getReducedWindow().getMaxWeatherQuality()) {
                     target = properties.getPower().getReduced();
-                    because = "midday window and the forecast is dull, keeping more production in the battery";
+                    because = Message
+                            .key("reason.export.middayDull", String.format(Locale.ROOT,
+                                    "It is the midday window and the forecast quality %.2f is at or below %.2f, so the limit is held down to %d W to keep more production in the battery.",
+                                    round(quality), properties.getReducedWindow().getMaxWeatherQuality(), target))
+                            .with("quality", round(quality))
+                            .with("threshold", properties.getReducedWindow().getMaxWeatherQuality())
+                            .with("limit", target)
+                            .build();
                 }
             }
         }
@@ -236,10 +259,15 @@ public class ExportModule extends AbstractAutomationModule<ExportProperties> {
 
         if (currentLimit == target) {
             log.noAction("the export limit is already {} W", target);
-            return RunOutcome.unchanged(String.format(Locale.ROOT, "Export limit stays at %d W (%s)", target, because));
+
+            return RunOutcome.unchanged(
+                    Message.key("outcome.export.unchanged", "Export limit stays at " + target + " W")
+                            .with("watts", target)
+                            .build(),
+                    because);
         }
 
-        log.action("Changing the export limit from {} W to {} W - {}", currentLimit, target, because);
+        log.action("Changing the export limit from {} W to {} W - {}", currentLimit, target, because.text());
 
         boolean changed = inverter.setExportLimit(target);
         timeline.record(ID, ActionType.EXPORT_LIMIT, Message
@@ -251,11 +279,31 @@ public class ExportModule extends AbstractAutomationModule<ExportProperties> {
 
         if (!changed) {
             log.error("The inverter did not accept the new export limit");
-            return RunOutcome.incomplete("the inverter did not accept the new export limit");
+
+            return RunOutcome.incomplete(
+                    Message.key("outcome.export.rejected", "Export limit change refused").build(),
+                    Message.key("outcome.export.rejected.detail",
+                                    "The inverter did not accept the new export limit of " + target + " W.")
+                            .with("watts", target)
+                            .build());
         }
 
         log.success("Export limit set to {} W", target);
-        return RunOutcome.changed(String.format(Locale.ROOT, "Export limit set to %d W (%s)", target, because));
+
+        return RunOutcome.changed(
+                Message.key("outcome.export.changed", "Export limit set to " + target + " W")
+                        .with("watts", target)
+                        .build(),
+                because);
+    }
+
+    /** One of the price driven reasons, with the numbers the dashboard interpolates. */
+    private Message reason(String key, String text, PriceSlot price, int limit) {
+        return Message.key(key, text)
+                .with("price", round(price.getPriceCzkPerKwh()))
+                .with("minimum", properties.getMinPrice())
+                .with("limit", limit)
+                .build();
     }
 
     /** Mean forecast quality for the hour before through two hours after now. */

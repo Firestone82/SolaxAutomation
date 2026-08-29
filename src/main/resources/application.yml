@@ -150,6 +150,12 @@ meteosource:
     place-id: prague
   cache-ttl: 15m
   timeout: 15s
+  # The forecast only ever looks forward, so the hours that pass are kept as they go
+  # by - that is what lets the dashboard draw today's morning in the afternoon.
+  # Written down so a restart does not start the day over with an empty chart.
+  history:
+    persist: true
+    file: data/weather-history.json
 
 # -----------------------------------------------------------------------------
 #  Dashboard
@@ -179,8 +185,9 @@ timeline:
   file: data/timeline.json
   # How many entries survive a restart. The dashboard shows more while running.
   persisted-events: 30
-  # How many are held in memory for the current run.
-  memory-events: 100
+  # How many are held in memory for the current run. A whole day of quarter-hourly
+  # checks is a few hundred entries, and the dashboard can draw the day behind it.
+  memory-events: 400
 
 # =============================================================================
 #  Automation modules
@@ -204,6 +211,10 @@ automation:
       15: 90
     # Added to every target at weekends, when consumption is higher.
     weekend-increase: 10
+    # How far under a checkpoint the battery may be and still count as having reached it.
+    # A battery at 79 % when 80 % was expected is on schedule for every practical purpose,
+    # and switching the inverter over that difference only makes the mode flap.
+    tolerance: 2
     # Hour of day -> state of charge at or above which self use switches to
     # feed-in priority. Independent of self-use-thresholds above - covers the
     # morning, where being this far ahead already means production is wasted.

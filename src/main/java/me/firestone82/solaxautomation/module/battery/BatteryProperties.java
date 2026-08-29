@@ -42,6 +42,17 @@ public class BatteryProperties implements ModuleProperties {
     private int weekendIncrease = 0;
 
     /**
+     * How far under a checkpoint the battery may be and still count as having reached it, %.
+     * <p>
+     * A checkpoint is a rough expectation, not a contract: a battery at 79 % when 80 % was
+     * expected is on schedule for every practical purpose, and switching the inverter over
+     * such a difference only makes the work mode flap around the checkpoint hour. The
+     * tolerance applies to both directions - a self-use target counts as met, and a feed-in
+     * checkpoint counts as reached, as soon as the battery is within it.
+     */
+    private int tolerance = 2;
+
+    /**
      * Ahead-of-schedule checkpoints: hour of day mapped to the state of charge at or above
      * which self use switches to feed-in priority, %.
      * <p>

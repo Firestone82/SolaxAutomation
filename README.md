@@ -51,7 +51,7 @@ pick it up. Deleting a module means deleting its package.
 
 | Module | Config prefix | What it does |
 |---|---|---|
-| Battery charge guard | `automation.battery` | Checks the battery against charge targets through the day: switches to self use when behind schedule, and to feed-in priority when comfortably ahead of it so surplus production is sold rather than wasted. |
+| Battery charge guard | `automation.battery` | Checks the battery against charge targets through the day: switches to self use when behind schedule, and to feed-in priority when comfortably ahead of it so surplus production is sold rather than wasted. A checkpoint counts as met while the battery is within `tolerance` of it, so 79 % against an 80 % target is not treated as behind schedule. |
 | Export limit | `automation.export` | Closes the export limit while the spot price is too low to be worth selling, and throttles it around midday on dull days. Runs every quarter of an hour, matching how often the price changes. |
 | Weather work mode | `automation.weather` | Chooses between feed-in priority and self use from the forecast, and moves to backup ahead of a thunderstorm. |
 | Grid selling | `automation.discharge` | Finds the most valuable quarter-hour window of the day and sells the battery into it through remote control. |
@@ -144,25 +144,63 @@ battery earns, so they are pinned down rather than only observed in production l
 connection switch (HIGH is the metered grid, LOW the second supply — the tile says which, and says
 plainly when it is the off-Pi stub rather than a pin); the day's 96 quarter-hour prices
 with the armed selling window highlighted; the weather quality curve with the thresholds the modules
-compare against; a 24 hour timeline of what every module intends to do; and recent activity.
+compare against; a timeline of what every module intends to do and what it already did; and recent
+activity.
+
+The price chart also draws what the two price-driven automations make of the day, because the whole
+point of the prices is what those two do about them. Intervals under `automation.export.min-price`,
+where the export limit module closes the export because production is not worth putting on the grid,
+are **hatched** over their full height and their bars step back. Intervals the selling module may
+sell the battery into — inside its search hours and at or above `automation.discharge.min-price` —
+are **washed in the selling colour** instead, with that minimum drawn in as a dashed line. Adjacent
+intervals merge into one band, so each reads as a part of the day rather than 96 stripes.
+
+The wash is where a window *can* be armed, not where one *will* be: which of those intervals is
+actually chosen depends on the peak, the plateau around it and the charge in the battery, and only
+the planner can answer that. The armed window itself keeps its own solid colour on top.
 
 The timeline shows every run each module has coming up, not just the next one. Two modules are left
 out of it: the export limit is re-checked every quarter of an hour and the weather work mode every
 hour, nearly always with the same outcome, and 92 identical rows bury the handful that say something.
 Their own widget on the modules page always shows the full schedule.
 
+**Both time charts switch between looking forward and showing the whole day.** _From now_ is the
+default — the next 24 hours of the timeline, the forecast from this hour on. _Whole day_ starts at
+midnight instead, so the morning is on screen next to the afternoon, and the choice is remembered per
+browser. Looking back is only worth a switch because there is something there: the timeline fills the
+hours behind now with what actually ran, taken from the same activity history the list below shows,
+drawn on its module's own row and stepped back so the plan still reads first. A run that failed is
+red. On the weather curve the hours already past are washed over and separated from the forecast by
+the same "now" marker.
+
+The forecast only ever looks forward, so the hours behind us are the ones the application saw go by.
+They are written to `meteosource.history.file` (`data/weather-history.json` by default) so a restart
+does not start the day over — and where the window still reaches back further than the record does,
+the axis keeps the missing hours rather than stretching the readings across them, with a line under
+the chart saying from when it has been watching. Turn the file off with
+`meteosource.history.persist: false` and the record lives for as long as the process does.
+
 The list beneath the chart pages in tens, so a long plan stays one screen tall. The page you are on
-survives a refresh.
+survives a refresh. Recent activity pages the same way, but how many rows fit on a screen is a matter
+of taste, so its row count is a control in the card header — 5 to 100 rows, remembered per browser.
+
+Every activity row is a headline and a sentence: what the module decided ("Export limit stays at
+3950 W") and why it decided it ("the spot price 2.15 CZK/kWh is at or above the 0.50 CZK/kWh
+exporting is worth it at, so the limit is fully open"). The module cards read the same way, so the
+two never have to be pieced together.
 
 Recent activity survives a restart: the newest `timeline.persisted-events` entries are kept in a small
 JSON file (`data/timeline.json` by default). It is a convenience for the dashboard, not an audit
 log - the rolling log files remain the durable record.
 
-All three charts are hoverable. A price interval reports its exact price in both currencies and how it
-compares with that day's average; a forecast hour reports its
-quality, the band that quality falls into, cloud cover and temperature; a planned action reports the
-module behind it, its kind, the window, how long it lasts, how far away it is and whether it is
-committed or a routine check. The weather quality formula sits behind the ⓘ button in that card's
+All three charts are hoverable. A price interval reports its exact price in both currencies, how it
+compares with that day's average and, where it falls into one of the two bands, the rule that put it
+there; a forecast hour reports its quality, the band that quality falls into, cloud cover and
+temperature, and says when it is already behind us; a planned action is titled by its kind and the
+module behind it, reports the window, how long it lasts, how far away it is and whether it is
+committed or a routine check, and carries the sentence describing it underneath rather than as a
+title. A run that already happened is titled by what it decided instead, with how long ago it ran and
+whether the inverter took it. The weather quality formula sits behind the ⓘ button in that card's
 header rather than taking up space on every visit, and the two thresholds are named in the legend
 instead of being written across the plot.
 
@@ -222,10 +260,12 @@ transition actually runs. So the exit is sent as a one second, zero power sessio
 about the battery. Set `solax.cloud.exit-with-push-power: false` if your inverter leaves on the
 direct exit alone.
 
-English and Czech, light/dark/system theme, both remembered per browser. Module names, descriptions,
-configuration labels, planned actions, history entries and lifecycle statuses are translated;
-per-run outcome sentences stay in English on purpose, because they are the same wording the log file
-contains.
+English and Czech, light/dark/system theme, both remembered per browser. Everything the dashboard
+shows is translated: module names and descriptions, configuration labels, planned actions, activity
+headlines and their explanations, and every per-run outcome. Each of those travels as an English
+sentence plus a translation key with its values, so the log files and the API keep reading in English
+while the page renders in whichever language is selected — a message the dictionary does not know
+falls back to the English the backend already rendered rather than showing a raw key.
 
 Set `dashboard.allow-control: false` if the dashboard is reachable from outside your local network —
 the application has no authentication of its own.

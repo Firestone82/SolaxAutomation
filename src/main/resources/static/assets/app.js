@@ -9,6 +9,9 @@
     const STORAGE_LANGUAGE = 'solax.language';
     const STORAGE_THEME = 'solax.theme';
     const STORAGE_PAGE = 'solax.page';
+    const STORAGE_HISTORY_ROWS = 'solax.historyRows';
+    const STORAGE_TIMELINE_RANGE = 'solax.timelineRange';
+    const STORAGE_WEATHER_RANGE = 'solax.weatherRange';
 
     const state = {
         config: {refreshSeconds: 30, allowControl: true, currency: 'CZK', defaultLanguage: 'en', defaultTheme: 'system'},
@@ -20,7 +23,13 @@
         selling: null,
         priceDay: 'today',
         page: 'overview',
-        theme: 'system'
+        theme: 'system',
+        historyRows: 10,
+
+        // 'ahead' looks forward from this hour, 'day' shows today from midnight - the same
+        // choice on both time charts, so switching one does not have to be relearned on the other.
+        timelineRange: 'ahead',
+        weatherRange: 'ahead'
     };
 
     const el = id => document.getElementById(id);
@@ -28,6 +37,9 @@
 
     /** Backend sentence: translated when we have a key for it, English otherwise. */
     const msg = entry => I18N.message(entry.messageKey, entry.params, entry.summary);
+
+    /** The sentence under a backend message, translated the same way as the message itself. */
+    const detailOf = entry => I18N.message(entry.detailKey, entry.detailParams, entry.detail);
 
     /** Module name/description, translated when the dashboard knows the module. */
     const moduleText = (id, field, fallback) => I18N.message(`module.${id}.${field}`, null, fallback);
@@ -39,11 +51,12 @@
     const configDescription = entry =>
         I18N.message(entry.i18nKey ? entry.i18nKey + '.desc' : null, null, entry.description);
 
-    /**
-     * Module status line. Lifecycle messages carry a translation key; per-run outcomes do
-     * not, on purpose - they are the same sentences the log file contains.
-     */
+    /** Module status headline, e.g. "Export limit unchanged". */
     const moduleSummary = module => I18N.message(module.summaryKey, module.summaryParams, module.summary) || '';
+
+    /** The sentence under it, saying what the module actually decided and why. */
+    const moduleDetail = module =>
+        I18N.message(module.summaryDetailKey, module.summaryDetailParams, module.summaryDetail) || '';
 
     /** Timeline bar colours, mirrored from charts.js so tooltips match the marks. */
     const ACTION_COLOURS = {
@@ -168,6 +181,20 @@
             : t('selling.startedAgo', {duration: humanMinutes(-minutes)});
     }
 
+    const DAY_MS = 24 * 3600 * 1000;
+
+    function startOfHour(date) {
+        const hour = new Date(date.getTime());
+        hour.setMinutes(0, 0, 0);
+        return hour;
+    }
+
+    function startOfDay(date) {
+        const day = new Date(date.getTime());
+        day.setHours(0, 0, 0, 0);
+        return day;
+    }
+
     /** Value for an <input type="datetime-local">, which needs local time without a zone. */
     function toInputValue(date) {
         const pad = n => String(n).padStart(2, '0');
@@ -262,7 +289,7 @@
             t('stat.mode'),
             overview.workMode ? t('mode.' + overview.workMode) : t('common.unknown'),
             null,
-            overview.remoteControlActive ? t('stat.remoteControl') : overview.deviceStatus,
+            overview.remoteControlActive ? t('stat.remoteControl') : deviceStatus(overview),
             null
         );
 
@@ -347,6 +374,15 @@
         }));
     }
 
+    /**
+     * The inverter's running status. Translated through its numeric code where the dashboard
+     * knows it, and left as the English label the backend derived otherwise - the vendor's
+     * list is long and mostly made of states nobody ever sees.
+     */
+    function deviceStatus(overview) {
+        return I18N.message('device.' + overview.deviceStatusCode, null, overview.deviceStatus);
+    }
+
     /** Points for the day the switch is on, or null when tomorrow is not published. */
     function selectedPricePoints() {
         const prices = state.prices;
@@ -389,6 +425,8 @@
         const summaryLine = el('price-summary');
         const points = selectedPricePoints();
 
+        renderPriceLegend();
+
         if (!points) {
             const message = state.priceDay === 'tomorrow' ? t('prices.noTomorrow') : t('prices.none');
             Charts.priceChart(container, [], {emptyMessage: message});
@@ -396,20 +434,24 @@
             return;
         }
 
+        const prices = state.prices;
         const summary = priceSummary(points);
 
         Charts.priceChart(container, points, {
             emptyMessage: t('prices.none'),
+            sellThreshold: prices.sellMinPrice,
             tooltip: point => ({
                 title: `${point.time} – ${endOfSlot(point)}`,
-                subtitle: point.selling ? t('prices.sellingWindow') : null,
-                accent: point.selling ? 'var(--sell)' : `var(--price-${point.level || 'medium'})`,
+                subtitle: automationLabel(point),
+                accent: point.selling ? 'var(--sell)'
+                    : point.sellable ? 'var(--sell)'
+                        : point.exportable === false ? 'var(--text-faint)' : `var(--price-${point.level || 'medium'})`,
                 rows: [
                     [t('tooltip.price'), `${formatNumber(point.czkPerKwh, 2)} ${state.config.currency}/kWh`],
                     [t('tooltip.priceEur'), `${formatNumber(point.eurPerKwh, 4)} EUR/kWh`],
                     [t('tooltip.vsAverage'), priceVersusAverage(point, summary)]
                 ],
-                note: point.current ? t('tooltip.currentInterval') : null
+                note: point.current ? t('tooltip.currentInterval') : automationNote(point)
             })
         });
 
@@ -421,12 +463,112 @@
         }) : '';
     }
 
+    /** What the automation makes of this interval, in three words, for the tooltip. */
+    function automationLabel(point) {
+        if (point.selling) {
+            return t('prices.sellingWindow');
+        }
+
+        if (point.sellable) {
+            return t('prices.sellable');
+        }
+
+        return point.exportable === false ? t('prices.notExportable') : null;
+    }
+
+    /** The same, spelled out with the numbers the rule is made of. */
+    function automationNote(point) {
+        const prices = state.prices;
+        const currency = state.config.currency;
+
+        if (point.exportable === false) {
+            return t('prices.notExportableHint', {
+                price: formatNumber(prices?.exportMinPrice, 2),
+                currency: currency
+            });
+        }
+
+        return point.sellable
+            ? t('prices.sellableHint', {
+                price: formatNumber(prices?.sellMinPrice, 2),
+                currency: currency,
+                from: prices?.sellFrom,
+                to: prices?.sellTo
+            })
+            : null;
+    }
+
+    /**
+     * The price legend names the two bands and the minimum price line - the marks on the
+     * chart whose meaning is not self-evident, and the only place their values are shown.
+     */
+    function renderPriceLegend() {
+        const prices = state.prices;
+        const currency = state.config.currency;
+
+        const known = value => value !== null && value !== undefined;
+
+        const items = [
+            ['legend-export-blocked', 'legend-export-blocked-text', known(prices?.exportMinPrice),
+                () => t('prices.exportThreshold', {price: formatNumber(prices.exportMinPrice, 2), currency: currency})],
+            ['legend-sellable', 'legend-sellable-text', known(prices?.sellMinPrice),
+                () => t('prices.sellable')],
+            ['legend-sell-threshold', 'legend-sell-threshold-text', known(prices?.sellMinPrice),
+                () => t('prices.sellThreshold', {price: formatNumber(prices.sellMinPrice, 2), currency: currency})]
+        ];
+
+        items.forEach(([itemId, textId, shown, text]) => {
+            el(itemId).hidden = !shown;
+
+            if (shown) {
+                el(textId).textContent = text();
+            }
+        });
+    }
+
+    /**
+     * The window the forecast curve covers: the day ahead, or today from midnight.
+     * <p>
+     * The whole-day window is a fixed 24 hours whether or not there is a reading for every
+     * hour of it - an application started at nine has nothing for the morning, and an axis
+     * that quietly ends at the last reading it has would read as a shorter day rather than
+     * as a missing one.
+     */
+    function weatherWindow() {
+        const now = new Date();
+
+        if (state.weatherRange === 'day') {
+            const start = startOfDay(now);
+            return {start: start, end: new Date(start.getTime() + DAY_MS)};
+        }
+
+        const hours = state.weather?.hours || [];
+        const start = startOfHour(now);
+        const last = hours.length ? new Date(hours[hours.length - 1].dateTime) : null;
+
+        return {start: start, end: last && last > start ? last : new Date(start.getTime() + DAY_MS)};
+    }
+
+    /** The forecast hours inside that window. */
+    function weatherPoints(range) {
+        return (state.weather?.hours || []).filter(point => {
+            const at = new Date(point.dateTime);
+            return at >= range.start && at <= range.end;
+        });
+    }
+
     function renderWeather() {
         const weather = state.weather;
-        el('weather-formula').textContent = weather?.qualityFormula || '';
+        const range = weatherWindow();
+        const points = weatherPoints(range);
 
-        Charts.weatherChart(el('weather-chart'), weather?.hours || [], {
+        el('weather-formula').textContent = weather?.qualityFormula || '';
+        renderWeatherGap(range, points);
+
+        Charts.weatherChart(el('weather-chart'), points, {
             emptyMessage: t('weather.none'),
+            start: range.start,
+            end: range.end,
             cloudyThreshold: weather?.cloudyThreshold,
             stormThreshold: weather?.stormThreshold,
             tooltip: point => ({
@@ -438,11 +580,39 @@
                     [t('tooltip.outlook'), qualityLabel(point.quality, weather)],
                     [t('tooltip.cloudCover'), `${formatNumber(point.cloudCover, 0)} %`],
                     [t('tooltip.temperature'), `${formatNumber(point.temperature, 1)} °C`]
-                ]
+                ],
+                note: new Date(point.dateTime) < startOfHour(new Date()) ? t('weather.alreadyHappened') : null
             })
         });
 
         renderWeatherLegend(weather);
+    }
+
+    /**
+     * Says so when the window reaches back further than the recorded hours do.
+     * <p>
+     * The forecast only ever looks forward, so the hours behind us are the ones this
+     * application saw go by. After a restart there is a gap at the start of the day, and an
+     * empty stretch of axis with no explanation looks like a broken chart.
+     */
+    function renderWeatherGap(range, points) {
+        const note = el('weather-gap');
+        const first = points.length ? new Date(points[0].dateTime) : null;
+
+        // An hour of slack: the window starts on the hour, so a first point exactly there
+        // is a full window, not a gap. With no forecast at all the chart says so itself,
+        // and saying it twice helps nobody.
+        const missing = state.weatherRange === 'day'
+            && (state.weather?.hours?.length || 0) > 0
+            && (!first || first - range.start >= 3600 * 1000);
+
+        note.hidden = !missing;
+
+        if (missing) {
+            note.textContent = first
+                ? t('weather.recordedFrom', {time: formatTimeOnly(first.toISOString())})
+                : t('weather.recordedNone');
+        }
     }
 
     /**
@@ -514,26 +684,96 @@
             [module.id, moduleText(module.id, 'name', module.name)]));
     }
 
-    function renderTimeline() {
+    /** The window the timeline chart draws: the day ahead, or today from midnight. */
+    function timelineWindow() {
+        const now = new Date();
+
+        if (state.timelineRange === 'day') {
+            const start = startOfDay(now);
+            return {start: start, end: new Date(start.getTime() + DAY_MS)};
+        }
+
+        const start = startOfHour(now);
+        return {start: start, end: new Date(start.getTime() + DAY_MS)};
+    }
+
+    /**
+     * Everything the timeline chart can draw: what the modules will do, and what they already
+     * did. Both are the same shape, so the chart only has to know which side of now it is on -
+     * and looking back over a whole day is only worth a switch because the past is in there.
+     */
+    function timelineEntries() {
         const timeline = state.timeline;
 
-        Charts.timelineChart(el('timeline-chart'), timeline?.planned || [], {
+        const done = (timeline?.history || []).map(entry => ({
+            moduleId: entry.moduleId,
+            from: entry.at,
+            to: null,
+            type: entry.type,
+            summary: entry.summary,
+            messageKey: entry.messageKey,
+            params: entry.params,
+            detail: entry.detail,
+            detailKey: entry.detailKey,
+            detailParams: entry.detailParams,
+            certain: true,
+            past: true,
+            success: entry.success
+        }));
+
+        return [...done, ...(timeline?.planned || [])];
+    }
+
+    /**
+     * A planned action is titled by its kind and explained underneath; one that already ran is
+     * titled by what it decided, which is the short headline the activity list shows.
+     */
+    function timelineTooltip(entry) {
+        const module = moduleText(entry.moduleId, 'name', entry.moduleId);
+        const accent = entry.success === false ? 'var(--danger)' : ACTION_COLOURS[entry.type];
+
+        if (entry.past) {
+            return {
+                title: msg(entry),
+                subtitle: module,
+                accent: accent,
+                rows: [
+                    [t('tooltip.when'), formatDateTime(entry.from)],
+                    [t('tooltip.happened'), relativeTo(entry.from)],
+                    [t('tooltip.result'), entry.success ? t('tooltip.done') : t('tooltip.failed')]
+                ],
+                note: detailOf(entry)
+            };
+        }
+
+        return {
+            title: t('action.' + entry.type),
+            subtitle: module,
+            accent: accent,
+            rows: [
+                [t('tooltip.when'), entry.to
+                    ? `${formatDateTime(entry.from)} – ${formatDateTime(entry.to)}`
+                    : formatDateTime(entry.from)],
+                [t('tooltip.duration'), durationBetween(entry.from, entry.to)],
+                [t('tooltip.startsIn'), relativeTo(entry.from)],
+                [t('tooltip.certainty'), entry.certain ? t('tooltip.committed') : t('tooltip.routine')]
+            ],
+            note: msg(entry)
+        };
+    }
+
+    function renderTimeline() {
+        const timeline = state.timeline;
+        const range = timelineWindow();
+
+        renderTimelineHint();
+
+        Charts.timelineChart(el('timeline-chart'), timelineEntries(), {
             emptyMessage: t('timeline.none'),
             moduleNames: moduleNames(),
-            tooltip: entry => ({
-                title: msg(entry),
-                subtitle: moduleText(entry.moduleId, 'name', entry.moduleId),
-                accent: ACTION_COLOURS[entry.type],
-                rows: [
-                    [t('tooltip.action'), t('action.' + entry.type)],
-                    [t('tooltip.when'), entry.to
-                        ? `${formatDateTime(entry.from)} – ${formatDateTime(entry.to)}`
-                        : formatDateTime(entry.from)],
-                    [t('tooltip.duration'), durationBetween(entry.from, entry.to)],
-                    [t('tooltip.startsIn'), relativeTo(entry.from)],
-                    [t('tooltip.certainty'), entry.certain ? t('tooltip.committed') : t('tooltip.routine')]
-                ]
-            })
+            start: range.start,
+            end: range.end,
+            tooltip: timelineTooltip
         });
 
         // The chart above carries all of them; this list is a readable digest of what is
@@ -551,19 +791,69 @@
         renderEntryList(el('timeline-history'), timeline?.history || [], t('history.none'), entry => ({
             time: formatDateTime(entry.at),
             summary: msg(entry),
-            detail: entry.detail,
+            // What the module did, in a sentence - the headline above only names the outcome.
+            detail: detailOf(entry),
             badge: t('action.' + entry.type),
             badgeClass: entry.success ? 'pill-ok' : 'pill-error'
-        }));
+        }), state.historyRows);
+    }
+
+    /**
+     * What the chart above the list is currently showing. Kept in step with the switch through
+     * data-i18n, so the next I18N.apply() does not put the other range's wording back.
+     */
+    function renderTimelineHint() {
+        const hint = el('timeline-hint');
+        const key = state.timelineRange === 'day' ? 'timeline.hintDay' : 'timeline.hintAhead';
+
+        hint.dataset.i18n = key;
+        hint.textContent = t(key);
+    }
+
+    /**
+     * The two time charts each look either forward from this hour or across the whole of today.
+     * Both remember the choice, because which one is useful depends on the time of day rather
+     * than on the visit.
+     */
+    function renderRangeSwitches() {
+        markRange('timeline-range', state.timelineRange);
+        markRange('weather-range', state.weatherRange);
+    }
+
+    function markRange(id, active) {
+        document.querySelectorAll(`#${id} .segment`).forEach(button =>
+            button.classList.toggle('is-active', button.dataset.range === active));
+    }
+
+    function setTimelineRange(range) {
+        state.timelineRange = range;
+        localStorage.setItem(STORAGE_TIMELINE_RANGE, range);
+        markRange('timeline-range', range);
+        renderTimeline();
+    }
+
+    function setWeatherRange(range) {
+        state.weatherRange = range;
+        localStorage.setItem(STORAGE_WEATHER_RANGE, range);
+        markRange('weather-range', range);
+        renderWeather();
+    }
+
+    /** A stored range, or the default when nothing sensible is stored. */
+    function storedRange(key) {
+        return localStorage.getItem(key) === 'day' ? 'day' : 'ahead';
     }
 
     /** Rows per page. Past this a list gets pager controls instead of growing. */
     const ENTRIES_PER_PAGE = 10;
 
+    /** What the activity list offers as a row count, and what it falls back to. */
+    const HISTORY_ROW_CHOICES = [5, 10, 20, 50, 100];
+
     /** Page each list is showing, by list id, so a refresh does not send it back to page 1. */
     const listPages = {};
 
-    function renderEntryList(list, entries, emptyMessage, mapper) {
+    function renderEntryList(list, entries, emptyMessage, mapper, perPage = ENTRIES_PER_PAGE) {
         const pager = el(list.id + '-pager');
 
         if (!entries.length) {
@@ -579,12 +869,13 @@
             return;
         }
 
-        // Entries come and go between refreshes, so the remembered page may no longer exist.
-        const pages = Math.ceil(entries.length / ENTRIES_PER_PAGE);
-        const page = Math.min(listPages[list.id] || 0, pages - 1);
+        // Entries come and go between refreshes - and so does the chosen row count - so the
+        // remembered page may no longer exist.
+        const pages = Math.ceil(entries.length / perPage);
+        const page = Math.min(Math.max(listPages[list.id] || 0, 0), pages - 1);
         listPages[list.id] = page;
 
-        const shown = entries.slice(page * ENTRIES_PER_PAGE, (page + 1) * ENTRIES_PER_PAGE);
+        const shown = entries.slice(page * perPage, (page + 1) * perPage);
 
         list.replaceChildren(...shown.map(entry => {
             const view = mapper(entry);
@@ -654,6 +945,43 @@
             position,
             step(1, '›', page >= pages - 1)
         );
+    }
+
+    /**
+     * Row count of the activity list.
+     * <p>
+     * How much of the recent activity is worth having on screen is a matter of taste and of
+     * how big the screen is, so it is a choice rather than a constant - kept in localStorage
+     * so a reload does not undo it.
+     */
+    function renderHistoryRowsControl() {
+        const select = el('history-rows');
+
+        if (select.options.length === 0) {
+            HISTORY_ROW_CHOICES.forEach(rows => {
+                const option = document.createElement('option');
+                option.value = String(rows);
+                option.textContent = String(rows);
+                select.appendChild(option);
+            });
+        }
+
+        select.value = String(state.historyRows);
+    }
+
+    function setHistoryRows(rows) {
+        state.historyRows = rows;
+        localStorage.setItem(STORAGE_HISTORY_ROWS, String(rows));
+
+        // A shorter list means the remembered page can be past the end - start over.
+        listPages['timeline-history'] = 0;
+        renderTimeline();
+    }
+
+    /** The stored row count, or the default when nothing sensible is stored. */
+    function storedHistoryRows() {
+        const stored = Number(localStorage.getItem(STORAGE_HISTORY_ROWS));
+        return HISTORY_ROW_CHOICES.includes(stored) ? stored : ENTRIES_PER_PAGE;
     }
 
     /**
@@ -1005,6 +1333,17 @@
             }
 
             section.appendChild(status);
+
+            // The headline says what happened, this says why - the same split the activity
+            // list uses, so the two read the same way.
+            const detailText = moduleDetail(module);
+
+            if (detailText) {
+                const detail = document.createElement('p');
+                detail.className = 'module-status-detail';
+                detail.textContent = detailText;
+                section.appendChild(detail);
+            }
         }
 
         const facts = document.createElement('dl');
@@ -1165,6 +1504,8 @@
 
     function renderAll() {
         I18N.apply();
+        renderHistoryRowsControl();
+        renderRangeSwitches();
         renderStats();
         renderPrices();
         renderWeather();
@@ -1517,6 +1858,22 @@
         if (!localStorage.getItem(STORAGE_THEME) && state.config.defaultTheme) {
             applyTheme(state.config.defaultTheme);
         }
+
+        state.historyRows = storedHistoryRows();
+        renderHistoryRowsControl();
+
+        el('history-rows').addEventListener('change', event => setHistoryRows(Number(event.target.value)));
+
+        state.timelineRange = storedRange(STORAGE_TIMELINE_RANGE);
+        state.weatherRange = storedRange(STORAGE_WEATHER_RANGE);
+        renderRangeSwitches();
+        renderTimelineHint();
+
+        document.querySelectorAll('#timeline-range .segment').forEach(button =>
+            button.addEventListener('click', () => setTimelineRange(button.dataset.range)));
+
+        document.querySelectorAll('#weather-range .segment').forEach(button =>
+            button.addEventListener('click', () => setWeatherRange(button.dataset.range)));
 
         showPage(localStorage.getItem(STORAGE_PAGE) || 'overview');
 

@@ -174,15 +174,27 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
     /** Daily planning pass, right after the day-ahead prices are published. */
     @Scheduled(cron = "${automation.discharge.arm-cron:0 0 15 * * *}")
     public void scheduledPlanning() {
-        run("Evaluating today's prices for a selling window", () -> {
+        run(Message.key("running.discharge.plan", "Evaluating today's prices for a selling window").build(), () -> {
             DischargePlan plan = planAndArm();
 
+            // The planner already explains itself in the reader's language; that explanation
+            // is exactly what belongs under the headline rather than glued into it.
+            Message why = new Message(plan.reason(), plan.reasonKey(), plan.reasonParams());
+
             if (!plan.armable()) {
-                return RunOutcome.unchanged("Not selling today - " + plan.reason());
+                return RunOutcome.unchanged(
+                        Message.key("outcome.discharge.noWindow", "No selling window today").build(), why);
             }
 
-            return RunOutcome.changed(String.format(Locale.ROOT, "Armed %s-%s, %.0f CZK expected",
-                    plan.window().getStart(), plan.window().getEnd(), plan.revenueCzk()));
+            return RunOutcome.changed(Message
+                            .key("outcome.discharge.armed", String.format(Locale.ROOT,
+                                    "Selling window armed %s-%s, %.0f CZK expected",
+                                    plan.window().getStart(), plan.window().getEnd(), plan.revenueCzk()))
+                            .with("from", plan.window().getStart().toString())
+                            .with("to", plan.window().getEnd().toString())
+                            .with("revenue", Math.round(plan.revenueCzk()))
+                            .build(),
+                    why);
         });
     }
 
@@ -227,7 +239,8 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
 
         if (!plan.armable()) {
             log.noAction(plan.reason());
-            cancelArming("re-planned and no window qualifies");
+            cancelArming(Message.key("reason.discharge.replanned",
+                    "The prices were re-evaluated and no window is worth selling into.").build());
             return plan;
         }
 
@@ -292,12 +305,18 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
         log.detail("Expected revenue", "{} CZK", round(revenue));
 
         arm(new ArmedWindow(from, to, power, revenue, true, LocalDateTime.now(), false));
-        publishStatus(ModuleState.ACTIVE, Message
-                .key("summary.discharge.manuallyArmed",
-                        String.format(Locale.ROOT, "Manually armed %s-%s", from.toLocalTime(), to.toLocalTime()))
-                .with("from", from.toLocalTime().toString())
-                .with("to", to.toLocalTime().toString())
-                .build());
+        publishStatus(ModuleState.ACTIVE,
+                Message.key("summary.discharge.manuallyArmed",
+                                String.format(Locale.ROOT, "Manually armed %s-%s", from.toLocalTime(), to.toLocalTime()))
+                        .with("from", from.toLocalTime().toString())
+                        .with("to", to.toLocalTime().toString())
+                        .build(),
+                Message.key("summary.discharge.manuallyArmed.detail", String.format(Locale.ROOT,
+                                "Armed from the dashboard at %d W, about %.0f CZK expected. The price rules are skipped for a window armed by hand.",
+                                power, round(revenue)))
+                        .with("watts", power)
+                        .with("revenue", Math.round(revenue))
+                        .build());
         return Optional.empty();
     }
 
@@ -332,15 +351,25 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
                         .key(window.manual() ? "history.discharge.armedManual" : "history.discharge.armed",
                                 window.manual() ? "Selling window armed manually" : "Selling window armed")
                         .build(),
-                true, window.from() + " - " + window.to() + " at " + window.watts() + " W");
+                true, Message
+                        .key("history.discharge.armed.detail", String.format(Locale.ROOT,
+                                "The battery will be discharged into the grid from %s to %s at %d W, about %.0f CZK expected.",
+                                window.from().toLocalTime(), window.to().toLocalTime(), window.watts(), window.revenueCzk()))
+                        .with("from", window.from().toLocalTime().toString())
+                        .with("to", window.to().toLocalTime().toString())
+                        .with("watts", window.watts())
+                        .with("revenue", Math.round(window.revenueCzk()))
+                        .build());
     }
 
     /**
      * Cancels an armed window, from the dashboard or because a re-plan invalidated it.
      *
+     * @param reason why, as a translatable message - it ends up in the activity list, where
+     *               an English-only sentence would be the one untranslated line on the page
      * @return {@code true} when something was actually cancelled
      */
-    public synchronized boolean cancelArming(String reason) {
+    public synchronized boolean cancelArming(Message reason) {
         ArmedWindow window = armedWindow;
 
         if (window == null) {
@@ -351,20 +380,19 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
         this.armedWindow = null;
 
         if (window.running()) {
-            log.action("Stopping the running discharge - {}", reason);
-            boolean stopped = stopDischarge("cancelled: " + reason);
+            log.action("Stopping the running discharge - {}", reason.text());
+            boolean stopped = stopDischarge("cancelled: " + reason.text());
             timeline.record(ID, ActionType.REMOTE_CONTROL_EXIT,
                     Message.key("history.discharge.stopped", "Discharge cancelled").build(), stopped, reason);
         } else {
-            log.action("Cancelled the armed window {}-{} - {}", window.from().toLocalTime(), window.to().toLocalTime(), reason);
+            log.action("Cancelled the armed window {}-{} - {}",
+                    window.from().toLocalTime(), window.to().toLocalTime(), reason.text());
             timeline.record(ID, ActionType.GRID_SELL,
                     Message.key("history.discharge.cancelled", "Armed window cancelled").build(), true, reason);
         }
 
-        publishStatus(ModuleState.IDLE, Message
-                .key("summary.discharge.notSelling", "Not selling - " + reason)
-                .with("reason", reason)
-                .build());
+        publishStatus(ModuleState.IDLE,
+                Message.key("summary.discharge.notSelling", "Not selling").build(), reason);
         return true;
     }
 
@@ -382,16 +410,22 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
 
     /** Fired by the timer when the armed window opens. */
     private void startDischarge() {
-        run("Selling window opened", () -> {
+        run(Message.key("running.discharge.windowOpened", "Selling window opened").build(), () -> {
             ArmedWindow window = armedWindow;
 
             if (window == null) {
-                return RunOutcome.unchanged("The window was cancelled before it opened");
+                return RunOutcome.unchanged(
+                        Message.key("outcome.discharge.notStarted", "Sale did not start").build(),
+                        Message.key("outcome.discharge.cancelledBeforeStart",
+                                "The window was cancelled before it opened, so nothing was sold.").build());
             }
 
             Optional<Integer> socOpt = inverter.getBatterySoc();
             if (socOpt.isEmpty()) {
-                return RunOutcome.incomplete("the battery level could not be read, not selling");
+                return RunOutcome.incomplete(
+                        Message.key("outcome.discharge.notStarted", "Sale did not start").build(),
+                        Message.key("outcome.discharge.noSoc",
+                                "The battery level could not be read, so the sale was not started.").build());
             }
 
             int soc = socOpt.get();
@@ -404,40 +438,74 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
             // is the person's call and skips the threshold, but never the reserve.
             if (!window.manual() && soc < properties.getMinBattery()) {
                 armedWindow = null;
-                return RunOutcome.unchanged(String.format(Locale.ROOT,
-                        "Battery only reached %d %%, below the %d %% worth selling - window dropped",
-                        soc, properties.getMinBattery()));
+
+                return RunOutcome.unchanged(
+                        Message.key("outcome.discharge.windowDropped", "Selling window dropped").build(),
+                        Message.key("outcome.discharge.batteryShort", String.format(Locale.ROOT,
+                                        "The battery only reached %d %%, below the %d %% a sale is worth starting at, so the window was dropped and the charge kept for the evening.",
+                                        soc, properties.getMinBattery()))
+                                .with("battery", soc)
+                                .with("required", properties.getMinBattery())
+                                .build());
             }
 
             if (soc <= properties.getTargetBattery()) {
                 armedWindow = null;
-                return RunOutcome.unchanged(String.format(Locale.ROOT,
-                        "Battery dropped to %d %%, at or below the %d %% reserve - nothing to sell",
-                        soc, properties.getTargetBattery()));
+
+                return RunOutcome.unchanged(
+                        Message.key("outcome.discharge.windowDropped", "Selling window dropped").build(),
+                        Message.key("outcome.discharge.atReserve", String.format(Locale.ROOT,
+                                        "The battery is at %d %%, at or below the %d %% reserve kept for the night, so there is nothing to sell.",
+                                        soc, properties.getTargetBattery()))
+                                .with("battery", soc)
+                                .with("reserve", properties.getTargetBattery())
+                                .build());
             }
 
             Duration duration = Duration.between(LocalDateTime.now(), window.to());
             if (duration.isNegative() || duration.isZero()) {
                 armedWindow = null;
-                return RunOutcome.unchanged("The window is already over");
+
+                return RunOutcome.unchanged(
+                        Message.key("outcome.discharge.windowDropped", "Selling window dropped").build(),
+                        Message.key("outcome.discharge.windowOver",
+                                "The window was already over by the time the sale would have started.").build());
             }
 
             log.detail("Duration", "{} (until {})", humanize(duration), window.to().toLocalTime());
             warnIfExportLimitTooLow(window.watts());
 
+            Message detail = Message
+                    .key("outcome.discharge.started.detail", String.format(Locale.ROOT,
+                            "Discharging %d W into the grid until %s, battery at %d %% with a %d %% reserve.",
+                            window.watts(), window.to().toLocalTime(), soc, properties.getTargetBattery()))
+                    .with("watts", window.watts())
+                    .with("until", window.to().toLocalTime().toString())
+                    .with("battery", soc)
+                    .with("reserve", properties.getTargetBattery())
+                    .build();
+
             boolean started = startSelling(window.watts(), duration);
             if (!started) {
                 armedWindow = null;
-                return RunOutcome.incomplete("the inverter did not accept the discharge command");
+
+                return RunOutcome.incomplete(
+                        Message.key("outcome.discharge.notStarted", "Sale did not start").build(),
+                        Message.key("outcome.discharge.rejected",
+                                "The inverter did not accept the discharge command, so nothing is being sold.").build());
             }
 
             armedWindow = window.started();
             log.success("Discharging {} W until {}", window.watts(), window.to().toLocalTime());
             timeline.record(ID, ActionType.GRID_SELL,
-                    Message.key("history.discharge.started", "Discharge started").build(), true,
-                    window.watts() + " W until " + window.to().toLocalTime());
+                    Message.key("history.discharge.started", "Discharge started").build(), true, detail);
 
-            return RunOutcome.changed(String.format(Locale.ROOT, "Selling %d W until %s", window.watts(), window.to().toLocalTime()));
+            return RunOutcome.changed(Message
+                    .key("outcome.discharge.selling", String.format(Locale.ROOT,
+                            "Selling %d W until %s", window.watts(), window.to().toLocalTime()))
+                    .with("watts", window.watts())
+                    .with("until", window.to().toLocalTime().toString())
+                    .build(), detail);
         });
     }
 
@@ -460,7 +528,13 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
             log.info("Selling window {}-{} finished", window.from().toLocalTime(), window.to().toLocalTime());
             armedWindow = null;
             timeline.record(ID, ActionType.REMOTE_CONTROL_EXIT,
-                    Message.key("history.discharge.finished", "Selling window finished").build(), true, null);
+                    Message.key("history.discharge.finished", "Selling window finished").build(), true,
+                    Message.key("history.discharge.finished.detail", String.format(Locale.ROOT,
+                                    "The window %s-%s ran to its end and the inverter is back on its own work mode.",
+                                    window.from().toLocalTime(), window.to().toLocalTime()))
+                            .with("from", window.from().toLocalTime().toString())
+                            .with("to", window.to().toLocalTime().toString())
+                            .build());
             publishStatus(ModuleState.IDLE, Message.key("summary.discharge.finished", "Selling finished").build());
             return;
         }
@@ -476,13 +550,18 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
                 soc, properties.getTargetBattery(), humanize(window.remaining()));
 
         if (soc > properties.getTargetBattery()) {
-            publishStatus(ModuleState.ACTIVE, Message
-                    .key("summary.discharge.selling", String.format(Locale.ROOT,
-                            "Selling %d W, battery %d %%, %s left", window.watts(), soc, humanize(window.remaining())))
-                    .with("watts", window.watts())
-                    .with("battery", soc)
-                    .with("remaining", humanize(window.remaining()))
-                    .build());
+            publishStatus(ModuleState.ACTIVE,
+                    Message.key("summary.discharge.selling", String.format(Locale.ROOT,
+                                    "Selling %d W into the grid", window.watts()))
+                            .with("watts", window.watts())
+                            .build(),
+                    Message.key("summary.discharge.selling.detail", String.format(Locale.ROOT,
+                                    "Battery at %d %%, stopping at the %d %% reserve, %s of the window left.",
+                                    soc, properties.getTargetBattery(), humanize(window.remaining())))
+                            .with("battery", soc)
+                            .with("reserve", properties.getTargetBattery())
+                            .with("remaining", humanize(window.remaining()))
+                            .build());
             return;
         }
 
@@ -495,7 +574,14 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
 
         timeline.record(ID, ActionType.REMOTE_CONTROL_EXIT,
                 Message.key("history.discharge.reserveReached", "Discharge stopped at the battery reserve").build(),
-                stopped, "battery " + soc + "%");
+                stopped,
+                Message.key("history.discharge.reserveReached.detail", String.format(Locale.ROOT,
+                                "The battery reached the %d %% reserve at %d %%, so the sale ended %s before the end of the window.",
+                                properties.getTargetBattery(), soc, humanize(window.remaining())))
+                        .with("reserve", properties.getTargetBattery())
+                        .with("battery", soc)
+                        .with("remaining", humanize(window.remaining()))
+                        .build());
         publishStatus(ModuleState.IDLE,
                 Message.key("summary.discharge.finishedAtReserve", "Selling finished at the battery reserve").build());
     }

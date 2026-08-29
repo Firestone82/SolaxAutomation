@@ -192,10 +192,59 @@ const Charts = (() => {
     /* --------------------------------------------------------- price chart */
 
     /**
+     * Hatch used to mark the intervals the export limit module closes the export in.
+     * Defined once per chart, because a pattern is referenced by id.
+     */
+    function blockedHatch(id) {
+        const defs = element('defs');
+        const pattern = element('pattern', {
+            id: id, width: 6, height: 6, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)'
+        });
+
+        pattern.appendChild(element('rect', {class: 'blocked-hatch-ground', width: 6, height: 6}));
+        pattern.appendChild(element('line', {class: 'blocked-hatch-line', x1: 0, y1: 0, x2: 0, y2: 6}));
+
+        defs.appendChild(pattern);
+        return defs;
+    }
+
+    /**
+     * Runs of consecutive points matching {@code matches}, as [from, to) index pairs.
+     */
+    function bands(points, matches) {
+        const runs = [];
+
+        points.forEach((point, index) => {
+            if (!matches(point)) {
+                return;
+            }
+
+            const last = runs[runs.length - 1];
+
+            if (last && last[1] === index) {
+                last[1] = index + 1;
+            } else {
+                runs.push([index, index + 1]);
+            }
+        });
+
+        return runs;
+    }
+
+    /**
      * Bar chart of the day's quarter-hour prices.
      * Bars are coloured by price band, the interval that is running now gets an
      * outline, and intervals inside an armed selling window are painted in the
      * selling colour so the plan is readable at a glance.
+     *
+     * Two automation rules are drawn behind the bars, because what the day is worth
+     * is exactly what they act on. Intervals where the price is under the export
+     * limit module's minimum - production is not worth putting on the grid - are
+     * hatched over their full height. Intervals the selling module may sell the
+     * battery into, inside its search hours and at or above its own minimum price,
+     * are washed in the selling colour instead, with that minimum drawn in as a
+     * dashed line. Between them the chart answers "what will the automation make of
+     * this day" without opening the module page.
      *
      * Each bar carries a full-height transparent hit area, so hovering anywhere
      * in the interval's column works rather than only over the bar itself.
@@ -222,6 +271,30 @@ const Charts = (() => {
         const barWidth = plotWidth / points.length;
 
         const svg = createSvg(width, height);
+        const hatchId = 'price-blocked-hatch';
+        svg.appendChild(blockedHatch(hatchId));
+
+        // Both bands are drawn first, so the bars and the axis stay on top of them.
+        // Adjacent columns are merged into one rectangle: 96 abutting rectangles show
+        // seams where their edges meet, and one band per run does not.
+        bands(points, point => point.exportable === false).forEach(([from, to]) =>
+            svg.appendChild(element('rect', {
+                class: 'slot-blocked',
+                x: padding.left + from * barWidth,
+                y: padding.top,
+                width: (to - from) * barWidth,
+                height: plotHeight,
+                fill: `url(#${hatchId})`
+            })));
+
+        bands(points, point => point.sellable === true).forEach(([from, to]) =>
+            svg.appendChild(element('rect', {
+                class: 'slot-sellable',
+                x: padding.left + from * barWidth,
+                y: padding.top,
+                width: (to - from) * barWidth,
+                height: plotHeight
+            })));
 
         // horizontal grid + value axis
         const ticks = 4;
@@ -247,6 +320,18 @@ const Charts = (() => {
             }));
         }
 
+        // Minimum price a peak has to reach before the battery is sold at all.
+        if (options.sellThreshold !== null && options.sellThreshold !== undefined
+                && options.sellThreshold > minValue && options.sellThreshold < maxValue) {
+
+            svg.appendChild(element('line', {
+                class: 'threshold-sell',
+                x1: padding.left, x2: width - padding.right,
+                y1: scaleY(options.sellThreshold), y2: scaleY(options.sellThreshold),
+                'stroke-width': 1.5, 'stroke-dasharray': '5 4'
+            }));
+        }
+
         const zeroY = scaleY(0);
 
         points.forEach((point, index) => {
@@ -257,6 +342,9 @@ const Charts = (() => {
             if (point.selling) {
                 classes.length = 0;
                 classes.push('bar-selling');
+            }
+            if (point.exportable === false) {
+                classes.push('bar-blocked');
             }
             if (point.current) {
                 classes.push('bar-current');
@@ -320,6 +408,11 @@ const Charts = (() => {
      * Line chart of the forecast quality with the automation's two thresholds
      * drawn in. The thresholds are unlabelled on purpose - the legend under the
      * chart names them, which keeps the plot itself uncluttered.
+     * <p>
+     * The x axis is time, not the position of a point in the list: a window the
+     * data does not fill - a whole day whose morning was never recorded - has to
+     * show the hours it is missing rather than stretching what it has across
+     * them. The window is the caller's; without one it spans the points given.
      */
     function weatherChart(container, points, options = {}) {
         if (!points || points.length === 0) {
@@ -337,7 +430,13 @@ const Charts = (() => {
         const values = points.map(point => point.quality);
         const maxValue = Math.max(...values, options.stormThreshold ?? 0, 6) * 1.1;
         const scaleY = value => padding.top + plotHeight - (value / maxValue) * plotHeight;
-        const scaleX = index => padding.left + (index / Math.max(1, points.length - 1)) * plotWidth;
+
+        const times = points.map(point => new Date(point.dateTime));
+        const start = options.start ? new Date(options.start) : times[0];
+        const end = options.end ? new Date(options.end) : times[times.length - 1];
+        const span = Math.max(1, end - start);
+
+        const scaleX = at => padding.left + ((at - start) / span) * plotWidth;
 
         const svg = createSvg(width, height);
 
@@ -368,35 +467,63 @@ const Charts = (() => {
         threshold(options.cloudyThreshold, 'threshold-sunny');
         threshold(options.stormThreshold, 'threshold-storm');
 
-        const linePoints = points.map((point, index) => `${scaleX(index)},${scaleY(point.quality)}`);
+        const linePoints = points.map((point, index) => `${scaleX(times[index])},${scaleY(point.quality)}`);
         const baseline = padding.top + plotHeight;
+
+        // The hours that already happened are washed over: the curve left of the marker is
+        // what the weather did, right of it what it is expected to do. Whole hours only -
+        // the hour running now is still a forecast.
+        const now = options.now || new Date();
+        const currentHour = new Date(now.getTime());
+        currentHour.setMinutes(0, 0, 0);
+
+        if (currentHour > start && currentHour <= end) {
+            svg.appendChild(element('rect', {
+                class: 'quality-past',
+                x: padding.left, y: padding.top,
+                width: Math.max(0, scaleX(currentHour) - padding.left), height: plotHeight
+            }));
+
+            svg.appendChild(element('line', {
+                class: 'quality-now',
+                x1: scaleX(currentHour), x2: scaleX(currentHour),
+                y1: padding.top - 4, y2: baseline
+            }));
+        }
 
         svg.appendChild(element('polygon', {
             class: 'quality-area',
-            points: `${padding.left},${baseline} ${linePoints.join(' ')} ${scaleX(points.length - 1)},${baseline}`
+            points: `${scaleX(times[0])},${baseline} ${linePoints.join(' ')} ${scaleX(times[times.length - 1])},${baseline}`
         }));
 
         svg.appendChild(element('polyline', {class: 'quality-line', points: linePoints.join(' ')}));
 
         points.forEach((point, index) => {
             svg.appendChild(element('circle', {
-                class: 'quality-dot', cx: scaleX(index), cy: scaleY(point.quality), r: 2.5
+                class: 'quality-dot', cx: scaleX(times[index]), cy: scaleY(point.quality), r: 2.5
             }));
-
-            if (index % 3 === 0) {
-                const text = element('text', {
-                    class: 'axis-text', x: scaleX(index), y: height - 8, 'text-anchor': 'middle'
-                });
-                text.textContent = point.time;
-                svg.appendChild(text);
-            }
         });
 
+        // Hour labels come from the window rather than from the points, so an hour with no
+        // reading is still named on the axis instead of silently closing the gap.
+        const windowHours = Math.round(span / 3600000);
+        const labelStep = windowHours > 26 ? 6 : 3;
+
+        for (let hour = 0; hour <= windowHours; hour += labelStep) {
+            const at = new Date(start.getTime() + hour * 3600 * 1000);
+
+            const text = element('text', {
+                class: 'axis-text', x: scaleX(at), y: height - 8, 'text-anchor': 'middle'
+            });
+            text.textContent = String(at.getHours()).padStart(2, '0') + ':00';
+            svg.appendChild(text);
+        }
+
         // hover layer: one column per hour, so the whole strip is hoverable
-        const columnWidth = plotWidth / Math.max(1, points.length - 1);
+        const columnWidth = Math.max(4, plotWidth / Math.max(1, windowHours));
 
         points.forEach((point, index) => {
-            const centre = scaleX(index);
+            const centre = scaleX(times[index]);
 
             const marker = element('line', {
                 class: 'quality-marker',
@@ -427,6 +554,13 @@ const Charts = (() => {
 
     /* ------------------------------------------------------ timeline chart */
 
+    /** The hour {@code date} falls in, as a new Date. */
+    function hourOf(date) {
+        const hour = new Date(date.getTime());
+        hour.setMinutes(0, 0, 0);
+        return hour;
+    }
+
     const ACTION_COLOURS = {
         WORK_MODE_CHANGE: 'var(--accent)',
         GRID_SELL: 'var(--sell)',
@@ -438,9 +572,13 @@ const Charts = (() => {
     };
 
     /**
-     * Twenty-four hour band of what the modules intend to do.
+     * Band of what the modules did and intend to do.
      * Instantaneous actions become ticks, windows become bars, and "now" is a
      * dashed marker so the plan can be read relative to the current time.
+     *
+     * The window is the caller's to choose - the next 24 hours, or a whole day
+     * with the morning already behind it - and entries outside it are dropped
+     * rather than squeezed in.
      *
      * A tick is only a few pixels wide, so every entry gets a wider invisible
      * hit area on top of it - otherwise the checks would be unhoverable.
@@ -453,9 +591,9 @@ const Charts = (() => {
         const padding = {top: 22, right: 12, bottom: 22, left: 150};
 
         const now = options.now || new Date();
-        const start = new Date(now.getTime());
-        start.setMinutes(0, 0, 0);
-        const end = new Date(start.getTime() + 24 * 3600 * 1000);
+
+        const start = options.start ? new Date(options.start) : hourOf(now);
+        const end = options.end ? new Date(options.end) : new Date(start.getTime() + 24 * 3600 * 1000);
 
         const visible = (entries || []).filter(entry => {
             const from = new Date(entry.from);
@@ -476,7 +614,9 @@ const Charts = (() => {
 
         const svg = createSvg(width, height);
 
-        for (let hour = 0; hour <= 24; hour += 3) {
+        const windowHours = Math.round((end - start) / 3600000);
+
+        for (let hour = 0; hour <= windowHours; hour += 3) {
             const at = new Date(start.getTime() + hour * 3600 * 1000);
             const x = scaleX(at);
 
@@ -508,16 +648,24 @@ const Charts = (() => {
             const y = padding.top + row * rowHeight;
             const from = new Date(entry.from);
             const to = entry.to ? new Date(entry.to) : null;
-            const colour = ACTION_COLOURS[entry.type] || 'var(--accent)';
+
+            // A run that failed is worth spotting from across the room; everything else
+            // is coloured by what kind of action it is.
+            const colour = entry.success === false
+                ? 'var(--danger)'
+                : (ACTION_COLOURS[entry.type] || 'var(--accent)');
+
+            // What already happened steps back, so the plan stays the thing you read first.
+            const opacity = entry.past ? 0.45 : (entry.certain ? 0.95 : 0.55);
 
             const x = scaleX(from);
             const barWidth = to ? Math.max(5, scaleX(to) - x) : 5;
             const barX = to ? x : x - 2;
 
             const bar = element('rect', {
-                class: 'timeline-bar',
+                class: 'timeline-bar' + (entry.past ? ' is-past' : ''),
                 x: barX, y: y + 5, width: barWidth, height: rowHeight - 12, rx: 3,
-                fill: colour, opacity: entry.certain ? 0.95 : 0.55
+                fill: colour, opacity: opacity
             });
             svg.appendChild(bar);
 
@@ -535,16 +683,18 @@ const Charts = (() => {
                 hit,
                 () => options.tooltip ? options.tooltip(entry) : null,
                 () => bar.setAttribute('opacity', '1'),
-                () => bar.setAttribute('opacity', entry.certain ? '0.95' : '0.55')
+                () => bar.setAttribute('opacity', String(opacity))
             );
 
             svg.appendChild(hit);
         });
 
-        const nowX = scaleX(now);
-        svg.appendChild(element('line', {
-            class: 'timeline-now', x1: nowX, x2: nowX, y1: padding.top - 6, y2: height - padding.bottom
-        }));
+        if (now >= start && now <= end) {
+            const nowX = scaleX(now);
+            svg.appendChild(element('line', {
+                class: 'timeline-now', x1: nowX, x2: nowX, y1: padding.top - 6, y2: height - padding.bottom
+            }));
+        }
 
         container.replaceChildren(svg);
     }

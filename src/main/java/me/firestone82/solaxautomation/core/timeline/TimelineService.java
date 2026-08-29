@@ -18,6 +18,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
+import java.util.Map;
 
 /**
  * History of actions the automation actually performed, as shown on the dashboard.
@@ -75,15 +76,18 @@ public class TimelineService {
      *
      * @param moduleId module that caused it
      * @param type     kind of action
-     * @param message  what happened, in English plus an optional translation key
+     * @param message  short headline of what happened, in English plus an optional translation key
      * @param success  whether the inverter accepted the command
-     * @param detail   extra context for the reader, may be {@code null}
+     * @param detail   the sentence shown under the headline, may be {@code null}
      */
-    public void record(String moduleId, ActionType type, Message message, boolean success, String detail) {
+    public void record(String moduleId, ActionType type, Message message, boolean success, Message detail) {
         TimelineEvent event = new TimelineEvent(
                 LocalDateTime.now(), moduleId, type,
                 message.text(), message.key(), message.params(),
-                success, detail
+                success,
+                detail == null ? null : detail.text(),
+                detail == null ? null : detail.key(),
+                detail == null ? Map.of() : detail.params()
         );
 
         List<TimelineEvent> toPersist;
@@ -102,8 +106,13 @@ public class TimelineService {
         persist(toPersist);
     }
 
+    /** Same, with an English-only detail line - used where the detail is a raw reason string. */
+    public void record(String moduleId, ActionType type, Message message, boolean success, String detail) {
+        record(moduleId, type, message, success, detail == null ? null : Message.of(detail));
+    }
+
     public void record(String moduleId, ActionType type, Message message, boolean success) {
-        record(moduleId, type, message, success, null);
+        record(moduleId, type, message, success, (Message) null);
     }
 
     /** Most recent events first. */

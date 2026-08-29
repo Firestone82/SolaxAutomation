@@ -199,7 +199,8 @@ public class InverterControlController {
 
         if (selling.isPresent()) {
             log.info("Dashboard is exiting remote control while a sale is running - cancelling it properly");
-            selling.get().cancelArming("remote control exited from the dashboard");
+            selling.get().cancelArming(Message.key("reason.discharge.remoteExit",
+                    "Remote control was exited from the dashboard, which ended the sale.").build());
 
             return ResponseEntity.ok(ActionResult.ok(Message
                     .key("quick.sellingStopped", "Remote control exited and the running sale was cancelled")

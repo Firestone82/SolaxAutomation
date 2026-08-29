@@ -36,6 +36,12 @@ Obě kontroly reagují na skutečně naměřené nabití, ne na předpověď —
 dopoledne, než čekala předpověďová kontrola modulu počasí. Každý kontrolní bod jedná jen ve
 "svém" režimu; ostatní režimy (např. _BACKUP_) nechává být.
 
+**Tolerance** — `tolerance`, výchozí **2 %**. Kontrolní bod je očekávání, ne smlouva: baterie na
+79 % proti cíli 80 % je prakticky vzato podle plánu a přepínat střídač kvůli takovému rozdílu jen
+způsobí, že režim kolem kontrolní hodiny poskakuje. Cíl proto platí za splněný, jakmile je nabití
+v rámci tolerance pod ním — v obou směrech, tedy i pro přepnutí do _FEED_IN_PRIORITY_. Víkendový
+příplatek se připočte k cíli první, tolerance se měří až proti výslednému číslu.
+
 ---
 
 ## Limit dodávky — `automation.export`
@@ -53,6 +59,10 @@ ceny až tři čtvrtě hodiny.
 >
 > **JINAK** <small>(přepínač _LOW_, dodávka se k měřené přípojce nedostane)</small>
 > **PROVEĎ:** otevři dodávku na 3 950 W.
+
+V grafu spotové ceny jsou intervaly pod **0,5 CZK/kWh** uvnitř aktivních hodin přeškrtnuté šrafou a
+jejich sloupce ustoupí do pozadí — tam se dodávka do měřené sítě nevyplatí a modul limit uzavře.
+Mimo aktivní hodiny se limitem nehýbe, takže se ani nešrafuje.
 
 Polední přiškrcení, jen při přepínači _LOW_:
 
@@ -142,6 +152,11 @@ Prodej se provádí **dálkovým řízením**, ne změnou režimu střídače: r
 střídač se po ní sám vrátí do svého režimu — i kdyby tahle aplikace mezitím spadla. Hlídač kontroluje
 baterii každé 2 minuty a ukončí relaci dřív, jakmile se dosáhne rezervy 40 %.
 
+V grafu spotové ceny je ta část dne, do které se **smí** prodávat — uvnitř prohledávaných hodin
+(15:00–23:45) a na minimální ceně (8 CZK/kWh) nebo nad ní — podbarvená barvou prodeje a minimální
+cena je vedená čárkovaně napříč grafem. Je to místo, kde okno může vzniknout, ne kde vznikne:
+jestli v něm nakonec vznikne, rozhoduje až plánovač podle špičky, plató a nabití baterie.
+
 Okno lze z nástěnky zrušit (**Zrušit plán**), nahradit jiným (**Přeplánovat**) nebo naplánovat
 ručně (**Naplánovat okno**). Ruční okno jde zadat dvěma způsoby: **mezi časy**, nebo **začít hned**
 na zvolenou dobu. Varianta „začít hned“ se řídí hodinami aplikace, ne prohlížeče.
@@ -189,3 +204,14 @@ dlaždice to napíše, aby se náhražka nepletla s měřením.
 Posledních 15 provedených akcí se ukládá do `data/timeline.json`, takže po restartu nástěnka
 nezačíná prázdná. Je to jen pohodlí pro zobrazení — trvalým záznamem zůstávají rotující logy
 v `logs/`.
+
+Každý řádek má nadpis a vysvětlení: co modul rozhodl a proč. Kolik řádků je vidět, se přepíná
+přímo v hlavičce karty _Poslední aktivita_ (5 až 100) a volba se pamatuje v prohlížeči.
+
+Tytéž záznamy kreslí i graf **Plánovaných akcí**, když se přepne na _Celý den_: hodiny před
+aktuálním časem se doplní tím, co doopravdy proběhlo, na řádku svého modulu a potlačeně, aby plán
+zůstal to první, co je vidět. Neúspěšný běh je červený. Graf **Kvality počasí** se přepíná stejně;
+hodiny, které už proběhly, se ukládají průběžně do `data/weather-history.json`, protože předpověď
+sama dozadu nevidí. Restart je tedy nesmaže, ale co aplikace nikdy neviděla (třeba ráno před prvním
+spuštěním), v grafu chybí — osa i tak zůstane celý den a pod grafem se napíše, odkdy jsou hodiny
+zaznamenané.

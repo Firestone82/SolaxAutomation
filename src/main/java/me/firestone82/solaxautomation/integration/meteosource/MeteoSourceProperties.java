@@ -4,6 +4,7 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
+import java.nio.file.Path;
 import java.time.Duration;
 
 /**
@@ -35,6 +36,26 @@ public class MeteoSourceProperties {
 
     /** Timeout for a forecast call. */
     private Duration timeout = Duration.ofSeconds(15);
+
+    /** What happens to the hours that have already passed. */
+    private History history = new History();
+
+    /**
+     * The record of hours that have gone by.
+     * <p>
+     * The forecast only ever looks forward, so the only way to show today's morning in the
+     * afternoon is to keep the hours as they pass. Writing them down means a restart does not
+     * start the day over with an empty chart.
+     */
+    @Data
+    public static class History {
+
+        /** Carries the recorded hours across restarts. */
+        private boolean persist = true;
+
+        /** Where they are written. Relative paths are resolved against the working directory. */
+        private Path file = Path.of("data", "weather-history.json");
+    }
 
     /**
      * Location the forecast is requested for. Coordinates are more precise than a place id
