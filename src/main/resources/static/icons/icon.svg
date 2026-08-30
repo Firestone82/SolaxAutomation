@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Solax Automation">
+    <defs>
+        <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#3b82f6"/>
+            <stop offset="1" stop-color="#1d4ed8"/>
+        </linearGradient>
+    </defs>
+
+    <rect width="512" height="512" rx="112" fill="url(#sky)"/>
+
+    <g fill="#ffffff">
+        <circle cx="256" cy="256" r="86"/>
+        <g stroke="#ffffff" stroke-width="18" stroke-linecap="round">
+            <line x1="256" y1="144" x2="256" y2="84"/>
+            <line x1="256" y1="368" x2="256" y2="428"/>
+            <line x1="144" y1="256" x2="84" y2="256"/>
+            <line x1="368" y1="256" x2="428" y2="256"/>
+            <line x1="177" y1="177" x2="134" y2="134"/>
+            <line x1="335" y1="335" x2="378" y2="378"/>
+            <line x1="335" y1="177" x2="378" y2="134"/>
+            <line x1="177" y1="335" x2="134" y2="378"/>
+        </g>
+    </g>
+</svg>

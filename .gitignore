@@ -4,3 +4,6 @@ logs/
 application.yml
 src/main/resources/application-*.yml
 data/
+
+# Filled-in copy of deploy/https/caddy.env.example - it holds the DuckDNS token.
+deploy/https/caddy.env

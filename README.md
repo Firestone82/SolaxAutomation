@@ -267,6 +267,68 @@ sentence plus a translation key with its values, so the log files and the API ke
 while the page renders in whichever language is selected — a message the dictionary does not know
 falls back to the English the backend already rendered rather than showing a raw key.
 
+### On a phone
+
+The dashboard is one layout, not a separate mobile site, and it reshapes itself under about 760px.
+The charts are the part that actually changes: each is drawn at the pixel width of its own card
+rather than at a fixed 960 units scaled down, so the axis labels stay the size they were meant to be
+instead of shrinking to a smudge, and the price and weather charts thin their gutters and label every
+sixth hour rather than every third.
+
+The timeline chart is the one that does not survive the width — a column of module names and a band
+of hour-wide bars needs the room — so on a narrow screen it starts folded away behind **Show chart**
+and the list beneath it, which says the same thing in words, is what the card opens on. The choice is
+remembered per browser. Activity rows put the time and the action badge on one line with the sentence
+underneath, rather than squeezing three columns into a phone's width.
+
+A finger cannot hover, so on a touch screen a tooltip opens on a tap on the mark and closes on the
+next tap. Swiping the page still scrolls it: the tooltip hangs off the tap, not off the touch.
+
+**The dashboard installs as an app.** It ships a web manifest, an icon set and a service worker, so
+a phone or a desktop browser can add it to the home screen and open it in its own window without the
+browser's chrome. The **Install** button in the header opens the browser's own offer where there is
+one, and where there is not it says why and what to do instead — which is the case worth reading,
+because it is the usual one.
+
+**On an iPhone this works over plain `http://` today.** Safari's _Share → Add to Home Screen_ has
+never asked for a certificate, and with the `apple-mobile-web-app-capable` meta tag the shortcut
+opens full screen with no browser around it — an app on the home screen, from
+`http://192.168.x.y:8080` as it stands. It is the only browser on iOS that can do it. What it does
+not get without https is the service worker, so an iPhone opened away from the home network shows
+Safari's offline page rather than the dashboard saying the application is unreachable.
+
+**Chrome is the one that insists on a secure context.** It installs from `https://` addresses and
+from `localhost`, and from nothing else; over `http://192.168.x.y:8080` there is no install prompt,
+no service worker, and its own reason — `not-from-secure-origin` — never reaches the person looking
+at the page. _Add to Home screen_ still exists there and still makes a shortcut, but the shortcut
+opens in a browser tab rather than as an app. Three ways round it, cheapest first:
+
+1. **Allow the one address, per phone.** In Chrome or Edge open
+   `chrome://flags/#unsafely-treat-insecure-origin-as-secure`, set it to _Enabled_, put
+   `http://192.168.x.y:8080` in its box and restart the browser. Chrome on Android has the same
+   flag. Nothing to set up on the Pi, half a minute per phone, and it has to be redone on each new
+   one — which for a household of two or three phones is usually the whole job.
+2. **Give the Pi a certificate every phone already trusts** — `deploy/https/` has the whole thing
+   ready: a free DuckDNS name pointed at the Pi's address on your own network, and Caddy in front
+   of the dashboard with a Let's Encrypt certificate issued over the DNS challenge, so nothing is
+   port-forwarded and nothing is reachable from outside. Nothing to do per phone, now or when a new
+   one arrives. About twenty minutes, once; [the steps are written out
+   there](deploy/https/README.md).
+3. **Tailscale**, if the Pi is on one: `tailscale serve` fronts the dashboard on the tailnet with a
+   real `*.ts.net` certificate, and the phone reaches it from anywhere, home network or not.
+
+A self-signed certificate — including `server.ssl.*` pointed at one you generated yourself — is not
+enough on its own. Clicking through the warning leaves the origin with a certificate error, and no
+service worker will register there. A certificate from a local authority that each phone has been
+told to trust (mkcert and its like) does work, at the cost of installing that authority on every
+phone — the same per-device tax as the flag, for more effort.
+
+What the service worker caches is the page, its stylesheet, its scripts and its icons — never the
+data. Prices, the battery and what the modules are about to do are only worth having live, so an
+installed app opened away from the home network comes up as itself and says the application is
+unreachable, rather than as the browser's offline page. Bump `CACHE` in `static/sw.js` when you
+change a file it precaches.
+
 Set `dashboard.allow-control: false` if the dashboard is reachable from outside your local network —
 the application has no authentication of its own.
 
@@ -401,6 +463,12 @@ integration/
 module/
   battery/ export/ weather/ discharge/     one package per automation
 dashboard/       REST API + DTOs; the SPA lives in resources/static
+                 (index.html, assets/, plus manifest.webmanifest, sw.js and icons/ for the installable app)
+```
+
+```
+deploy/https/    Caddy and systemd units that put the dashboard behind a certificate the
+                 phones trust, so Chrome will install it - see its own README
 ```
 
 ## License & disclaimer

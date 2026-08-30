@@ -34,6 +34,27 @@ const Charts = (() => {
         });
     }
 
+    /**
+     * The chart is drawn in the number of user units its container is CSS pixels wide, so
+     * one unit is one pixel and the 10px axis labels stay 10px whatever the screen.
+     * <p>
+     * Drawing every chart 960 units wide and letting the browser scale it down was fine on a
+     * desktop and unreadable on a phone: a 960-unit chart squeezed into a 350px card renders
+     * its labels at under 4px. Below {@code COMPACT_WIDTH} there is not room for the desktop
+     * gutters and a label every three hours either, so the callers thin both out.
+     *
+     * A container that is not laid out yet - a hidden page, the first paint - measures 0;
+     * that falls back to the old width, and the caller re-renders once it is visible.
+     */
+    const COMPACT_WIDTH = 560;
+
+    function measure(container, maximum = 960) {
+        const available = Math.round(container.getBoundingClientRect().width);
+        const width = available > 0 ? Math.max(260, Math.min(maximum, available)) : maximum;
+
+        return {width, compact: width < COMPACT_WIDTH};
+    }
+
     function empty(container, message) {
         container.replaceChildren();
 
@@ -138,6 +159,36 @@ const Charts = (() => {
             tip.style.top = Math.max(8, top) + 'px';
         }
 
+        /*
+           On a touch screen a tooltip stays open after the tap that opened it, so it has to
+           be closed by something. The mark that opened it is remembered together with the
+           callback that puts it back to its resting state, and the next touch anywhere else
+           on the document runs both.
+        */
+        let heldBy = null;
+        let release = null;
+
+        function releaseHeld() {
+            const callback = release;
+
+            heldBy = null;
+            release = null;
+
+            if (callback) {
+                callback();
+            }
+
+            if (node) {
+                node.hidden = true;
+            }
+        }
+
+        document.addEventListener('pointerdown', event => {
+            if (heldBy && event.pointerType !== 'mouse' && !heldBy.contains(event.target)) {
+                releaseHeld();
+            }
+        }, true);
+
         return {
             show(content, event) {
                 render(content);
@@ -155,7 +206,19 @@ const Charts = (() => {
                 if (node) {
                     node.hidden = true;
                 }
-            }
+            },
+
+            /** The mark whose tooltip a touch is currently holding open, if any. */
+            owner() {
+                return heldBy;
+            },
+
+            claim(shape, onRelease) {
+                heldBy = shape;
+                release = onRelease;
+            },
+
+            release: releaseHeld
         };
     })();
 
@@ -164,7 +227,7 @@ const Charts = (() => {
      * falsy value to show nothing.
      */
     function hoverable(shape, build, onEnter, onLeave) {
-        shape.addEventListener('mouseenter', event => {
+        const enter = event => {
             const content = build();
 
             if (content) {
@@ -174,16 +237,48 @@ const Charts = (() => {
             if (onEnter) {
                 onEnter();
             }
-        });
+        };
 
-        shape.addEventListener('mousemove', Tooltip.move);
-
-        shape.addEventListener('mouseleave', () => {
+        const leave = () => {
             Tooltip.hide();
 
             if (onLeave) {
                 onLeave();
             }
+        };
+
+        shape.addEventListener('mouseenter', enter);
+        shape.addEventListener('mousemove', Tooltip.move);
+        shape.addEventListener('mouseleave', leave);
+
+        /*
+           A finger never hovers, so on a touch screen the same mark opens its tooltip on tap
+           and closes it on the next tap anywhere - including on the mark itself, which makes
+           a second tap dismiss what the first one opened.
+
+           It hangs off click rather than off the touch itself: a tap fires click, a scroll
+           that happens to start on the chart does not, so swiping the page never leaves a
+           tooltip behind. Nothing is prevented, so the swipe still scrolls.
+        */
+        let byTouch = false;
+
+        shape.addEventListener('pointerdown', event => {
+            byTouch = event.pointerType !== 'mouse';
+        });
+
+        shape.addEventListener('click', event => {
+            if (!byTouch) {
+                return;
+            }
+
+            if (Tooltip.owner() === shape) {
+                Tooltip.release();
+                return;
+            }
+
+            Tooltip.release();
+            enter(event);
+            Tooltip.claim(shape, leave);
         });
 
         return shape;
@@ -255,9 +350,11 @@ const Charts = (() => {
             return;
         }
 
-        const width = 960;
-        const height = 260;
-        const padding = {top: 16, right: 12, bottom: 24, left: 44};
+        const {width, compact} = measure(container);
+        const height = compact ? 200 : 260;
+        const padding = compact
+            ? {top: 12, right: 6, bottom: 20, left: 30}
+            : {top: 16, right: 12, bottom: 24, left: 44};
 
         const plotWidth = width - padding.left - padding.right;
         const plotHeight = height - padding.top - padding.bottom;
@@ -297,7 +394,7 @@ const Charts = (() => {
             })));
 
         // horizontal grid + value axis
-        const ticks = 4;
+        const ticks = compact ? 3 : 4;
         for (let i = 0; i <= ticks; i++) {
             const value = minValue + (span * i) / ticks;
             const y = scaleY(value);
@@ -360,16 +457,18 @@ const Charts = (() => {
             }));
         });
 
-        // hour labels every three hours
+        // Hour labels every three hours, every six where they would otherwise collide.
+        const labelStep = compact ? 6 : 3;
+
         points.forEach((point, index) => {
-            if (point.minute !== 0 || point.hour % 3 !== 0) {
+            if (point.minute !== 0 || point.hour % labelStep !== 0) {
                 return;
             }
 
             const text = element('text', {
                 class: 'axis-text',
                 x: padding.left + index * barWidth,
-                y: height - 8,
+                y: height - 6,
                 'text-anchor': 'middle'
             });
             text.textContent = String(point.hour).padStart(2, '0');
@@ -420,9 +519,11 @@ const Charts = (() => {
             return;
         }
 
-        const width = 960;
-        const height = 260;
-        const padding = {top: 16, right: 16, bottom: 24, left: 44};
+        const {width, compact} = measure(container);
+        const height = compact ? 200 : 260;
+        const padding = compact
+            ? {top: 12, right: 8, bottom: 20, left: 30}
+            : {top: 16, right: 16, bottom: 24, left: 44};
 
         const plotWidth = width - padding.left - padding.right;
         const plotHeight = height - padding.top - padding.bottom;
@@ -440,8 +541,10 @@ const Charts = (() => {
 
         const svg = createSvg(width, height);
 
-        for (let i = 0; i <= 4; i++) {
-            const value = (maxValue * i) / 4;
+        const ticks = compact ? 3 : 4;
+
+        for (let i = 0; i <= ticks; i++) {
+            const value = (maxValue * i) / ticks;
             const y = scaleY(value);
 
             svg.appendChild(element('line', {
@@ -507,13 +610,21 @@ const Charts = (() => {
         // Hour labels come from the window rather than from the points, so an hour with no
         // reading is still named on the axis instead of silently closing the gap.
         const windowHours = Math.round(span / 3600000);
-        const labelStep = windowHours > 26 ? 6 : 3;
+        const labelStep = compact
+            ? (windowHours > 26 ? 12 : 6)
+            : (windowHours > 26 ? 6 : 3);
 
         for (let hour = 0; hour <= windowHours; hour += labelStep) {
             const at = new Date(start.getTime() + hour * 3600 * 1000);
+            const x = scaleX(at);
+
+            // The labels at the two ends are anchored inwards, or half of "00:00" hangs off
+            // the side of the chart - which on a phone is half of it hanging off the page.
+            const anchor = x < padding.left + 16 ? 'start'
+                : x > width - padding.right - 16 ? 'end' : 'middle';
 
             const text = element('text', {
-                class: 'axis-text', x: scaleX(at), y: height - 8, 'text-anchor': 'middle'
+                class: 'axis-text', x: x, y: height - 6, 'text-anchor': anchor
             });
             text.textContent = String(at.getHours()).padStart(2, '0') + ':00';
             svg.appendChild(text);
@@ -584,11 +695,20 @@ const Charts = (() => {
      * hit area on top of it - otherwise the checks would be unhoverable.
      */
     function timelineChart(container, entries, options = {}) {
-        const width = 960;
-        const rowHeight = 30;
+        const {width, compact} = measure(container);
 
-        // The module name gets its own gutter so it never sits on top of the bars.
-        const padding = {top: 22, right: 12, bottom: 22, left: 150};
+        /*
+           Wide, the module name sits in a gutter to the left of its band. Narrow, a 150 unit
+           gutter would leave the band itself about a hundred pixels wide, so the name moves
+           on top of its own row instead and the band gets the full width.
+        */
+        const rowHeight = compact ? 46 : 30;
+        const trackTop = compact ? 18 : 5;
+        const trackHeight = compact ? 20 : rowHeight - 12;
+
+        const padding = compact
+            ? {top: 20, right: 6, bottom: 18, left: 6}
+            : {top: 22, right: 12, bottom: 22, left: 150};
 
         const now = options.now || new Date();
 
@@ -615,8 +735,9 @@ const Charts = (() => {
         const svg = createSvg(width, height);
 
         const windowHours = Math.round((end - start) / 3600000);
+        const hourStep = compact ? 6 : 3;
 
-        for (let hour = 0; hour <= windowHours; hour += 3) {
+        for (let hour = 0; hour <= windowHours; hour += hourStep) {
             const at = new Date(start.getTime() + hour * 3600 * 1000);
             const x = scaleX(at);
 
@@ -624,7 +745,10 @@ const Charts = (() => {
                 class: 'grid-line', x1: x, x2: x, y1: padding.top - 6, y2: height - padding.bottom
             }));
 
-            const text = element('text', {class: 'axis-text', x: x, y: 12, 'text-anchor': 'middle'});
+            const anchor = x < padding.left + 16 ? 'start'
+                : x > width - padding.right - 16 ? 'end' : 'middle';
+
+            const text = element('text', {class: 'axis-text', x: x, y: 11, 'text-anchor': anchor});
             text.textContent = String(at.getHours()).padStart(2, '0') + ':00';
             svg.appendChild(text);
         }
@@ -633,12 +757,17 @@ const Charts = (() => {
             const y = padding.top + row * rowHeight;
 
             svg.appendChild(element('rect', {
-                class: 'timeline-track', x: padding.left, y: y + 5, width: plotWidth, height: rowHeight - 12, rx: 5
+                class: 'timeline-track',
+                x: padding.left, y: y + trackTop, width: plotWidth, height: trackHeight, rx: 5
             }));
 
-            const label = element('text', {
-                class: 'timeline-label', x: padding.left - 10, y: y + rowHeight / 2 + 3, 'text-anchor': 'end'
-            });
+            const label = compact
+                ? element('text', {class: 'timeline-label', x: padding.left + 1, y: y + 10})
+                : element('text', {
+                    class: 'timeline-label',
+                    x: padding.left - 10, y: y + rowHeight / 2 + 3, 'text-anchor': 'end'
+                });
+
             label.textContent = options.moduleNames?.[moduleId] || moduleId;
             svg.appendChild(label);
         });
@@ -664,19 +793,19 @@ const Charts = (() => {
 
             const bar = element('rect', {
                 class: 'timeline-bar' + (entry.past ? ' is-past' : ''),
-                x: barX, y: y + 5, width: barWidth, height: rowHeight - 12, rx: 3,
+                x: barX, y: y + trackTop, width: barWidth, height: trackHeight, rx: 3,
                 fill: colour, opacity: opacity
             });
             svg.appendChild(bar);
 
             // Ticks are too narrow to hover, so widen the target without widening the mark.
-            const hitWidth = Math.max(barWidth, 12);
+            const hitWidth = Math.max(barWidth, compact ? 16 : 12);
             const hit = element('rect', {
                 class: 'hit-area',
                 x: barX - (hitWidth - barWidth) / 2,
-                y: y + 2,
+                y: y + trackTop - 3,
                 width: hitWidth,
-                height: rowHeight - 6
+                height: trackHeight + 6
             });
 
             hoverable(
@@ -699,5 +828,6 @@ const Charts = (() => {
         container.replaceChildren(svg);
     }
 
-    return {priceChart, weatherChart, timelineChart, hideTooltip: Tooltip.hide};
+    /* A re-render throws away the marks, so anything a touch is holding open goes with them. */
+    return {priceChart, weatherChart, timelineChart, hideTooltip: Tooltip.release, COMPACT_WIDTH};
 })();

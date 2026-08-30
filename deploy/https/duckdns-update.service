@@ -1,0 +1,17 @@
+[Unit]
+Description=Point the DuckDNS name at the Pi's address on the local network
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/caddy/caddy.env
+
+# The address is given rather than detected: left to itself DuckDNS records the
+# address the request came from, which is the household's public one, and the name
+# then points at the router instead of at the Pi.
+#
+# Written on a timer rather than once by hand because DuckDNS drops a name that
+# has not been updated in a month.
+ExecStart=/usr/bin/curl -fsS --retry 3 --max-time 30 -o /dev/null \
+    "https://www.duckdns.org/update?domains=${DUCKDNS_SUBDOMAIN}&token=${DUCKDNS_TOKEN}&ip=${SOLAX_LAN_IP}"

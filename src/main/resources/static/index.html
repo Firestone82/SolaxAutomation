@@ -2,10 +2,26 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- viewport-fit=cover so the page reaches under a notch, which the safe-area insets pad back. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="color-scheme" content="light dark">
     <title>Solax Automation</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☀️</text></svg>">
+    <meta name="description" content="Dashboard and controls for the Solax inverter automation.">
+
+    <!-- The bar around the page when it runs installed, in each theme. -->
+    <meta name="theme-color" content="#f4f6f9" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0b1120" media="(prefers-color-scheme: dark)">
+
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
+    <!-- Home screen on iOS, which does not read the manifest. -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Solax">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+
+    <link rel="manifest" href="manifest.webmanifest">
     <link rel="stylesheet" href="assets/app.css">
 </head>
 <body>
@@ -23,6 +39,24 @@
 
     <div class="topbar-actions">
         <span id="connection" class="pill pill-muted" data-i18n="status.connecting">Connecting…</span>
+
+        <!--
+            Hidden only when the dashboard is already running as an installed app. When the
+            browser has offered to install it, this opens that offer; when it has not - a
+            plain-http address, an iPhone - it opens the dialog below, which says why and
+            what to do instead. Silence was the old behaviour and it read as a broken button.
+        -->
+        <button type="button" id="install-app" class="button button-small">
+            <!-- Drawn rather than set as a glyph: an arrow-to-bar character is missing from
+                 enough system fonts to come out as a blank box on some phones. -->
+            <svg class="install-icon" viewBox="0 0 16 16" aria-hidden="true" fill="none"
+                 stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M8 2v7.5"/>
+                <path d="M4.75 6.75 8 10l3.25-3.25"/>
+                <path d="M2.75 13.25h10.5"/>
+            </svg>
+            <span class="install-label" data-i18n="app.install">Install</span>
+        </button>
 
         <label class="visually-hidden" for="language" data-i18n="a11y.language">Language</label>
         <select id="language" class="control">
@@ -181,6 +215,10 @@
                         <button class="segment is-active" data-range="ahead" data-i18n="range.ahead">From now</button>
                         <button class="segment" data-range="day" data-i18n="range.day">Whole day</button>
                     </div>
+                    <!-- Narrow screens only; the stylesheet hides it everywhere else. -->
+                    <button type="button" id="timeline-chart-toggle" class="button button-small chart-toggle"
+                            aria-expanded="false" aria-controls="timeline-chart"
+                            data-i18n="timeline.showChart">Show chart</button>
                 </div>
             </header>
             <div class="chart" id="timeline-chart"></div>
@@ -272,6 +310,24 @@
             <button type="submit" class="button button-primary" id="arm-submit" data-i18n="selling.arm">Arm window</button>
         </footer>
     </form>
+</dialog>
+
+<!--
+    What to do when the browser has not offered to install the dashboard by itself. The body
+    is written by the script, because what it has to say depends on the address the page came
+    from and on the browser reading it.
+-->
+<dialog id="install-dialog" class="modal">
+    <header class="modal-head">
+        <h2 data-i18n="app.installTitle">Install as an app</h2>
+        <button type="button" class="control icon-button" id="install-close" aria-label="Close">×</button>
+    </header>
+
+    <div class="modal-body" id="install-body"></div>
+
+    <footer class="modal-foot">
+        <button type="button" class="button" id="install-dismiss" data-i18n="common.close">Close</button>
+    </footer>
 </dialog>
 
 <footer class="footer">

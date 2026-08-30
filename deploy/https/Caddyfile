@@ -1,0 +1,34 @@
+# ============================================================================
+# Caddy in front of the Solax dashboard, so a phone can install it as an app.
+#
+# Everything here happens on the local network. The certificate is issued over
+# the DNS challenge, which proves the name by writing a TXT record rather than
+# by being reachable from the internet, so nothing is port-forwarded and nothing
+# is exposed. The name resolves to the Pi's address on the LAN.
+#
+# Reads SOLAX_DOMAIN and DUCKDNS_TOKEN from the environment - see caddy.env.example.
+# ============================================================================
+
+{
+	# Where Let's Encrypt writes if a renewal starts failing. Leave it set.
+	email {$ACME_EMAIL}
+}
+
+{$SOLAX_DOMAIN} {
+	# The token only needs the permission to write TXT records on this one name.
+	tls {
+		dns duckdns {env.DUCKDNS_TOKEN}
+		# The name points at a private address, so the record is not resolvable from
+		# outside; the challenge has to be checked against the authoritative servers
+		# rather than through a public resolver.
+		resolvers 1.1.1.1 8.8.8.8
+	}
+
+	encode zstd gzip
+
+	reverse_proxy 127.0.0.1:8080 {
+		# The dashboard reads nothing from these, but a proxy that drops them leaves
+		# the application logging every request as coming from itself.
+		header_up X-Real-IP {remote_host}
+	}
+}

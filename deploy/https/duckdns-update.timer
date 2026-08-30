@@ -1,0 +1,10 @@
+[Unit]
+Description=Keep the DuckDNS name pointed at the Pi
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=24h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

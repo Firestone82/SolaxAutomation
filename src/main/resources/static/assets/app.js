@@ -12,6 +12,7 @@
     const STORAGE_HISTORY_ROWS = 'solax.historyRows';
     const STORAGE_TIMELINE_RANGE = 'solax.timelineRange';
     const STORAGE_WEATHER_RANGE = 'solax.weatherRange';
+    const STORAGE_TIMELINE_CHART = 'solax.timelineChart';
 
     const state = {
         config: {refreshSeconds: 30, allowControl: true, currency: 'CZK', defaultLanguage: 'en', defaultTheme: 'system'},
@@ -34,6 +35,19 @@
 
     const el = id => document.getElementById(id);
     const t = (key, params) => I18N.t(key, params);
+
+    /*
+       The browser's offer to install the dashboard as an app, held from the moment it is
+       made until the button in the header is pressed. Caught here, at parse time, because
+       it can be fired before init has finished starting up.
+    */
+    let deferredInstall = null;
+
+    window.addEventListener('beforeinstallprompt', event => {
+        // Keeps the browser from showing its own bar, and keeps the event usable later.
+        event.preventDefault();
+        deferredInstall = event;
+    });
 
     /** Backend sentence: translated when we have a key for it, English otherwise. */
     const msg = entry => I18N.message(entry.messageKey, entry.params, entry.summary);
@@ -236,6 +250,104 @@
 
         el('page-overview').hidden = page !== 'overview';
         el('page-modules').hidden = page !== 'modules';
+
+        // A chart drawn while its page was hidden had no width to measure, so it was drawn
+        // at the fallback size. Coming back to the page is when its real width exists.
+        if (page === 'overview' && state.overview) {
+            renderCharts();
+        }
+    }
+
+    /* ----------------------------------------------------------- chart sizing */
+
+    /**
+     * Below this the timeline chart is folded away behind a button: 150 units of module
+     * name and a band of hour-wide bars have nowhere to go on a phone, and the list under
+     * the chart already says the same thing in words.
+     */
+    const COMPACT_QUERY = window.matchMedia('(max-width: 760px)');
+
+    /**
+     * Where the header runs out of room for four controls on one line. The language picker
+     * is the widest of them and the only one that can give anything back, so below this it
+     * shows the language code instead of the language's name.
+     */
+    const NARROW_QUERY = window.matchMedia('(max-width: 480px)');
+
+    const isCompact = () => COMPACT_QUERY.matches;
+
+    function renderLanguageControl() {
+        const select = el('language');
+
+        [...select.options].forEach(option => {
+            // The full name is kept the first time round, before anything shortens it.
+            option.dataset.full = option.dataset.full || option.textContent;
+            option.textContent = NARROW_QUERY.matches ? option.value.toUpperCase() : option.dataset.full;
+        });
+    }
+
+    /** Whether the timeline chart is asked for. Wide screens always show it. */
+    let timelineChartShown = localStorage.getItem(STORAGE_TIMELINE_CHART) === 'yes';
+
+    function timelineChartVisible() {
+        return !isCompact() || timelineChartShown;
+    }
+
+    /**
+     * Charts are drawn at the pixel size of their container, so anything that changes that
+     * size - a rotation, a resized window, the browser chrome sliding away - has to redraw
+     * them. Coalesced into one frame, because a drag fires this continuously.
+     */
+    let resizeHandle = null;
+
+    function onViewportChange() {
+        clearTimeout(resizeHandle);
+
+        resizeHandle = setTimeout(() => {
+            if (state.page === 'overview' && state.overview) {
+                renderCharts();
+            }
+
+            renderTimelineChartToggle();
+            renderLanguageControl();
+        }, 150);
+    }
+
+    /** Just the three charts - the lists and cards around them do not depend on the width. */
+    function renderCharts() {
+        Charts.hideTooltip();
+        renderPrices();
+        renderWeather();
+        renderTimeline();
+    }
+
+    /**
+     * The button that folds the timeline chart away, and the chart's own visibility. On a
+     * wide screen there is nothing to fold, so the button is out of the layout and the
+     * chart is always drawn.
+     */
+    function renderTimelineChartToggle() {
+        const button = el('timeline-chart-toggle');
+        const chart = el('timeline-chart');
+        const showing = timelineChartVisible();
+
+        chart.hidden = !showing;
+
+        const key = showing ? 'timeline.hideChart' : 'timeline.showChart';
+        button.dataset.i18n = key;
+        button.textContent = t(key);
+        button.setAttribute('aria-expanded', String(showing));
+    }
+
+    function toggleTimelineChart() {
+        timelineChartShown = !timelineChartVisible();
+        localStorage.setItem(STORAGE_TIMELINE_CHART, timelineChartShown ? 'yes' : 'no');
+
+        renderTimelineChartToggle();
+
+        if (timelineChartVisible()) {
+            renderTimeline();
+        }
     }
 
     /* --------------------------------------------------------------- render */
@@ -767,14 +879,18 @@
         const range = timelineWindow();
 
         renderTimelineHint();
+        renderTimelineChartToggle();
 
-        Charts.timelineChart(el('timeline-chart'), timelineEntries(), {
-            emptyMessage: t('timeline.none'),
-            moduleNames: moduleNames(),
-            start: range.start,
-            end: range.end,
-            tooltip: timelineTooltip
-        });
+        // Drawing into a hidden container would measure nothing; the toggle redraws it.
+        if (timelineChartVisible()) {
+            Charts.timelineChart(el('timeline-chart'), timelineEntries(), {
+                emptyMessage: t('timeline.none'),
+                moduleNames: moduleNames(),
+                start: range.start,
+                end: range.end,
+                tooltip: timelineTooltip
+            });
+        }
 
         // The chart above carries all of them; this list is a readable digest of what is
         // coming next, otherwise a quarter-hourly module turns it into a hundred rows.
@@ -1875,6 +1991,16 @@
         document.querySelectorAll('#weather-range .segment').forEach(button =>
             button.addEventListener('click', () => setWeatherRange(button.dataset.range)));
 
+        el('timeline-chart-toggle').addEventListener('click', toggleTimelineChart);
+        renderTimelineChartToggle();
+
+        renderLanguageControl();
+
+        window.addEventListener('resize', onViewportChange);
+        window.addEventListener('orientationchange', onViewportChange);
+        COMPACT_QUERY.addEventListener('change', onViewportChange);
+        NARROW_QUERY.addEventListener('change', onViewportChange);
+
         showPage(localStorage.getItem(STORAGE_PAGE) || 'overview');
 
         document.querySelectorAll('.tab').forEach(tab =>
@@ -1926,9 +2052,152 @@
         });
 
         I18N.apply();
+        installPrompt();
+        registerServiceWorker();
+
         await refresh();
 
         setInterval(refresh, Math.max(5, state.config.refreshSeconds) * 1000);
+    }
+
+    /* ------------------------------------------------------------------- pwa */
+
+    /** True when the page is already running as an installed app rather than in a tab. */
+    function runningInstalled() {
+        return window.matchMedia('(display-mode: standalone)').matches
+            || window.matchMedia('(display-mode: minimal-ui)').matches
+            || navigator.standalone === true;
+    }
+
+    /**
+     * Wires up the install button.
+     * <p>
+     * Chrome fires beforeinstallprompt when the page qualifies - a manifest, a service
+     * worker, a secure origin - and never again once the app is installed, so the event is
+     * caught at the top of this file rather than here: init awaits the configuration
+     * request first, and the offer can land before that comes back.
+     * <p>
+     * The button is offered whether or not that happened. Showing it only on the offer meant
+     * that on the two occasions someone actually goes looking for it - an iPhone, where the
+     * event does not exist, and a dashboard opened over plain http, where no browser will
+     * install anything - there was nothing on the page at all, and no way to find out why.
+     * With no offer to open, the button opens the dialog that explains the situation.
+     */
+    function installPrompt() {
+        const button = el('install-app');
+
+        button.classList.toggle('is-installed', runningInstalled());
+
+        button.addEventListener('click', async () => {
+            if (!deferredInstall) {
+                openInstallDialog();
+                return;
+            }
+
+            deferredInstall.prompt();
+            await deferredInstall.userChoice;
+
+            // The event is single-use, whatever the answer was.
+            deferredInstall = null;
+        });
+
+        el('install-close').addEventListener('click', () => el('install-dialog').close());
+        el('install-dismiss').addEventListener('click', () => el('install-dialog').close());
+
+        el('install-dialog').addEventListener('click', event => {
+            if (event.target === el('install-dialog')) {
+                el('install-dialog').close();
+            }
+        });
+
+        window.addEventListener('appinstalled', () => {
+            deferredInstall = null;
+            button.classList.add('is-installed');
+        });
+    }
+
+    /**
+     * Says why the browser has not offered to install the dashboard, and what to do instead.
+     * <p>
+     * There are two reasons, and they need different answers. Over a plain http address -
+     * which is how a dashboard on the local network is normally reached - no browser will
+     * install anything at all, and the way out is an address that is https or a per-device
+     * exception. Over an address that is fine, the browser simply has no prompt of its own
+     * (Safari, Firefox), and the way in is its own menu.
+     */
+    function openInstallDialog() {
+        const body = el('install-body');
+        const origin = window.location.origin;
+
+        const note = document.createElement('p');
+        note.className = 'install-note';
+
+        const steps = document.createElement('ul');
+        steps.className = 'install-steps';
+
+        const step = (title, text) => {
+            const item = document.createElement('li');
+
+            const strong = document.createElement('strong');
+            strong.textContent = title + ' ';
+            item.appendChild(strong);
+            item.appendChild(document.createTextNode(text));
+
+            steps.appendChild(item);
+            return item;
+        };
+
+        if (!window.isSecureContext) {
+            // The address is the whole problem, so it is set apart rather than buried in the line.
+            note.textContent = t('app.installInsecure') + ' ';
+
+            const address = document.createElement('code');
+            address.textContent = origin;
+            note.appendChild(address);
+
+            /*
+               Ordered by what it costs the reader. The iPhone one is first because it costs
+               nothing at all: only Chrome ties the home screen to a secure address, and an
+               iPhone will add this page as a full screen app from here as it stands.
+            */
+            step(t('app.installIosNowTitle'), t('app.installIosNow'));
+
+            const flag = step(t('app.installFlagTitle'), t('app.installFlag'));
+            const flagAddress = document.createElement('code');
+            flagAddress.textContent = origin;
+            flag.appendChild(document.createTextNode(' '));
+            flag.appendChild(flagAddress);
+
+            step(t('app.installProxyTitle'), t('app.installProxy'));
+        } else {
+            note.textContent = t('app.installManual');
+
+            step(t('app.installIosTitle'), t('app.installIos'));
+            step(t('app.installChromeTitle'), t('app.installChrome'));
+            step(t('app.installFirefoxTitle'), t('app.installFirefox'));
+        }
+
+        body.replaceChildren(note, steps);
+        el('install-dialog').showModal();
+    }
+
+    /**
+     * The service worker is what lets the installed app open as itself - rather than as the
+     * browser's offline page - while the phone is off the home network. It caches the page
+     * and its assets, never the data.
+     * <p>
+     * Registration needs a secure context, which over the local network means the
+     * dashboard has to be reached over https or through localhost. On plain http the
+     * browser refuses, so it is not attempted: the page works exactly as before, just
+     * without offline support.
+     */
+    function registerServiceWorker() {
+        if (!('serviceWorker' in navigator) || !window.isSecureContext) {
+            return;
+        }
+
+        navigator.serviceWorker.register('sw.js')
+            .catch(error => console.warn('Service worker not registered', error));
     }
 
     document.addEventListener('DOMContentLoaded', init);
