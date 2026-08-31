@@ -136,6 +136,25 @@
             </article>
         </div>
 
+        <!--
+            The day's work mode, rebuilt from the changes the modules recorded. It answers
+            the question the stat tile above cannot - not what the inverter is doing now,
+            but when it started doing it, and which module decided that.
+        -->
+        <article class="card">
+            <header class="card-head">
+                <h2 data-i18n="workMode.title">Work mode today</h2>
+                <span class="card-hint" data-i18n="workMode.hint">Since midnight</span>
+            </header>
+            <p class="card-sub" data-i18n="workMode.explain">
+                Built from the changes the automation recorded, so a mode set from the SolaX app
+                or the inverter's own panel does not appear here.
+            </p>
+            <div class="chart" id="workmode-chart"></div>
+            <p class="chart-note" id="workmode-note" hidden></p>
+            <ul class="legend" id="workmode-legend"></ul>
+        </article>
+
         <div class="grid grid-selling">
             <article class="card">
                 <header class="card-head">

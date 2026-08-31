@@ -313,7 +313,7 @@ public class BatteryModule extends AbstractAutomationModule<BatteryProperties> {
 
         log.action("Battery is {} % short of the {} % target (tolerance {} %), switching to self use", target - soc, target, tolerance);
 
-        return switchMode(InverterMode.SELF_USE, soc, target,
+        return switchMode(InverterMode.FEED_IN_PRIORITY, InverterMode.SELF_USE, soc, target,
                 "history.battery.selfUse", "Feed-in priority -> self use, battery behind schedule",
                 Message.key("outcome.battery.switchedSelfUse", "Switched to self use").build(),
                 Message.key("outcome.battery.switchedSelfUse.detail", String.format(Locale.ROOT,
@@ -402,7 +402,7 @@ public class BatteryModule extends AbstractAutomationModule<BatteryProperties> {
         log.action("Battery is at {} % against the {} % checkpoint (tolerance {} %), switching to feed-in priority so surplus is sold rather than wasted",
                 soc, target, tolerance);
 
-        return switchMode(InverterMode.FEED_IN_PRIORITY, soc, target,
+        return switchMode(InverterMode.SELF_USE, InverterMode.FEED_IN_PRIORITY, soc, target,
                 "history.battery.feedIn", "Self use -> feed-in priority, battery ahead of schedule",
                 Message.key("outcome.battery.switchedFeedIn", "Switched to feed-in priority").build(),
                 Message.key("outcome.battery.switchedFeedIn.detail", String.format(Locale.ROOT,
@@ -415,7 +415,15 @@ public class BatteryModule extends AbstractAutomationModule<BatteryProperties> {
                         .build());
     }
 
+    /**
+     * Performs the change and records it.
+     * <p>
+     * The history entry names both modes as {@code from}/{@code to} parameters rather than
+     * only in its sentence: the dashboard draws the day's work mode out of these entries, and
+     * reading an English headline back to find out which mode it meant is no way to do it.
+     */
     private RunOutcome switchMode(
+            InverterMode from,
             InverterMode target,
             int soc,
             int checkpoint,
@@ -426,8 +434,12 @@ public class BatteryModule extends AbstractAutomationModule<BatteryProperties> {
     ) {
         boolean changed = inverter.setWorkMode(target);
 
-        timeline.record(ID, ActionType.WORK_MODE_CHANGE,
-                Message.key(historyKey, historyText).build(), changed, detail);
+        timeline.record(ID, ActionType.WORK_MODE_CHANGE, Message
+                        .key(historyKey, historyText)
+                        .with("from", from.name())
+                        .with("to", target.name())
+                        .build(),
+                changed, detail);
 
         if (!changed) {
             log.error("The inverter did not accept the work mode change");

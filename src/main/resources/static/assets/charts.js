@@ -828,6 +828,137 @@ const Charts = (() => {
         container.replaceChildren(svg);
     }
 
+    /* ----------------------------------------------------- work mode chart */
+
+    /**
+     * The day's work mode as one continuous band.
+     *
+     * Segments come in already resolved - {from, to, mode, ...} - because deciding
+     * what the inverter was in between two recorded changes is a question about the
+     * activity history, not about drawing. Here they are only laid out: one colour
+     * per mode, a tick where the mode changed, and the dashed "now" marker the other
+     * charts use.
+     *
+     * The axis always spans the whole window even though the band stops at the last
+     * segment. An empty right-hand end is the point: it says the day is not over,
+     * where a band stretched to the full width would read as a mode that is somehow
+     * already known for the evening.
+     */
+    function workModeChart(container, segments, options = {}) {
+        if (!segments || segments.length === 0) {
+            empty(container, options.emptyMessage || 'No work mode recorded');
+            return;
+        }
+
+        const {width, compact} = measure(container);
+
+        const padding = compact
+            ? {top: 20, right: 6, bottom: 18, left: 6}
+            : {top: 22, right: 12, bottom: 20, left: 12};
+
+        const bandHeight = compact ? 26 : 34;
+        const height = padding.top + bandHeight + padding.bottom;
+
+        const start = new Date(options.start);
+        const end = new Date(options.end);
+        const now = options.now || new Date();
+
+        const plotWidth = width - padding.left - padding.right;
+        const scaleX = date => padding.left + ((date - start) / (end - start)) * plotWidth;
+
+        const svg = createSvg(width, height);
+
+        // The track shows through wherever the band has nothing to say - the evening
+        // ahead of us, and any gap the history cannot account for.
+        svg.appendChild(element('rect', {
+            class: 'timeline-track',
+            x: padding.left, y: padding.top, width: plotWidth, height: bandHeight, rx: 6
+        }));
+
+        const windowHours = Math.round((end - start) / 3600000);
+        const hourStep = compact ? 6 : 3;
+
+        for (let hour = 0; hour <= windowHours; hour += hourStep) {
+            const at = new Date(start.getTime() + hour * 3600 * 1000);
+            const x = scaleX(at);
+
+            svg.appendChild(element('line', {
+                class: 'grid-line', x1: x, x2: x, y1: padding.top - 6, y2: height - padding.bottom
+            }));
+
+            const anchor = x < padding.left + 16 ? 'start'
+                : x > width - padding.right - 16 ? 'end' : 'middle';
+
+            const text = element('text', {class: 'axis-text', x: x, y: 11, 'text-anchor': anchor});
+            text.textContent = String(at.getHours()).padStart(2, '0') + ':00';
+            svg.appendChild(text);
+        }
+
+        segments.forEach(segment => {
+            const from = new Date(segment.from);
+            const to = new Date(segment.to);
+
+            const x = scaleX(from);
+            // A change and the mode it produced can be minutes apart; a segment that
+            // rounds to nothing would leave a hole in an otherwise continuous band.
+            const segmentWidth = Math.max(2, scaleX(to) - x);
+
+            const colour = options.colours?.[segment.mode] || 'var(--text-faint)';
+
+            const bar = element('rect', {
+                class: 'mode-bar' + (segment.mode ? '' : ' is-unknown'),
+                x: x, y: padding.top, width: segmentWidth, height: bandHeight,
+                fill: colour, opacity: segment.mode ? 0.85 : 0.25
+            });
+            svg.appendChild(bar);
+
+            // The label only goes in where it fits; the tooltip always says it.
+            const label = options.labels?.[segment.mode];
+
+            if (label && !compact && segmentWidth > label.length * 6.5 + 14) {
+                const text = element('text', {
+                    class: 'mode-label',
+                    x: x + segmentWidth / 2, y: padding.top + bandHeight / 2 + 4,
+                    'text-anchor': 'middle'
+                });
+                text.textContent = label;
+                svg.appendChild(text);
+            }
+
+            const hit = element('rect', {
+                class: 'hit-area',
+                x: x, y: padding.top, width: segmentWidth, height: bandHeight
+            });
+
+            hoverable(
+                hit,
+                () => options.tooltip ? options.tooltip(segment) : null,
+                () => bar.setAttribute('opacity', '1'),
+                () => bar.setAttribute('opacity', String(segment.mode ? 0.85 : 0.25))
+            );
+
+            svg.appendChild(hit);
+
+            // Where the segment began because something changed the mode, rather than
+            // because the window did. Drawn over the band so the change is findable.
+            if (segment.changedBy) {
+                svg.appendChild(element('line', {
+                    class: 'mode-change',
+                    x1: x, x2: x, y1: padding.top - 4, y2: padding.top + bandHeight + 4
+                }));
+            }
+        });
+
+        if (now >= start && now <= end) {
+            const nowX = scaleX(now);
+            svg.appendChild(element('line', {
+                class: 'timeline-now', x1: nowX, x2: nowX, y1: padding.top - 6, y2: height - padding.bottom
+            }));
+        }
+
+        container.replaceChildren(svg);
+    }
+
     /* A re-render throws away the marks, so anything a touch is holding open goes with them. */
-    return {priceChart, weatherChart, timelineChart, hideTooltip: Tooltip.release, COMPACT_WIDTH};
+    return {priceChart, weatherChart, timelineChart, workModeChart, hideTooltip: Tooltip.release, COMPACT_WIDTH};
 })();

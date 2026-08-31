@@ -73,9 +73,12 @@ public class InverterControlController {
         log.info("Dashboard is setting the work mode to {}", target);
 
         boolean written = inverter.setWorkMode(target);
+        // "to" is what the dashboard's work mode chart reads; "mode" is what the sentence
+        // above interpolates. Same value, and both are cheap next to guessing either.
         timeline.record("dashboard", ActionType.WORK_MODE_CHANGE, Message
                         .key("history.quick.workMode", "Work mode set to " + target)
                         .with("mode", target.name())
+                        .with("to", target.name())
                         .build(),
                 written, "from the dashboard");
 

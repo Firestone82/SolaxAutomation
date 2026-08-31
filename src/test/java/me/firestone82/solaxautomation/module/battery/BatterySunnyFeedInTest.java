@@ -1,5 +1,7 @@
 package me.firestone82.solaxautomation.module.battery;
 
+import me.firestone82.solaxautomation.core.module.ActionType;
+import me.firestone82.solaxautomation.core.timeline.TimelineEvent;
 import me.firestone82.solaxautomation.core.timeline.TimelineProperties;
 import me.firestone82.solaxautomation.core.timeline.TimelineService;
 import me.firestone82.solaxautomation.integration.http.data.DataWrapper;
@@ -43,6 +45,7 @@ class BatterySunnyFeedInTest {
     private BatteryProperties properties;
     private InverterGateway inverter;
     private MeteoSourceService weatherService;
+    private TimelineService timeline;
     private BatteryModule module;
 
     @BeforeEach
@@ -65,7 +68,8 @@ class BatterySunnyFeedInTest {
         timelineProperties.setPersist(false);
         timelineProperties.setFile(directory.resolve("timeline.json"));
 
-        module = new BatteryModule(properties, inverter, weatherService, new TimelineService(timelineProperties));
+        timeline = new TimelineService(timelineProperties);
+        module = new BatteryModule(properties, inverter, weatherService, timeline);
     }
 
     private void inverterAt(int soc, InverterMode mode) {
@@ -168,6 +172,24 @@ class BatterySunnyFeedInTest {
         assertEquals("outcome.battery.stayingSelfUse", summaryKeyAt(FEED_IN_HOUR));
         verify(inverter, never()).setWorkMode(any());
         verify(weatherService, never()).getForecast();
+    }
+
+    @Test
+    @DisplayName("the recorded change names both modes, which is what the dashboard draws")
+    void theRecordedChangeNamesBothModes() {
+        skyIsSunny();
+        inverterAt(CHECKPOINT, InverterMode.SELF_USE);
+        module.runCheckpoint(FEED_IN_HOUR);
+
+        TimelineEvent event = timeline.getEvents(10).stream()
+                .filter(entry -> entry.type() == ActionType.WORK_MODE_CHANGE)
+                .findFirst()
+                .orElseThrow();
+
+        // The dashboard's work mode chart rebuilds the day out of these two parameters, so a
+        // change that stops naming them is a broken chart rather than a cosmetic slip.
+        assertEquals(InverterMode.SELF_USE.name(), event.params().get("from"));
+        assertEquals(InverterMode.FEED_IN_PRIORITY.name(), event.params().get("to"));
     }
 
     @Test

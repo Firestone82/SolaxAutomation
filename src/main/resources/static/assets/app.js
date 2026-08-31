@@ -318,6 +318,7 @@
         Charts.hideTooltip();
         renderPrices();
         renderWeather();
+        renderWorkMode();
         renderTimeline();
     }
 
@@ -794,6 +795,160 @@
     function moduleNames() {
         return Object.fromEntries(state.modules.map(module =>
             [module.id, moduleText(module.id, 'name', module.name)]));
+    }
+
+    /* ------------------------------------------------- work mode over time */
+
+    /**
+     * One colour per work mode, used by the band and its legend alike.
+     * <p>
+     * Feed-in priority keeps the accent the timeline already paints work mode changes in,
+     * self use is the quiet green of production staying home, backup the amber of something
+     * being held in reserve, and manual the selling purple - manual only ever happens because
+     * someone or something is driving the battery directly.
+     */
+    const MODE_COLOURS = {
+        SELF_USE: 'var(--success)',
+        FEED_IN_PRIORITY: 'var(--accent)',
+        BACKUP: 'var(--warning)',
+        MANUAL: 'var(--sell)'
+    };
+
+    /**
+     * The day's work mode, rebuilt from the changes the automation recorded.
+     * <p>
+     * Nothing samples the inverter into a history, so the band is an inference: the mode
+     * between two recorded changes is whatever the earlier one set. That makes the boundaries
+     * of what can be known worth drawing honestly rather than papering over:
+     * <ul>
+     *   <li>before the first change of the day the mode is the one that change moved away
+     *       from - which only a module records, so a day that opens with a change made from
+     *       the dashboard opens as an unknown stretch instead of a guess;</li>
+     *   <li>with no change recorded at all the mode has not moved since before midnight, so
+     *       the live mode is drawn across the whole day and the tooltip says why;</li>
+     *   <li>a mode set outside this application - the SolaX app, the inverter's own panel -
+     *       is invisible here. When the live mode disagrees with the last change recorded,
+     *       the note under the chart says so rather than the band inventing a change.</li>
+     * </ul>
+     */
+    function workModeSegments() {
+        const now = new Date();
+        const start = startOfDay(now);
+
+        // The history reads newest first, which is what the activity list wants and the
+        // opposite of what a band does.
+        const changes = (state.timeline?.history || [])
+            .filter(entry => entry.type === 'WORK_MODE_CHANGE' && entry.success && entry.params?.to)
+            .map(entry => ({at: new Date(entry.at), to: entry.params.to, from: entry.params.from || null, entry}))
+            .filter(change => change.at >= start && change.at <= now)
+            .sort((first, second) => first.at - second.at);
+
+        const live = state.overview?.workMode || null;
+
+        if (changes.length === 0) {
+            return live ? [{from: start, to: now, mode: live, changedBy: null, entry: null, held: true}] : [];
+        }
+
+        const segments = [{
+            from: start,
+            to: changes[0].at,
+            mode: changes[0].from,
+            changedBy: null,
+            entry: null,
+            held: false
+        }];
+
+        changes.forEach((change, index) => {
+            segments.push({
+                from: change.at,
+                to: index + 1 < changes.length ? changes[index + 1].at : now,
+                mode: change.to,
+                changedBy: change.entry.moduleId,
+                entry: change.entry,
+                held: false
+            });
+        });
+
+        // A change at midnight, or two in the same minute, leaves nothing to draw.
+        return segments.filter(segment => segment.to > segment.from);
+    }
+
+    function workModeTooltip(segment) {
+        const mode = segment.mode ? t('mode.' + segment.mode) : t('workMode.unknown');
+
+        const subtitle = segment.changedBy
+            ? moduleText(segment.changedBy, 'name', segment.changedBy)
+            : (segment.held ? t('workMode.held') : t('workMode.beforeFirst'));
+
+        return {
+            title: mode,
+            subtitle: subtitle,
+            accent: MODE_COLOURS[segment.mode] || 'var(--text-faint)',
+            rows: [
+                [t('tooltip.when'), `${formatTimeOnly(segment.from.toISOString())} – ${formatTimeOnly(segment.to.toISOString())}`],
+                [t('tooltip.duration'), durationBetween(segment.from.toISOString(), segment.to.toISOString())],
+                [t('workMode.setBy'), segment.entry ? msg(segment.entry) : null]
+            ],
+            note: segment.entry ? detailOf(segment.entry) : (segment.mode ? null : t('workMode.unknownNote'))
+        };
+    }
+
+    function renderWorkMode() {
+        const segments = workModeSegments();
+        const now = new Date();
+        const start = startOfDay(now);
+
+        Charts.workModeChart(el('workmode-chart'), segments, {
+            emptyMessage: t('workMode.none'),
+            start: start,
+            end: new Date(start.getTime() + DAY_MS),
+            now: now,
+            colours: MODE_COLOURS,
+            labels: Object.fromEntries(Object.keys(MODE_COLOURS).map(mode => [mode, t('mode.' + mode)])),
+            tooltip: workModeTooltip
+        });
+
+        renderWorkModeNote(segments);
+        renderWorkModeLegend(segments);
+    }
+
+    /**
+     * The one thing the band cannot show: a mode this application did not set.
+     * <p>
+     * The inverter can be moved from the SolaX app or its own panel, and nothing tells us
+     * when that happened - so the band stops at the last change we know of and the mismatch
+     * is stated here instead of being drawn as a change at an invented time.
+     */
+    function renderWorkModeNote(segments) {
+        const note = el('workmode-note');
+        const live = state.overview?.workMode || null;
+        const last = segments.length ? segments[segments.length - 1] : null;
+
+        const outside = live && last && !last.held && last.mode && last.mode !== live;
+
+        note.hidden = !outside;
+
+        if (outside) {
+            note.textContent = t('workMode.changedOutside', {mode: t('mode.' + live)});
+        }
+    }
+
+    /** Only the modes the day actually contains - a legend of four is mostly noise. */
+    function renderWorkModeLegend(segments) {
+        const legend = el('workmode-legend');
+        const modes = [...new Set(segments.map(segment => segment.mode).filter(Boolean))];
+
+        legend.replaceChildren(...modes.map(mode => {
+            const item = document.createElement('li');
+
+            const swatch = document.createElement('i');
+            swatch.className = 'swatch';
+            swatch.style.background = MODE_COLOURS[mode] || 'var(--text-faint)';
+            item.appendChild(swatch);
+
+            item.appendChild(textSpan(t('mode.' + mode)));
+            return item;
+        }));
     }
 
     /** The window the timeline chart draws: the day ahead, or today from midnight. */
@@ -1625,6 +1780,7 @@
         renderStats();
         renderPrices();
         renderWeather();
+        renderWorkMode();
         renderTimeline();
         renderSelling();
         renderQuickActions();
@@ -1656,6 +1812,7 @@
         el('stat-tiles').replaceChildren(...block('skeleton-tile', 4));
         el('price-chart').replaceChildren(...block('skeleton-chart'));
         el('weather-chart').replaceChildren(...block('skeleton-chart'));
+        el('workmode-chart').replaceChildren(...block('skeleton-chart'));
         el('timeline-chart').replaceChildren(...block('skeleton-chart'));
         el('selling-hero').replaceChildren(...block('skeleton-hero'));
         el('selling-facts').replaceChildren(...lines('is-medium', '', 'is-short'));

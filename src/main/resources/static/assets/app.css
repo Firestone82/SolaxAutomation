@@ -466,6 +466,30 @@ main {
 .quality-past { fill: var(--text-faint); opacity: .07; pointer-events: none; }
 .quality-now  { stroke: var(--danger); stroke-width: 1.5; stroke-dasharray: 3 3; pointer-events: none; }
 
+/* One segment of the work mode band. The colour comes from the mode itself, so only
+   the shape and the resting opacity live here. */
+.mode-bar { transition: opacity .1s; }
+
+/* An unknown stretch is a wash rather than a colour: it is the absence of knowledge,
+   not a fourth mode. */
+.mode-bar.is-unknown { fill: var(--text-faint); }
+
+.mode-label {
+    fill: var(--surface);
+    font-size: 11px;
+    font-family: var(--font);
+    font-weight: 600;
+    pointer-events: none;
+}
+
+/* Where a module actually moved the mode, as opposed to where the day started. */
+.mode-change {
+    stroke: var(--text);
+    stroke-width: 1.5;
+    opacity: .55;
+    pointer-events: none;
+}
+
 .timeline-track { fill: var(--surface-alt); }
 .timeline-label { fill: var(--text-muted); font-size: 10px; font-family: var(--font); }
 

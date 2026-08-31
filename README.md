@@ -144,8 +144,8 @@ battery earns, so they are pinned down rather than only observed in production l
 connection switch (HIGH is the metered grid, LOW the second supply — the tile says which, and says
 plainly when it is the off-Pi stub rather than a pin); the day's 96 quarter-hour prices
 with the armed selling window highlighted; the weather quality curve with the thresholds the modules
-compare against; a timeline of what every module intends to do and what it already did; and recent
-activity.
+compare against; the day's work mode as one band; a timeline of what every module intends to do and
+what it already did; and recent activity.
 
 The price chart also draws what the two price-driven automations make of the day, because the whole
 point of the prices is what those two do about them. Intervals under `automation.export.min-price`,
@@ -158,6 +158,23 @@ intervals merge into one band, so each reads as a part of the day rather than 96
 The wash is where a window *can* be armed, not where one *will* be: which of those intervals is
 actually chosen depends on the peak, the plateau around it and the charge in the battery, and only
 the planner can answer that. The armed window itself keeps its own solid colour on top.
+
+**Work mode today** is the day as one band, midnight to now, coloured by the mode the inverter was
+in — self use green, feed-in priority blue, backup amber, manual purple — with a tick wherever
+something moved it. The stat tile above says what the mode is; this says when it became that, and
+which module decided so. Hovering a stretch names the module, how long the mode held, and the same
+headline and sentence the activity list shows for that change.
+
+Nothing samples the inverter into a history, so the band is built from the work mode changes the
+automation recorded — which makes what it cannot know worth drawing rather than papering over. The
+mode between two changes is whatever the earlier one set. Before the first change of the day it is
+the mode that change moved away from, and a day that opens with a change made from the dashboard —
+which records no previous mode — opens as a grey unknown stretch instead of a guess. With no change
+recorded at all the mode has not moved since before midnight, so the live mode is drawn across the
+whole day. And a mode set outside this application, from the SolaX app or the inverter's own panel,
+is invisible here: when the live mode disagrees with the last change on record, a line under the
+chart says so rather than the band inventing a change at a time nobody knows. The axis always spans
+the full day even though the band stops at now — the empty evening is the point.
 
 The timeline shows every run each module has coming up, not just the next one. Two modules are left
 out of it: the export limit is re-checked every quarter of an hour and the weather work mode every
@@ -193,7 +210,7 @@ Recent activity survives a restart: the newest `timeline.persisted-events` entri
 JSON file (`data/timeline.json` by default). It is a convenience for the dashboard, not an audit
 log - the rolling log files remain the durable record.
 
-All three charts are hoverable. A price interval reports its exact price in both currencies, how it
+All four charts are hoverable. A price interval reports its exact price in both currencies, how it
 compares with that day's average and, where it falls into one of the two bands, the rule that put it
 there; a forecast hour reports its quality, the band that quality falls into, cloud cover and
 temperature, and says when it is already behind us; a planned action is titled by its kind and the
