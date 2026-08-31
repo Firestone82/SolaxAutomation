@@ -63,10 +63,54 @@ public class BatteryProperties implements ModuleProperties {
     private Map<Integer, Integer> feedInThresholds = new LinkedHashMap<>();
 
     /**
+     * The weather gate on {@link #feedInThresholds}.
+     * <p>
+     * A charged battery is only half the reason to give surplus away - the other half is that
+     * more is coming. Under a dull sky the production barely covers the house, so exporting
+     * what little there is means buying it back in the evening.
+     */
+    private FeedInWeather feedInWeather = new FeedInWeather();
+
+    /**
      * Minute of the hour the check runs at.
      * <p>
      * Kept away from :00 on purpose - the other modules run at their own minutes so the
      * Modbus queue never has to serialise several checks at once.
      */
     private int checkMinute = 5;
+
+    /**
+     * How sunny it has to be before a reached feed-in checkpoint actually switches the
+     * inverter over.
+     *
+     * @see BatteryModule
+     */
+    @Data
+    public static class FeedInWeather {
+
+        /**
+         * Enables the check. Off means a reached checkpoint switches to feed-in priority on
+         * the battery level alone, which is what the guard did before this existed - and the
+         * only sensible setting for an installation with no weather forecast configured.
+         */
+        private boolean enabled = true;
+
+        /**
+         * Forecast quality at or below which the coming hours count as sunny enough to give
+         * surplus away, on the scale described on {@code MeteoDayHourly#getQuality()}
+         * (lower is sunnier).
+         * <p>
+         * Matches {@code automation.weather.cloudy-threshold} by default, so both modules
+         * agree on what "sunny" means and cannot argue over the work mode hour by hour.
+         */
+        private double maxQuality = 2.2;
+
+        /**
+         * How many hours ahead the check looks.
+         * <p>
+         * The question is whether the rest of the morning still produces a surplus, so the
+         * window is short - a cloudy evening says nothing about the next couple of hours.
+         */
+        private int lookAheadHours = 3;
+    }
 }

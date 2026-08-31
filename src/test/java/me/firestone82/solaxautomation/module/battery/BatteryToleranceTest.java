@@ -2,6 +2,7 @@ package me.firestone82.solaxautomation.module.battery;
 
 import me.firestone82.solaxautomation.core.timeline.TimelineProperties;
 import me.firestone82.solaxautomation.core.timeline.TimelineService;
+import me.firestone82.solaxautomation.integration.meteosource.MeteoSourceService;
 import me.firestone82.solaxautomation.integration.solax.InverterGateway;
 import me.firestone82.solaxautomation.integration.solax.model.InverterMode;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,6 +41,8 @@ class BatteryToleranceTest {
         properties.setSelfUseThresholds(Map.of(SELF_USE_HOUR, 80));
         properties.setFeedInThresholds(Map.of(FEED_IN_HOUR, 80));
         properties.setTolerance(2);
+        // The sky is the subject of BatterySunnyFeedInTest; here only the tolerance decides.
+        properties.getFeedInWeather().setEnabled(false);
 
         inverter = mock(InverterGateway.class);
         when(inverter.setWorkMode(any())).thenReturn(true);
@@ -48,7 +51,8 @@ class BatteryToleranceTest {
         timelineProperties.setPersist(false);
         timelineProperties.setFile(directory.resolve("timeline.json"));
 
-        module = new BatteryModule(properties, inverter, new TimelineService(timelineProperties));
+        module = new BatteryModule(properties, inverter, mock(MeteoSourceService.class),
+                new TimelineService(timelineProperties));
     }
 
     private void inverterAt(int soc, InverterMode mode) {

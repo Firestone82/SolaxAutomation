@@ -4,6 +4,9 @@ import me.firestone82.solaxautomation.core.module.*;
 import me.firestone82.solaxautomation.core.module.PlannedAction.Message;
 import me.firestone82.solaxautomation.core.schedule.Schedules;
 import me.firestone82.solaxautomation.core.timeline.TimelineService;
+import me.firestone82.solaxautomation.integration.meteosource.MeteoSourceService;
+import me.firestone82.solaxautomation.integration.meteosource.model.MeteoDayHourly;
+import me.firestone82.solaxautomation.integration.meteosource.model.WeatherForecast;
 import me.firestone82.solaxautomation.integration.solax.InverterGateway;
 import me.firestone82.solaxautomation.integration.solax.model.InverterMode;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -13,6 +16,7 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -31,10 +35,12 @@ import java.util.Locale;
  *       instead of reaching the grid.</li>
  *   <li>{@link BatteryProperties#getFeedInThresholds()} - ahead of its checkpoint, self use
  *       switches to feed-in priority so the surplus is sold rather than wasted once the
- *       battery no longer needs it.</li>
+ *       battery no longer needs it - but only while the coming hours are sunny enough for
+ *       there to be a surplus at all, see {@link BatteryProperties#getFeedInWeather()}.</li>
  * </ul>
- * Both react to the battery level actually measured, not a forecast, so they catch a sunnier
- * morning than the weather module's forecast-based check expected. A checkpoint is met as soon
+ * Both are triggered by the battery level actually measured rather than by a forecast, so they
+ * catch a sunnier morning than the weather module's forecast-based check expected; the forecast
+ * only ever answers whether there is a surplus worth exporting. A checkpoint is met as soon
  * as the battery is within {@link BatteryProperties#getTolerance()} of it, so a battery one or
  * two percent short is not treated as behind schedule. Each checkpoint only ever
  * acts on the work mode it owns - a checkpoint whose hour is not configured, or whose
@@ -46,10 +52,17 @@ public class BatteryModule extends AbstractAutomationModule<BatteryProperties> {
     public static final String ID = "battery";
 
     private final InverterGateway inverter;
+    private final MeteoSourceService weatherService;
 
-    public BatteryModule(BatteryProperties properties, InverterGateway inverter, TimelineService timeline) {
+    public BatteryModule(
+            BatteryProperties properties,
+            InverterGateway inverter,
+            MeteoSourceService weatherService,
+            TimelineService timeline
+    ) {
         super(properties, timeline);
         this.inverter = inverter;
+        this.weatherService = weatherService;
     }
 
     // ------------------------------------------------------------------ module metadata
@@ -112,6 +125,10 @@ public class BatteryModule extends AbstractAutomationModule<BatteryProperties> {
                     ).with("index", at));
                 });
 
+        entries.add(ConfigEntry.of("automation.battery.feed-in-weather.max-quality", "Sunny threshold",
+                properties.getFeedInWeather().isEnabled() ? properties.getFeedInWeather().getMaxQuality() : "disabled",
+                "Forecast quality the coming hours have to stay at or below before a reached feed-in checkpoint switches over"));
+
         return entries;
     }
 
@@ -146,12 +163,23 @@ public class BatteryModule extends AbstractAutomationModule<BatteryProperties> {
 
         int target = properties.getFeedInThresholds().get(at.getHour());
 
+        if (!properties.getFeedInWeather().isEnabled()) {
+            return PlannedAction.at(ID, at, ActionType.CHECK, Message
+                    .key("planned.battery.feedInCheck", String.format(Locale.ROOT,
+                            "Check the battery reached %d %% (tolerance %d %%), otherwise stay in self use",
+                            target, properties.getTolerance()))
+                    .with("target", target)
+                    .with("tolerance", properties.getTolerance())
+                    .build());
+        }
+
         return PlannedAction.at(ID, at, ActionType.CHECK, Message
-                .key("planned.battery.feedInCheck", String.format(Locale.ROOT,
-                        "Check the battery reached %d %% (tolerance %d %%), otherwise stay in self use",
+                .key("planned.battery.feedInSunnyCheck", String.format(Locale.ROOT,
+                        "Check the battery reached %d %% (tolerance %d %%) and the sky is sunny enough, otherwise stay in self use",
                         target, properties.getTolerance()))
                 .with("target", target)
                 .with("tolerance", properties.getTolerance())
+                .with("quality", properties.getFeedInWeather().getMaxQuality())
                 .build());
     }
 
@@ -332,6 +360,45 @@ public class BatteryModule extends AbstractAutomationModule<BatteryProperties> {
                             .build());
         }
 
+        // A full battery is only half the reason to export - the other half is that more is
+        // coming. Under a dull sky the production barely covers the house, so what little
+        // would be exported is bought back in the evening.
+        BatteryProperties.FeedInWeather weather = properties.getFeedInWeather();
+
+        if (weather.isEnabled()) {
+            Optional<Double> qualityOpt = upcomingWeatherQuality();
+
+            if (qualityOpt.isEmpty()) {
+                return RunOutcome.incomplete(
+                        Message.key("outcome.battery.skipped", "Checkpoint skipped").build(),
+                        Message.key("outcome.battery.noForecast",
+                                "The battery is at the feed-in checkpoint, but the weather forecast is unavailable, so it could not be told whether there is a surplus to give away - the inverter was left in self use.").build());
+            }
+
+            double quality = qualityOpt.get();
+
+            log.detail("Outlook", "{} (quality {}, sunny at or below {})",
+                    quality <= weather.getMaxQuality() ? "sunny" : "cloudy", round(quality), weather.getMaxQuality());
+
+            if (quality > weather.getMaxQuality()) {
+                log.noAction("battery is at {} %, but the next {} h score {} against the {} that counts as sunny",
+                        soc, weather.getLookAheadHours(), round(quality), weather.getMaxQuality());
+
+                return RunOutcome.unchanged(
+                        Message.key("outcome.battery.notSunnyEnough", "Battery ahead, but not sunny enough").build(),
+                        Message.key("outcome.battery.notSunnyEnough.detail", String.format(Locale.ROOT,
+                                        "Battery is at %d %%, at the %d %% checkpoint for %s, but the next %d h score %.2f against the %.2f that counts as sunny, so there is no surplus worth giving away and self use stays on.",
+                                        soc, target, at, weather.getLookAheadHours(), round(quality), weather.getMaxQuality()))
+                                .with("soc", soc)
+                                .with("target", target)
+                                .with("time", at)
+                                .with("hours", weather.getLookAheadHours())
+                                .with("quality", round(quality))
+                                .with("threshold", weather.getMaxQuality())
+                                .build());
+            }
+        }
+
         log.action("Battery is at {} % against the {} % checkpoint (tolerance {} %), switching to feed-in priority so surplus is sold rather than wasted",
                 soc, target, tolerance);
 
@@ -378,6 +445,37 @@ public class BatteryModule extends AbstractAutomationModule<BatteryProperties> {
     }
 
     // ------------------------------------------------------------------ helpers
+
+    /**
+     * Mean forecast quality from this hour through the next
+     * {@link BatteryProperties.FeedInWeather#getLookAheadHours()}, or empty when the forecast
+     * cannot answer for that window.
+     */
+    private Optional<Double> upcomingWeatherQuality() {
+        Optional<WeatherForecast> forecastOpt = weatherService.getForecast();
+
+        if (forecastOpt.isEmpty()) {
+            log.abort("the weather forecast is unavailable");
+            return Optional.empty();
+        }
+
+        LocalDateTime from = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS);
+        LocalDateTime to = from.plusHours(properties.getFeedInWeather().getLookAheadHours());
+
+        List<MeteoDayHourly> hours = forecastOpt.get().getHourlyBetween(from, to);
+        if (hours.isEmpty()) {
+            log.abort("the forecast has no hours between {} and {}", from, to);
+            return Optional.empty();
+        }
+
+        log.list("Hours", hours, MeteoDayHourly::toString);
+
+        return Optional.of(MeteoDayHourly.avgQuality(hours));
+    }
+
+    private static double round(double value) {
+        return Math.round(value * 100.0) / 100.0;
+    }
 
     /** The wall clock time a checkpoint hour actually runs at, e.g. {@code 13:05}. */
     private String checkpointTime(int hour) {

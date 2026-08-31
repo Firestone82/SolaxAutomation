@@ -30,10 +30,16 @@ Běží každou hodinu v `:05` a jedná jen v nastavených kontrolních bodech.
 | 10:05 | 70 % |
 
 > **POKUD** je baterie na cíli nebo nad ním **a** střídač je v režimu _SELF_USE_
+> **a** předpověď na další 3 hodiny má kvalitu **≤ 2,2**
 > **PROVEĎ:** přepni na _FEED_IN_PRIORITY_, aby se přebytek prodal místo aby propadl.
+>
+> **JINAK POKUD** je baterie na cíli, ale obloha je zatažená
+> **PROVEĎ:** nech _SELF_USE_ — za slabého slunce výroba sotva pokryje dům a to málo, co by
+> odešlo do sítě, se stejně večer nakupuje zpět.
 
-Obě kontroly reagují na skutečně naměřené nabití, ne na předpověď — zachytí i slunečnější
-dopoledne, než čekala předpověďová kontrola modulu počasí. Každý kontrolní bod jedná jen ve
+Obě kontroly vychází ze skutečně naměřeného nabití, ne z předpovědi — zachytí i slunečnější
+dopoledne, než čekala předpověďová kontrola modulu počasí. Předpověď rozhoduje jen o tom, jestli
+se přebytek vůbec vyplatí posílat do sítě (viz níže). Každý kontrolní bod jedná jen ve
 "svém" režimu; ostatní režimy (např. _BACKUP_) nechává být.
 
 **Tolerance** — `tolerance`, výchozí **2 %**. Kontrolní bod je očekávání, ne smlouva: baterie na
@@ -41,6 +47,15 @@ dopoledne, než čekala předpověďová kontrola modulu počasí. Každý kontr
 způsobí, že režim kolem kontrolní hodiny poskakuje. Cíl proto platí za splněný, jakmile je nabití
 v rámci tolerance pod ním — v obou směrech, tedy i pro přepnutí do _FEED_IN_PRIORITY_. Víkendový
 příplatek se připočte k cíli první, tolerance se měří až proti výslednému číslu.
+
+**Kontrola slunečna** — `feed-in-weather`, platí jen pro přepnutí do _FEED_IN_PRIORITY_. Nabitá
+baterie je jen půl důvodu dodávat do sítě; ta druhá půlka je, že ještě něco přijde. Kontrolní bod
+proto přepne, jen když průměrná kvalita předpovědi na dalších `look-ahead-hours` (**3 h**) je na
+`max-quality` (**2,2**) nebo pod ní — stejná hranice jako `automation.weather.cloudy-threshold`,
+aby se oba moduly na tom, co je „slunečno“, shodly. Když předpověď není dostupná, kontrola se
+přeskočí a režim zůstane beze změny. Bez API klíče na počasí nastavte `enabled: false` — modul se
+pak jako dřív rozhoduje jen podle nabití. Kontroly `self-use-thresholds` počasí neřeší vůbec:
+přestat dodávat je vždy bezpečné.
 
 ---
 

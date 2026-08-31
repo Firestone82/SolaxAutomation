@@ -221,6 +221,21 @@ automation:
     feed-in-thresholds:
       9: 50
       10: 70
+    # A charged battery is only half the reason to give surplus away - the other half is
+    # that more sun is coming. Under a dull sky the production barely covers the house, so
+    # the little that would be exported is bought back again in the evening.
+    feed-in-weather:
+      # Off means a reached checkpoint switches over on the battery level alone, which is
+      # what the guard did before this check existed. Set it off if you run without a
+      # weather API key - the checkpoint is otherwise skipped for want of a forecast.
+      enabled: true
+      # At or below this the coming hours count as sunny (lower is sunnier). Matches
+      # automation.weather.cloudy-threshold so both modules agree on what sunny means and
+      # cannot argue over the work mode hour by hour.
+      max-quality: 2.2
+      # How far ahead the check looks. Short on purpose - the question is whether the rest
+      # of the morning still produces a surplus, not what the evening looks like.
+      look-ahead-hours: 3
     # Minute of the hour the check runs at; kept apart from the other modules.
     check-minute: 5
 

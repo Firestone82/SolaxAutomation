@@ -51,7 +51,7 @@ pick it up. Deleting a module means deleting its package.
 
 | Module | Config prefix | What it does |
 |---|---|---|
-| Battery charge guard | `automation.battery` | Checks the battery against charge targets through the day: switches to self use when behind schedule, and to feed-in priority when comfortably ahead of it so surplus production is sold rather than wasted. A checkpoint counts as met while the battery is within `tolerance` of it, so 79 % against an 80 % target is not treated as behind schedule. |
+| Battery charge guard | `automation.battery` | Checks the battery against charge targets through the day: switches to self use when behind schedule, and to feed-in priority when comfortably ahead of it so surplus production is sold rather than wasted. A checkpoint counts as met while the battery is within `tolerance` of it, so 79 % against an 80 % target is not treated as behind schedule. Switching to feed-in priority also asks the forecast first: a charged battery only pays off as export while the coming hours are sunny enough for there to be a surplus (`feed-in-weather`). |
 | Export limit | `automation.export` | Closes the export limit while the spot price is too low to be worth selling, and throttles it around midday on dull days. Runs every quarter of an hour, matching how often the price changes. |
 | Weather work mode | `automation.weather` | Chooses between feed-in priority and self use from the forecast, and moves to backup ahead of a thunderstorm. |
 | Grid selling | `automation.discharge` | Finds the most valuable quarter-hour window of the day and sells the battery into it through remote control. |
