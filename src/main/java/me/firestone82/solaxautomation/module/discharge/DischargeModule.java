@@ -382,8 +382,11 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
         if (window.running()) {
             log.action("Stopping the running discharge - {}", reason.text());
             boolean stopped = stopDischarge("cancelled: " + reason.text());
-            timeline.record(ID, ActionType.REMOTE_CONTROL_EXIT,
-                    Message.key("history.discharge.stopped", "Discharge cancelled").build(), stopped, reason);
+            timeline.record(ID, ActionType.REMOTE_CONTROL_EXIT, Message
+                            .key("history.discharge.stopped", "Discharge cancelled")
+                            .with("sale", "end")
+                            .build(),
+                    stopped, reason);
         } else {
             log.action("Cancelled the armed window {}-{} - {}",
                     window.from().toLocalTime(), window.to().toLocalTime(), reason.text());
@@ -497,8 +500,15 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
 
             armedWindow = window.started();
             log.success("Discharging {} W until {}", window.watts(), window.to().toLocalTime());
-            timeline.record(ID, ActionType.GRID_SELL,
-                    Message.key("history.discharge.started", "Discharge started").build(), true, detail);
+            // "sale" brackets the stretch the battery was actually being sold in. The armed
+            // window is forgotten the moment it ends, so a sale that already ran is only in
+            // the activity history - and the dashboard's work mode band draws it from these
+            // two markers rather than from which of the several ending headlines it reads.
+            timeline.record(ID, ActionType.GRID_SELL, Message
+                            .key("history.discharge.started", "Discharge started")
+                            .with("sale", "start")
+                            .build(),
+                    true, detail);
 
             return RunOutcome.changed(Message
                     .key("outcome.discharge.selling", String.format(Locale.ROOT,
@@ -527,8 +537,10 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
         if (LocalDateTime.now().isAfter(window.to())) {
             log.info("Selling window {}-{} finished", window.from().toLocalTime(), window.to().toLocalTime());
             armedWindow = null;
-            timeline.record(ID, ActionType.REMOTE_CONTROL_EXIT,
-                    Message.key("history.discharge.finished", "Selling window finished").build(), true,
+            timeline.record(ID, ActionType.REMOTE_CONTROL_EXIT, Message
+                            .key("history.discharge.finished", "Selling window finished")
+                            .with("sale", "end")
+                            .build(), true,
                     Message.key("history.discharge.finished.detail", String.format(Locale.ROOT,
                                     "The window %s-%s ran to its end and the inverter is back on its own work mode.",
                                     window.from().toLocalTime(), window.to().toLocalTime()))
@@ -572,8 +584,10 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
         boolean stopped = stopDischarge("battery reached the " + properties.getTargetBattery() + "% reserve");
         armedWindow = null;
 
-        timeline.record(ID, ActionType.REMOTE_CONTROL_EXIT,
-                Message.key("history.discharge.reserveReached", "Discharge stopped at the battery reserve").build(),
+        timeline.record(ID, ActionType.REMOTE_CONTROL_EXIT, Message
+                        .key("history.discharge.reserveReached", "Discharge stopped at the battery reserve")
+                        .with("sale", "end")
+                        .build(),
                 stopped,
                 Message.key("history.discharge.reserveReached.detail", String.format(Locale.ROOT,
                                 "The battery reached the %d %% reserve at %d %%, so the sale ended %s before the end of the window.",

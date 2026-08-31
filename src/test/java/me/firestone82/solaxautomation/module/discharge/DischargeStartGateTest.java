@@ -1,5 +1,8 @@
 package me.firestone82.solaxautomation.module.discharge;
 
+import me.firestone82.solaxautomation.core.module.ActionType;
+import me.firestone82.solaxautomation.core.module.PlannedAction.Message;
+import me.firestone82.solaxautomation.core.timeline.TimelineEvent;
 import me.firestone82.solaxautomation.core.timeline.TimelineProperties;
 import me.firestone82.solaxautomation.core.timeline.TimelineService;
 import me.firestone82.solaxautomation.integration.ote.OteService;
@@ -34,6 +37,7 @@ class DischargeStartGateTest {
     private DischargeProperties properties;
     private InverterGateway inverter;
     private OteService prices;
+    private TimelineService timeline;
     private DischargeModule module;
 
     @BeforeEach
@@ -55,8 +59,10 @@ class DischargeStartGateTest {
         timelineProperties.setPersist(false);
         timelineProperties.setFile(directory.resolve("timeline.json"));
 
+        timeline = new TimelineService(timelineProperties);
+
         module = new DischargeModule(properties, inverter, prices,
-                new SimpleAsyncTaskScheduler(), new TimelineService(timelineProperties), new ExportProperties());
+                new SimpleAsyncTaskScheduler(), timeline, new ExportProperties());
     }
 
     /** Arms a window that is already open, so arming runs the start straight away. */
@@ -111,6 +117,32 @@ class DischargeStartGateTest {
         // 45 % is below min-battery but above the reserve: the person asked for this sale.
         verify(inverter).startRemoteDischarge(anyInt(), any());
         assertTrue(module.isDischarging());
+    }
+
+    /**
+     * The armed window is forgotten the moment a sale ends, so the activity history is all
+     * that is left of one that already ran - and the dashboard's work mode band draws the
+     * stretch the battery was being sold in out of these two markers. A sale that stops
+     * bracketing itself is a sale the band silently loses.
+     */
+    @Test
+    @DisplayName("a sale brackets itself in the history with a start and an end marker")
+    void theSaleBracketsItselfInTheHistory() {
+        when(inverter.getBatterySoc()).thenReturn(Optional.of(85));
+
+        armNow();
+        assertEquals("start", newest(ActionType.GRID_SELL).params().get("sale"));
+
+        module.cancelArming(Message.of("stopped by the test"));
+        assertEquals("end", newest(ActionType.REMOTE_CONTROL_EXIT).params().get("sale"));
+    }
+
+    /** The most recent history entry of one kind. */
+    private TimelineEvent newest(ActionType type) {
+        return timeline.getEvents(20).stream()
+                .filter(event -> event.type() == type)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("no " + type + " entry was recorded"));
     }
 
     @Test

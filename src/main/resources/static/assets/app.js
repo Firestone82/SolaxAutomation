@@ -804,14 +804,15 @@
      * <p>
      * Feed-in priority keeps the accent the timeline already paints work mode changes in,
      * self use is the quiet green of production staying home, backup the amber of something
-     * being held in reserve, and manual the selling purple - manual only ever happens because
-     * someone or something is driving the battery directly.
+     * being held in reserve, and manual the cyan the dashboard charges the battery in - the
+     * selling purple is spoken for by the ribbon that runs on top of these, and a manual mode
+     * under a sale would otherwise be purple on purple.
      */
     const MODE_COLOURS = {
         SELF_USE: 'var(--success)',
         FEED_IN_PRIORITY: 'var(--accent)',
         BACKUP: 'var(--warning)',
-        MANUAL: 'var(--sell)'
+        MANUAL: 'var(--charge)'
     };
 
     /**
@@ -873,6 +874,100 @@
         return segments.filter(segment => segment.to > segment.from);
     }
 
+    /**
+     * The stretches of the day the battery was being sold into the grid.
+     * <p>
+     * A sale does not change the work mode - it runs through a remote control session and
+     * hands the inverter back afterwards - so it belongs on top of the band rather than in
+     * it. Two sources, because neither alone covers the day: the module forgets an armed
+     * window the moment it ends, so a sale that already ran is only in the activity history,
+     * where a start and an end marker bracket it; and a window that has not started yet is
+     * only in the module, which is the one that knows when it intends to run.
+     */
+    function sellingOverlays() {
+        const now = new Date();
+        const start = startOfDay(now);
+        const end = new Date(start.getTime() + DAY_MS);
+
+        const marks = (state.timeline?.history || [])
+            .filter(entry => entry.params?.sale)
+            .map(entry => ({at: new Date(entry.at), phase: entry.params.sale, entry}))
+            .sort((first, second) => first.at - second.at);
+
+        const overlays = [];
+        let open = null;
+
+        marks.forEach(mark => {
+            if (mark.phase === 'start') {
+                open = mark;
+                return;
+            }
+
+            if (open) {
+                overlays.push({
+                    from: open.at, to: mark.at, entry: open.entry, endedBy: mark.entry,
+                    pending: false, running: false
+                });
+                open = null;
+            }
+        });
+
+        const selling = state.selling;
+        const armed = selling?.armed && selling.from && selling.to;
+
+        // A start with no end yet is the sale running at this moment. The module knows when
+        // that one is meant to stop, so where it can say so, it wins over "up to now".
+        if (open && !(armed && selling.running)) {
+            overlays.push({from: open.at, to: now, entry: open.entry, endedBy: null, pending: false, running: true});
+        }
+
+        if (armed) {
+            overlays.push({
+                from: new Date(selling.from),
+                to: new Date(selling.to),
+                entry: open ? open.entry : null,
+                endedBy: null,
+                // Nothing is being sold yet, so the ribbon is drawn hollow.
+                pending: !selling.running,
+                running: !!selling.running,
+                watts: selling.watts,
+                revenue: selling.expectedRevenue,
+                manual: selling.manual
+            });
+        }
+
+        // The band draws one day; a window may hang over either end of it.
+        return overlays
+            .map(overlay => ({
+                ...overlay,
+                from: new Date(Math.max(overlay.from, start)),
+                to: new Date(Math.min(overlay.to, end))
+            }))
+            .filter(overlay => overlay.to > overlay.from);
+    }
+
+    function sellingTooltip(overlay) {
+        const state_ = overlay.pending ? t('workMode.sellingArmed')
+            : overlay.running ? t('workMode.sellingRunning')
+                : t('workMode.sellingDone');
+
+        return {
+            title: t('workMode.selling'),
+            subtitle: overlay.manual ? t('workMode.sellingManual') : moduleText('discharge', 'name', 'Grid selling'),
+            accent: 'var(--sell)',
+            rows: [
+                [t('tooltip.when'), `${formatTimeOnly(overlay.from.toISOString())} – ${formatTimeOnly(overlay.to.toISOString())}`],
+                [t('tooltip.duration'), durationBetween(overlay.from.toISOString(), overlay.to.toISOString())],
+                [t('selling.power'), overlay.watts ? formatNumber(overlay.watts, 0) : null],
+                [t('selling.expected'), overlay.revenue !== null && overlay.revenue !== undefined
+                    ? `${formatNumber(overlay.revenue, 0)} ${state.config.currency}` : null],
+                [t('workMode.sellingState'), state_]
+            ],
+            // How the sale ended is the part the band itself cannot show.
+            note: overlay.endedBy ? msg(overlay.endedBy) : null
+        };
+    }
+
     function workModeTooltip(segment) {
         const mode = segment.mode ? t('mode.' + segment.mode) : t('workMode.unknown');
 
@@ -895,6 +990,7 @@
 
     function renderWorkMode() {
         const segments = workModeSegments();
+        const overlays = sellingOverlays();
         const now = new Date();
         const start = startOfDay(now);
 
@@ -905,11 +1001,13 @@
             now: now,
             colours: MODE_COLOURS,
             labels: Object.fromEntries(Object.keys(MODE_COLOURS).map(mode => [mode, t('mode.' + mode)])),
-            tooltip: workModeTooltip
+            tooltip: workModeTooltip,
+            overlays: overlays,
+            overlayTooltip: sellingTooltip
         });
 
         renderWorkModeNote(segments);
-        renderWorkModeLegend(segments);
+        renderWorkModeLegend(segments, overlays);
     }
 
     /**
@@ -933,22 +1031,32 @@
         }
     }
 
-    /** Only the modes the day actually contains - a legend of four is mostly noise. */
-    function renderWorkModeLegend(segments) {
+    /** Only what the day actually contains - a legend of every mode is mostly noise. */
+    function renderWorkModeLegend(segments, overlays) {
         const legend = el('workmode-legend');
         const modes = [...new Set(segments.map(segment => segment.mode).filter(Boolean))];
 
-        legend.replaceChildren(...modes.map(mode => {
-            const item = document.createElement('li');
+        const item = (background, label) => {
+            const node = document.createElement('li');
 
             const swatch = document.createElement('i');
             swatch.className = 'swatch';
-            swatch.style.background = MODE_COLOURS[mode] || 'var(--text-faint)';
-            item.appendChild(swatch);
+            swatch.style.background = background;
+            node.appendChild(swatch);
 
-            item.appendChild(textSpan(t('mode.' + mode)));
-            return item;
-        }));
+            node.appendChild(textSpan(label));
+            return node;
+        };
+
+        const items = modes.map(mode => item(MODE_COLOURS[mode] || 'var(--text-faint)', t('mode.' + mode)));
+
+        // The ribbon is the one mark on this chart that is not a work mode, so it is the one
+        // the legend has to explain rather than merely name.
+        if ((overlays || []).length > 0) {
+            items.push(item('var(--sell)', t('prices.selling')));
+        }
+
+        legend.replaceChildren(...items);
     }
 
     /** The window the timeline chart draws: the day ahead, or today from midnight. */

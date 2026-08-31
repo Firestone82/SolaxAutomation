@@ -482,6 +482,24 @@ main {
     pointer-events: none;
 }
 
+/* A stretch where something ran on top of the work mode rather than instead of it -
+   a sale into the grid, which leaves the mode where it was. A ribbon along the bottom
+   of the band, so the mode underneath stays readable. */
+.mode-overlay {
+    fill: var(--sell);
+    stroke: var(--sell);
+    stroke-width: 1;
+    transition: opacity .1s;
+}
+
+/* Armed but not started: hollow, because nothing has been sold yet. */
+.mode-overlay.is-pending {
+    fill: var(--sell);
+    fill-opacity: .2;
+}
+
+.mode-overlay.is-hovered { opacity: 1; stroke-width: 2; }
+
 /* Where a module actually moved the mode, as opposed to where the day started. */
 .mode-change {
     stroke: var(--text);

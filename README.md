@@ -160,7 +160,7 @@ actually chosen depends on the peak, the plateau around it and the charge in the
 the planner can answer that. The armed window itself keeps its own solid colour on top.
 
 **Work mode today** is the day as one band, midnight to now, coloured by the mode the inverter was
-in — self use green, feed-in priority blue, backup amber, manual purple — with a tick wherever
+in — self use green, feed-in priority blue, backup amber, manual cyan — with a tick wherever
 something moved it. The stat tile above says what the mode is; this says when it became that, and
 which module decided so. Hovering a stretch names the module, how long the mode held, and the same
 headline and sentence the activity list shows for that change.
@@ -175,6 +175,19 @@ whole day. And a mode set outside this application, from the SolaX app or the in
 is invisible here: when the live mode disagrees with the last change on record, a line under the
 chart says so rather than the band inventing a change at a time nobody knows. The axis always spans
 the full day even though the band stops at now — the empty evening is the point.
+
+**Selling runs on the same band, not beside it.** A sale does not change the work mode — it runs
+through a remote control session and hands the inverter back afterwards — so it is drawn as a
+**ribbon along the bottom of the band** rather than as a row of its own: solid where the battery was
+actually being sold, hollow for a window that is armed but has not started, which is usually out in
+the empty evening and explains what that stretch of axis is waiting for. Hovering it gives the
+window, its power and expected revenue, and how a finished one ended (the window ran out, or the
+battery hit its reserve first).
+
+That ribbon also comes from two places, because neither covers the day on its own: the module forgets
+an armed window the moment it ends, so a sale that already ran is only in the activity history, where
+a start and an end marker bracket it; a window that has not started yet is only in the module, which
+is the one that knows when it intends to run.
 
 The timeline shows every run each module has coming up, not just the next one. Two modules are left
 out of it: the export limit is re-checked every quarter of an hour and the weather work mode every

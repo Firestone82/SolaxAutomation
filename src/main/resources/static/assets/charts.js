@@ -843,6 +843,12 @@ const Charts = (() => {
      * segment. An empty right-hand end is the point: it says the day is not over,
      * where a band stretched to the full width would read as a mode that is somehow
      * already known for the evening.
+     *
+     * {@code options.overlays} are stretches where something was happening on top of
+     * the work mode rather than instead of it - a sale into the grid, which runs
+     * through a remote control session and leaves the mode where it was. They are
+     * drawn as a ribbon along the bottom of the band so both stay readable, and one
+     * still ahead of us is drawn hollow.
      */
     function workModeChart(container, segments, options = {}) {
         if (!segments || segments.length === 0) {
@@ -858,6 +864,12 @@ const Charts = (() => {
 
         const bandHeight = compact ? 26 : 34;
         const height = padding.top + bandHeight + padding.bottom;
+
+        // The ribbon lane along the bottom of the band. Reserved before the segments are
+        // drawn so a mode label can sit clear of it rather than on top of it.
+        const overlays = options.overlays || [];
+        const ribbonHeight = compact ? 6 : 8;
+        const ribbonY = padding.top + bandHeight - ribbonHeight - 3;
 
         const start = new Date(options.start);
         const end = new Date(options.end);
@@ -918,7 +930,8 @@ const Charts = (() => {
             if (label && !compact && segmentWidth > label.length * 6.5 + 14) {
                 const text = element('text', {
                     class: 'mode-label',
-                    x: x + segmentWidth / 2, y: padding.top + bandHeight / 2 + 4,
+                    x: x + segmentWidth / 2,
+                    y: padding.top + bandHeight / 2 + 4 - (overlays.length ? 4 : 0),
                     'text-anchor': 'middle'
                 });
                 text.textContent = label;
@@ -947,6 +960,41 @@ const Charts = (() => {
                     x1: x, x2: x, y1: padding.top - 4, y2: padding.top + bandHeight + 4
                 }));
             }
+        });
+
+        // Drawn after the band, and hit-tested after it too, so hovering the ribbon
+        // reports the sale rather than the mode underneath it.
+        overlays.forEach(overlay => {
+            const from = new Date(overlay.from);
+            const to = new Date(overlay.to);
+
+            // A window can start before the window we draw, or run past its end.
+            const x = Math.max(padding.left, scaleX(from));
+            const overlayWidth = Math.max(2, Math.min(width - padding.right, scaleX(to)) - x);
+
+            if (overlayWidth <= 0) {
+                return;
+            }
+
+            const bar = element('rect', {
+                class: 'mode-overlay' + (overlay.pending ? ' is-pending' : ''),
+                x: x, y: ribbonY, width: overlayWidth, height: ribbonHeight, rx: ribbonHeight / 2
+            });
+            svg.appendChild(bar);
+
+            // The ribbon is a few pixels tall; the whole band height is the hit area.
+            const hit = element('rect', {
+                class: 'hit-area', x: x, y: padding.top, width: overlayWidth, height: bandHeight
+            });
+
+            hoverable(
+                hit,
+                () => options.overlayTooltip ? options.overlayTooltip(overlay) : null,
+                () => bar.classList.add('is-hovered'),
+                () => bar.classList.remove('is-hovered')
+            );
+
+            svg.appendChild(hit);
         });
 
         if (now >= start && now <= end) {
