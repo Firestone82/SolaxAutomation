@@ -27,10 +27,12 @@ import org.springframework.stereotype.Component;
 import java.util.Deque;
 import java.util.Optional;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static net.solarnetwork.io.modbus.netty.msg.RegistersModbusMessage.*;
 import java.util.Locale;
@@ -69,6 +71,17 @@ public class ModbusClientAdapter {
      */
     private final EventLoopGroup eventLoopGroup;
 
+    /**
+     * Serialises the connection's lifecycle against the requests that use it.
+     * <p>
+     * Requests run on the queue's worker thread while {@link #closeIdleConnection()} runs on
+     * the scheduler's, and the underlying client cancels its pending connect future when it is
+     * stopped. Sweeping an in-flight request out from under itself therefore cancelled it -
+     * with a {@link CancellationException} that surfaced in whichever module happened to be
+     * asking, carrying the sweep's stack trace rather than the module's.
+     */
+    private final ReentrantLock connectionLock = new ReentrantLock();
+
     private final AtomicInteger consecutiveFailures = new AtomicInteger(0);
     private final Deque<Long> writeTimestamps = new ConcurrentLinkedDeque<>();
 
@@ -98,12 +111,19 @@ public class ModbusClientAdapter {
 
     @PreDestroy
     void shutdown() {
-        if (modbusClient != null && modbusClient.isStarted()) {
-            if (disconnect()) {
-                log.info("Disconnected from the inverter");
-            } else {
-                log.error("Failed to disconnect from the inverter");
+        // Blocks for at most one request: the queue's worker is still draining at this point.
+        connectionLock.lock();
+
+        try {
+            if (modbusClient != null && modbusClient.isStarted()) {
+                if (disconnect()) {
+                    log.info("Disconnected from the inverter");
+                } else {
+                    log.error("Failed to disconnect from the inverter");
+                }
             }
+        } finally {
+            connectionLock.unlock();
         }
 
         // The client never owned the group, so this is the only place it gets shut down.
@@ -119,7 +139,19 @@ public class ModbusClientAdapter {
      */
     @Scheduled(fixedRate = 15, timeUnit = TimeUnit.SECONDS)
     void closeIdleConnection() {
-        recycleIfStale();
+        // Never wait for the lock: a connection a request is holding is by definition not idle,
+        // and stopping the client underneath it cancels the very future that request is blocked
+        // on. There is another sweep along in fifteen seconds.
+        if (!connectionLock.tryLock()) {
+            log.trace("A Modbus request is in flight; leaving the connection alone");
+            return;
+        }
+
+        try {
+            recycleIfStale();
+        } finally {
+            connectionLock.unlock();
+        }
     }
 
     // ------------------------------------------------------------------ connection
@@ -142,30 +174,47 @@ public class ModbusClientAdapter {
             return false;
         }
 
-        if (modbusClient.isConnected()) {
-            return true;
-        }
-
-        if (modbusClient.isStarted()) {
-            log.debug("Client is started but the connection is gone; stopping it before reconnecting");
-            disconnect();
-        }
-
-        log.debug("Connecting to {}:{}", properties.getHost(), properties.getPort());
+        connectionLock.lock();
 
         try {
-            modbusClient.start().get();
-            lastActivityTime = System.currentTimeMillis();
-            consecutiveFailures.set(0);
-            return true;
-        } catch (ExecutionException e) {
-            log.error("Failed to connect to the inverter: {}", e.getMessage());
-        } catch (InterruptedException e) {
-            log.error("Interrupted while connecting to the inverter");
-            Thread.currentThread().interrupt();
-        }
+            if (modbusClient.isConnected()) {
+                return true;
+            }
 
-        return false;
+            if (modbusClient.isStarted()) {
+                log.debug("Client is started but the connection is gone; stopping it before reconnecting");
+                disconnect();
+            }
+
+            log.debug("Connecting to {}:{}", properties.getHost(), properties.getPort());
+
+            // Counted as activity before the attempt rather than after it: the client reports
+            // itself started the moment start() is called, so a connect that takes a while would
+            // otherwise look like a long-idle connection to anything reading lastActivityTime.
+            lastActivityTime = System.currentTimeMillis();
+
+            try {
+                modbusClient.start().get();
+                lastActivityTime = System.currentTimeMillis();
+                consecutiveFailures.set(0);
+                return true;
+            } catch (CancellationException e) {
+                // The client cancels its pending connect future whenever it is stopped. The
+                // connection lock is what keeps that from happening mid-connect; this turns
+                // anything that still slips through into a failed connect rather than an
+                // unchecked exception thrown at whichever module asked for a register.
+                log.error("Connection to the inverter was cancelled before it completed");
+            } catch (ExecutionException e) {
+                log.error("Failed to connect to the inverter: {}", e.getMessage());
+            } catch (InterruptedException e) {
+                log.error("Interrupted while connecting to the inverter");
+                Thread.currentThread().interrupt();
+            }
+
+            return false;
+        } finally {
+            connectionLock.unlock();
+        }
     }
 
     /**
@@ -176,21 +225,36 @@ public class ModbusClientAdapter {
      * leaving it that way blocks the next {@code start()}.
      */
     public boolean disconnect() {
-        if (modbusClient == null || !modbusClient.isStarted()) {
+        if (modbusClient == null) {
             return true;
         }
+
+        connectionLock.lock();
 
         try {
-            modbusClient.stop().get();
-            return true;
-        } catch (ExecutionException e) {
-            log.error("Failed to disconnect from the inverter: {}", e.getMessage());
-        } catch (InterruptedException e) {
-            log.error("Interrupted while disconnecting from the inverter");
-            Thread.currentThread().interrupt();
-        }
+            if (!modbusClient.isStarted()) {
+                return true;
+            }
 
-        return false;
+            try {
+                modbusClient.stop().get();
+                return true;
+            } catch (CancellationException e) {
+                // stop() hands back the future it just cancelled if a connect was still in
+                // flight. The client is stopped either way, which is all this method wanted.
+                log.debug("Disconnect cancelled a connection attempt that was still in flight");
+                return true;
+            } catch (ExecutionException e) {
+                log.error("Failed to disconnect from the inverter: {}", e.getMessage());
+            } catch (InterruptedException e) {
+                log.error("Interrupted while disconnecting from the inverter");
+                Thread.currentThread().interrupt();
+            }
+
+            return false;
+        } finally {
+            connectionLock.unlock();
+        }
     }
 
     // ------------------------------------------------------------------ register access
@@ -222,6 +286,12 @@ public class ModbusClientAdapter {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.warn("Read of '{}' was interrupted", register.getName());
+        } catch (CancellationException e) {
+            // CompletableFuture.get() rethrows a CancellationException as-is instead of wrapping
+            // it, so without this it would leave the adapter unchecked and land in a module's
+            // run wrapper as an "unhandled error" with no message.
+            log.error("Read of '{}' was cancelled", register.getName());
+            recordFailure();
         } catch (ExecutionException e) {
             log.error("Read of '{}' failed: {}", register.getName(), e.getCause().getMessage());
             recordFailure();
@@ -261,6 +331,9 @@ public class ModbusClientAdapter {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.warn("Write of '{}' was interrupted", register.getName());
+        } catch (CancellationException e) {
+            log.error("Write of '{}' was cancelled", register.getName());
+            recordFailure();
         } catch (ExecutionException e) {
             log.error("Write of '{}' failed: {}", register.getName(), e.getCause().getMessage());
             recordFailure();
@@ -288,37 +361,49 @@ public class ModbusClientAdapter {
      * decides whether the application gives up.
      */
     private <V> V ensureConnected(ModbusCallable<V> callable) {
-        recycleIfStale();
+        // Held for the whole request, connect and retry included, so the idle sweep cannot stop
+        // the client while this is using it.
+        connectionLock.lock();
 
-        for (int attempt = 1; attempt <= 2; attempt++) {
-            if (!isConnected() && !connect()) {
-                throw new ModbusException("Cannot reach the inverter at "
-                        + properties.getHost() + ":" + properties.getPort());
-            }
+        try {
+            recycleIfStale();
 
-            lastActivityTime = System.currentTimeMillis();
-
-            try {
-                V result = callable.call();
-                consecutiveFailures.set(0);
-                return result;
-            } catch (ModbusException e) {
-                if (attempt == 2) {
-                    throw e;
+            for (int attempt = 1; attempt <= 2; attempt++) {
+                if (!isConnected() && !connect()) {
+                    throw new ModbusException("Cannot reach the inverter at "
+                            + properties.getHost() + ":" + properties.getPort());
                 }
 
-                log.debug("Modbus request failed ({}), reconnecting and retrying once", e.getMessage());
-                disconnect();
-            }
-        }
+                lastActivityTime = System.currentTimeMillis();
 
-        // Unreachable: the loop either returns or throws.
-        throw new ModbusException("Modbus request did not complete");
+                try {
+                    V result = callable.call();
+                    lastActivityTime = System.currentTimeMillis();
+                    consecutiveFailures.set(0);
+                    return result;
+                } catch (ModbusException e) {
+                    if (attempt == 2) {
+                        throw e;
+                    }
+
+                    log.debug("Modbus request failed ({}), reconnecting and retrying once", e.getMessage());
+                    disconnect();
+                }
+            }
+
+            // Unreachable: the loop either returns or throws.
+            throw new ModbusException("Modbus request did not complete");
+        } finally {
+            connectionLock.unlock();
+        }
     }
 
     /**
      * Drops a connection that has been sitting idle, so the next request opens a fresh one
      * instead of discovering that the inverter closed this one.
+     * <p>
+     * Callers must hold {@link #connectionLock}: this stops the client, and stopping it while a
+     * request is using it cancels that request.
      */
     private void recycleIfStale() {
         if (modbusClient == null || !modbusClient.isStarted()) {

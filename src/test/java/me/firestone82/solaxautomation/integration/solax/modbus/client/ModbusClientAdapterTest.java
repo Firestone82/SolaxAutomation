@@ -18,7 +18,10 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -56,7 +59,12 @@ class ModbusClientAdapterTest {
      * hangs up, exactly as an idle-timeout on the inverter's gateway does.
      */
     private void start(int responsesPerConnection, Duration idleTimeout) throws IOException {
-        inverter = new FakeInverter(responsesPerConnection);
+        start(responsesPerConnection, idleTimeout, Duration.ZERO);
+    }
+
+    /** Same, with the inverter taking {@code responseDelay} to answer each request. */
+    private void start(int responsesPerConnection, Duration idleTimeout, Duration responseDelay) throws IOException {
+        inverter = new FakeInverter(responsesPerConnection, responseDelay);
 
         ModbusProperties properties = new ModbusProperties();
         properties.setHost("127.0.0.1");
@@ -136,6 +144,87 @@ class ModbusClientAdapterTest {
         assertTrue(client.read(ReadRegister.BATTERY_CAPACITY, 1).isEmpty());
     }
 
+    @Test
+    @DisplayName("leaves a connection alone while a request is using it")
+    void idleSweepSkipsRequestInFlight() throws Exception {
+        // The connection counts as stale almost immediately, so every sweep would recycle it if
+        // it were allowed to; the inverter takes long enough to answer to sweep it mid-request.
+        start(10, Duration.ofMillis(50), Duration.ofMillis(500));
+
+        AtomicReference<Optional<Integer>> result = new AtomicReference<>();
+        AtomicReference<Throwable> escaped = new AtomicReference<>();
+
+        Thread reader = new Thread(() -> {
+            try {
+                result.set(client.read(ReadRegister.BATTERY_CAPACITY, 1));
+            } catch (Throwable t) {
+                escaped.set(t);
+            }
+        }, "reader");
+
+        reader.start();
+        inverter.awaitRequestInFlight();
+
+        // Long enough that the sweep considers the connection stale, short enough that the
+        // inverter has not answered yet.
+        Thread.sleep(150);
+
+        // Exactly what the scheduler does every fifteen seconds, only while the read is waiting
+        // for its answer. Stopping the client here cancels the request the module is blocked on.
+        for (int sweep = 0; sweep < 5; sweep++) {
+            client.closeIdleConnection();
+        }
+
+        reader.join(10_000);
+
+        assertNull(escaped.get(), "the idle sweep must not throw anything at the caller");
+        assertEquals(Optional.of(42), result.get(), "the read must survive the idle sweep");
+        assertEquals(1, inverter.getConnectionCount(),
+                "the sweep tore down the connection mid-request and forced a reconnect");
+    }
+
+    @Test
+    @DisplayName("survives the idle sweep firing throughout a run of reads")
+    void idleSweepDoesNotCancelReads() throws Exception {
+        // Zero idle timeout: a sweep recycles the connection whenever it manages to get in,
+        // including in the window where the client is started but the socket is not up yet -
+        // which is where stopping it cancels the connect and throws CancellationException at
+        // whoever asked.
+        start(10, Duration.ZERO);
+
+        AtomicInteger sweeps = new AtomicInteger();
+        AtomicReference<Throwable> escaped = new AtomicReference<>();
+        CountDownLatch done = new CountDownLatch(1);
+
+        Thread sweeper = new Thread(() -> {
+            while (done.getCount() > 0) {
+                try {
+                    client.closeIdleConnection();
+                    sweeps.incrementAndGet();
+                } catch (Throwable t) {
+                    escaped.set(t);
+                    return;
+                }
+            }
+        }, "idle-sweeper");
+
+        sweeper.setDaemon(true);
+        sweeper.start();
+
+        try {
+            for (int i = 0; i < 20; i++) {
+                assertEquals(Optional.of(42), client.read(ReadRegister.BATTERY_CAPACITY, 1),
+                        "read " + (i + 1) + " was cancelled by the idle sweep");
+            }
+        } finally {
+            done.countDown();
+            sweeper.join(5_000);
+        }
+
+        assertNull(escaped.get(), "the idle sweep itself must not throw");
+        assertTrue(sweeps.get() > 0, "the sweeper never ran");
+    }
+
     /**
      * Throwaway Modbus TCP server. Answers reads with the constant 42 and then closes the
      * connection after the configured number of responses.
@@ -146,14 +235,19 @@ class ModbusClientAdapterTest {
 
         private final ServerSocket serverSocket;
         private final int responsesPerConnection;
+        private final Duration responseDelay;
         private final AtomicInteger connections = new AtomicInteger();
         private final List<Socket> accepted = new CopyOnWriteArrayList<>();
         private final Thread acceptor;
 
+        /** Opened once a request has arrived and is waiting out {@link #responseDelay}. */
+        private final CountDownLatch serving = new CountDownLatch(1);
+
         private volatile boolean running = true;
 
-        private FakeInverter(int responsesPerConnection) throws IOException {
+        private FakeInverter(int responsesPerConnection, Duration responseDelay) throws IOException {
             this.responsesPerConnection = responsesPerConnection;
+            this.responseDelay = responseDelay;
             this.serverSocket = new ServerSocket(0);
 
             this.acceptor = new Thread(this::acceptLoop, "fake-inverter");
@@ -167,6 +261,11 @@ class ModbusClientAdapterTest {
 
         private int getConnectionCount() {
             return connections.get();
+        }
+
+        /** Blocks until a request is in flight, i.e. received but not yet answered. */
+        private void awaitRequestInFlight() throws InterruptedException {
+            assertTrue(serving.await(5, TimeUnit.SECONDS), "the inverter never received a request");
         }
 
         private void acceptLoop() {
@@ -199,6 +298,17 @@ class ModbusClientAdapterTest {
                     int unitId = request[6] & 0xFF;
                     int function = request[7] & 0xFF;
                     int count = ((request[10] & 0xFF) << 8) | (request[11] & 0xFF);
+
+                    if (!responseDelay.isZero()) {
+                        serving.countDown();
+
+                        try {
+                            Thread.sleep(responseDelay.toMillis());
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            return;
+                        }
+                    }
 
                     byte[] response = new byte[9 + count * 2];
                     response[0] = (byte) (transaction >> 8);
