@@ -9,6 +9,8 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -96,6 +98,52 @@ class TimelineServiceTest {
         List<TimelineEvent> restored = started(properties(file, 3)).getEvents(10);
         assertEquals(3, restored.size());
         assertEquals(List.of("event 6", "event 5", "event 4"), restored.stream().map(TimelineEvent::summary).toList());
+    }
+
+    @Test
+    @DisplayName("drops entries older than the retention window when reading the file back")
+    void restoreDropsExpiredEntries(@TempDir Path directory) throws IOException {
+        Path file = directory.resolve("timeline.json");
+
+        // Written by hand: what matters is an entry from before the window, which no amount
+        // of recording during a test can produce.
+        Files.writeString(file, """
+                [
+                  {
+                    "at": "%s", "moduleId": "export", "type": "CHECK", "summary": "yesterday",
+                    "messageKey": null, "params": {}, "success": true,
+                    "detail": null, "detailKey": null, "detailParams": {}
+                  },
+                  {
+                    "at": "%s", "moduleId": "export", "type": "CHECK", "summary": "last week",
+                    "messageKey": null, "params": {}, "success": true,
+                    "detail": null, "detailKey": null, "detailParams": {}
+                  }
+                ]
+                """.formatted(LocalDateTime.now().minusHours(20), LocalDateTime.now().minusDays(7)));
+
+        TimelineProperties properties = properties(file, 15);
+        properties.setRetention(Duration.ofDays(2));
+
+        List<TimelineEvent> restored = started(properties).getEvents(10);
+
+        assertEquals(1, restored.size(), "an application off for a week must not come back with a week-old 'recent activity'");
+        assertEquals("yesterday", restored.getFirst().summary());
+    }
+
+    @Test
+    @DisplayName("a whole day of quarter-hourly checks survives a restart")
+    void keepsTwoDaysWorthOfEntries(@TempDir Path directory) {
+        Path file = directory.resolve("timeline.json");
+
+        // 68 checks is what the export module alone records in a day, and the dashboard
+        // draws the day behind it out of exactly these.
+        TimelineService before = started(properties(file, 500));
+        for (int i = 1; i <= 68; i++) {
+            record(before, "check " + i);
+        }
+
+        assertEquals(68, started(properties(file, 500)).getEvents().size());
     }
 
     @Test

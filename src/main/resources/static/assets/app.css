@@ -27,6 +27,13 @@
     --sell-soft: #ede9fe;
     --charge: #0891b2;
 
+    /* The connection switch, kept out of the mode palette: which supply the house is on is
+       a different question from what the inverter is doing, and the band below the work
+       mode has to read as such. Slate is the metered grid, the ordinary case; rose is the
+       second supply, where export never reaches the meter. */
+    --supply-metered: #475569;
+    --supply-second: #be185d;
+
     --price-low: #22c55e;
     --price-medium: #eab308;
     --price-high: #ef4444;
@@ -60,6 +67,9 @@
     --sell: #a78bfa;
     --sell-soft: #4c1d95;
     --charge: #22d3ee;
+
+    --supply-metered: #94a3b8;
+    --supply-second: #f472b6;
 
     --price-low: #4ade80;
     --price-medium: #fbbf24;
@@ -372,12 +382,17 @@ main {
     margin-left: 3px;
 }
 
+/* One fact per line: two joined by a separator read as one long line and are scanned as
+   neither. */
 .stat-note {
     display: block;
-    margin-top: 2px;
+    margin-top: 3px;
     color: var(--text-faint);
     font-size: .78rem;
+    line-height: 1.35;
 }
+
+.stat-note + .stat-note { margin-top: 1px; }
 
 .stat-bar {
     margin-top: 10px;
@@ -948,6 +963,15 @@ main {
     font-size: .95rem;
     line-height: 1.2;
     min-width: 34px;
+}
+
+/* A button that stays pressed: it filters a list rather than doing something once, so it
+   has to look like a state and not like an action waiting to be taken. */
+.toggle-button.is-active {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
 }
 
 /* ------------------------------------------------------------ quick actions */

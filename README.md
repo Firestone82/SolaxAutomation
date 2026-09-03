@@ -40,6 +40,29 @@ ever touched by the weather and battery modules, and stays meaningful across res
 The old Modbus path is still there behind `automation.discharge.fallback-to-manual-mode`, off by
 default.
 
+### Changes made outside the automation
+
+The inverter is not only this application's to move: the SolaX app, the panel on the inverter
+itself and a schedule stored on it can all change the persistent work mode, and none of them say
+so. So the work mode is **read back on a timer** (`solax.control.work-mode-watch`, every minute by
+default) and a mode that moved on its own is recorded in the activity history like any other
+change — filed under _Inverter_ rather than a module, so the day's work mode band shows when it
+happened and the tooltip says who did not do it.
+
+Nothing extra is read for this. It looks at the same cached snapshot the dashboard and the modules
+already poll, so the only cost is a Modbus round trip that would have happened anyway.
+
+A change this application made is not recorded twice: every successful work mode write is announced
+to the watcher, and a mode matching one written inside `attribution-window` (5 min, long enough to
+outlast a queued cloud command) is understood as its own. Two things it deliberately cannot see: a
+change made while it was down or the inverter unreachable — the dashboard then says the live mode
+disagrees with the last change on record rather than inventing a time for it — and anything during
+a remote control session, which steers the inverter without touching the persistent mode.
+
+Detecting a change is all this does. No module reacts to it: a mode set by hand holds until the
+next checkpoint of the weather or battery module comes round and decides otherwise, exactly as
+before.
+
 ---
 
 ## Modules
@@ -123,13 +146,30 @@ dashboard skips that check — it is the person's call — but never the reserve
 Over-estimating is safe either way: the guard ends the sale as soon as the reserve is reached.
 Under-estimating is not, because it arms a window too short to use the peak.
 
-`discharge-power` is not configured separately — it is `automation.export.power.maximum`, since a sale
-can never leave the installation faster than that ceiling allows anyway.
+**`discharge-power` is battery power, not export power**, and the difference is money. The remote
+control session drives the battery, and the house is fed from it before anything reaches the meter —
+so a sale at exactly `automation.export.power.maximum` exports the limit *minus* whatever is running
+in the house, and the kettle spends the evening being run off energy that was meant to be sold at the
+day's highest price. Setting it **above** the export limit fixes that: the extra covers the house,
+the inverter's export limit holds the meter at the limit, and the whole limit is sold. The default
+(`4600` against a 3950 W limit) leaves 650 W of headroom for consumption.
+
+Two ceilings still apply. The battery and the inverter cap what can be delivered at all — ask for
+more and the inverter simply produces what it can — and while a sale runs, the export limit is the
+only thing keeping the extra off the meter, so the headroom is worth setting to the house's real
+consumption rather than to the inverter's rating. `0` returns to the old behaviour of following the
+export limit exactly.
+
+The two numbers are used for different things, and the log says both: the window is sized on the
+**discharge** power, since that is the rate the battery actually empties at, while the expected
+revenue is on the **exported** part alone — what the house eats during the sale is not bought by
+anybody.
 
 At the window's start a remote control session is opened for exactly the window's length. A guard
 checks the battery every `guard-interval` and ends the session early once the reserve is reached. If
-the export limit happens to be closed at that moment, the run logs a warning rather than quietly
-trickling energy out at the limit.
+the export limit happens to be closed below what the sale means to export — the export module holding
+it down, or a change made by hand — the run logs a warning rather than quietly trickling energy out
+at the limit.
 
 The placement rules are covered by `DischargeWindowPlannerTest` — they decide how much money the
 battery earns, so they are pinned down rather than only observed in production logs.
@@ -147,6 +187,16 @@ with the armed selling window highlighted; the weather quality curve with the th
 compare against; the day's work mode as one band; a timeline of what every module intends to do and
 what it already did; and recent activity.
 
+**Every tile keeps one fact per line**, and the ones with a known ceiling draw it. The battery has its
+level as a bar, coloured as a warning when it runs low. Solar production is drawn against
+`dashboard.pv-peak` — the array's installed peak, **7.2 kWp** for this installation, and deliberately
+not the 3950 W export limit: the panels can out-produce what may leave the house, and the difference
+is what the battery and the house absorb. (`0` falls back to `automation.export.power.maximum` for an
+installation that has not set it.) Grid **export** is drawn against the live export limit. Both use
+the neutral accent rather than the battery's traffic light: little production at eight in the morning
+is the sun's doing, not a problem to colour red. What comes the other way through the meter gets no
+bar — an import has no ceiling worth drawing, only what the house asks for.
+
 The price chart also draws what the two price-driven automations make of the day, because the whole
 point of the prices is what those two do about them. Intervals under `automation.export.min-price`,
 where the export limit module closes the export because production is not worth putting on the grid,
@@ -159,22 +209,36 @@ The wash is where a window *can* be armed, not where one *will* be: which of tho
 actually chosen depends on the peak, the plateau around it and the charge in the battery, and only
 the planner can answer that. The armed window itself keeps its own solid colour on top.
 
-**Work mode today** is the day as one band, midnight to now, coloured by the mode the inverter was
-in — self use green, feed-in priority blue, backup amber, manual cyan — with a tick wherever
-something moved it. The stat tile above says what the mode is; this says when it became that, and
+**Work mode today** is the day as two stacked bands, midnight to now, sharing one axis. The upper
+one is the mode the inverter was in — self use green, feed-in priority blue, backup amber, manual
+cyan — with a tick wherever something moved it. The stat tile above says what the mode is; this says when it became that, and
 which module decided so. Hovering a stretch names the module, how long the mode held, and the same
 headline and sentence the activity list shows for that change.
 
-Nothing samples the inverter into a history, so the band is built from the work mode changes the
-automation recorded — which makes what it cannot know worth drawing rather than papering over. The
-mode between two changes is whatever the earlier one set. Before the first change of the day it is
-the mode that change moved away from, and a day that opens with a change made from the dashboard —
-which records no previous mode — opens as a grey unknown stretch instead of a guess. With no change
-recorded at all the mode has not moved since before midnight, so the live mode is drawn across the
-whole day. And a mode set outside this application, from the SolaX app or the inverter's own panel,
-is invisible here: when the live mode disagrees with the last change on record, a line under the
-chart says so rather than the band inventing a change at a time nobody knows. The axis always spans
-the full day even though the band stops at now — the empty evening is the point.
+Nothing samples the inverter into a history, so the band is built from the changes on record — the
+automation's own, and the ones somebody made from the SolaX app or the inverter's panel, which the
+work mode watcher notices when it reads the mode back (so their time is right to about a minute).
+What it still cannot know is worth drawing rather than papering over. The mode between two changes
+is whatever the earlier one set. Before the first change of the day it is the mode that change moved
+away from, and a day that opens with a change made from the dashboard — which records no previous
+mode — opens as a grey unknown stretch instead of a guess. With no change recorded at all the mode
+has not moved since before midnight, so the live mode is drawn across the whole day. And a change
+made while nothing was reading the mode back, over a restart or with the inverter unreachable, can
+be placed nowhere in time: when the live mode disagrees with the last change on record, a line under
+the chart says so rather than the band inventing a change at a time nobody knows. The axis always
+spans the full day even though the band stops at now — the empty evening is the point.
+
+**Under it, a thinner band says which supply the house was on** — slate for the metered grid, rose
+for the second supply — built the same way, from the switch's own transitions in the activity
+history, and sharing the axis rather than getting a chart of its own. That is the point of putting
+it there: what the export limit was doing all afternoon only means something next to which supply it
+was exporting into, and reading one band against the other is a glance instead of a comparison. It
+is the more reliable of the two, since every throw of the switch is recorded as it happens; the same
+limits apply to one thrown while the application was not running, and the same line under the chart
+says so. Off a Raspberry Pi the band is simply absent: the stub reports a constant HIGH, and a full
+day of "metered grid" that nothing ever measured would be an invention. Neither band labels itself
+where a stretch is too narrow for the text, which is what the legend under the chart is for — it
+names only what the day actually contains.
 
 **Selling runs on the same band, not beside it.** A sale does not change the work mode — it runs
 through a remote control session and hands the inverter back afterwards — so it is drawn as a
@@ -214,14 +278,28 @@ The list beneath the chart pages in tens, so a long plan stays one screen tall. 
 survives a refresh. Recent activity pages the same way, but how many rows fit on a screen is a matter
 of taste, so its row count is a control in the card header — 5 to 100 rows, remembered per browser.
 
+**Recent activity is filtered rather than truncated.** Two switches sit in that card's header, both
+remembered per browser. _Today / Yesterday / All_ picks the day, because the history now reaches two
+days back rather than the last handful of rows. _Changes only_ takes out the checks that decided to
+leave everything alone — the export limit is re-evaluated every quarter of an hour and the answer is
+almost always "nothing to do", which is 68 rows a day burying the handful that say something. A check
+that **failed** stays visible whatever the switch says: it is the one row that must not become hard to
+find. Hovering the switch says how many of the retained entries are currently on screen.
+
 Every activity row is a headline and a sentence: what the module decided ("Export limit stays at
 3950 W") and why it decided it ("the spot price 2.15 CZK/kWh is at or above the 0.50 CZK/kWh
 exporting is worth it at, so the limit is fully open"). The module cards read the same way, so the
 two never have to be pieced together.
 
-Recent activity survives a restart: the newest `timeline.persisted-events` entries are kept in a small
-JSON file (`data/timeline.json` by default). It is a convenience for the dashboard, not an audit
-log - the rolling log files remain the durable record.
+Recent activity survives a restart, and enough of it to be worth having: everything inside
+`timeline.retention` (**48 h**) is kept in a small JSON file (`data/timeline.json` by default), capped
+at `timeline.persisted-events` as a safety valve so a module stuck in a loop cannot grow the file
+without bound. That window is what makes the charts and the list whole after a restart — the day
+behind us is drawn out of these entries, and a restart that dropped everything but the last few rows
+left holes nothing could fill back in — and it is what "yesterday" filters. Entries older than the
+window are dropped when the file is read, so an application that was off for a week does not come
+back with a week-old "recent activity". It is still a convenience for the dashboard, not an audit
+log — the rolling log files remain the durable record.
 
 All four charts are hoverable. A price interval reports its exact price in both currencies, how it
 compares with that day's average and, where it falls into one of the two bands, the rule that put it
@@ -263,15 +341,22 @@ cannot arm a window that begins in the past. Either way it previews the window, 
 how much energy it will move before anything is armed.
 
 **Quick actions** — the card beside selling, for what the automation cannot know about: a car to
-charge tonight, a storm the forecast missed, a sale to stop early. It is split the way the commands
-themselves are:
+charge tonight, a storm the forecast missed, a sale to stop early. It carries no heading and no mode
+badge: the work mode buttons mark the mode the inverter is in, which is the same fact stated once
+instead of three times. It is split the way the commands themselves are:
 
 - **Work mode** — _Self use_, _Feed-in priority_, _Backup_. Persistent: it survives a restart, and a
-  module may well move it again at its next run. The mode the inverter is already in is marked.
+  module may well move it again at its next run. The mode the inverter is already in is marked, and
+  the mark moves the moment a change is accepted rather than on the next reading — a successful write
+  is carried straight into the cached snapshot, since the value written is the value the inverter now
+  has and there is nothing to wait for. A change made here also records which mode it moved away
+  from, so the work mode band can colour the stretch before it instead of opening the day grey.
 - **Remote control** — _Charge from grid_, _Sell to grid_ (the same dialog the selling card opens) and
   _Exit remote control_. These hand the inverter back on their own, even if this application stops;
   the work mode is left alone. They need the SolaX Cloud connection, and say so plainly when it is
-  not configured.
+  not configured. _Exit remote control_ is live only while a session is actually running: a button
+  that is always pressable invites pressing it to find out, and the line under the card says which of
+  the two reasons it is off for.
 
 Charging takes either shape: **for a time**, or **to a battery level**. Fill in _To SOC_ and the
 session runs until the battery gets there, however long that takes — that is the cloud's

@@ -147,8 +147,9 @@
                 <span class="card-hint" data-i18n="workMode.hint">Since midnight</span>
             </header>
             <p class="card-sub" data-i18n="workMode.explain">
-                Built from the changes the automation recorded, so a mode set from the SolaX app
-                or the inverter's own panel does not appear here.
+                Built from the recorded changes - the automation's own and the ones made from the
+                SolaX app or the inverter's own panel alike. The thin band underneath is which
+                supply the house was on.
             </p>
             <div class="chart" id="workmode-chart"></div>
             <p class="chart-note" id="workmode-note" hidden></p>
@@ -176,11 +177,11 @@
                 about - a car to charge tonight, a storm the forecast missed.
             -->
             <article class="card">
-                <header class="card-head">
-                    <h2 data-i18n="quick.title">Quick actions</h2>
-                    <span id="quick-mode" class="pill pill-muted"></span>
-                </header>
-
+                <!--
+                    No card heading and no mode badge: the work mode buttons below already
+                    say which mode the inverter is in by marking it, and a title over two
+                    labelled groups was naming the obvious twice.
+                -->
                 <section class="quick-group">
                     <h3 class="quick-group-title" data-i18n="quick.workMode">Work mode</h3>
                     <p class="quick-hint" data-i18n="quick.workModeHint">
@@ -248,10 +249,24 @@
         <article class="card">
             <header class="card-head">
                 <h2 data-i18n="history.title">Recent activity</h2>
-                <label class="rows-picker">
-                    <span data-i18n="history.rows">Rows</span>
-                    <select id="history-rows" class="control"></select>
-                </label>
+                <div class="card-head-actions">
+                    <!--
+                        The history reaches two days back, so which day is a question worth
+                        asking; and most of it is quarter-hourly checks that decided to leave
+                        everything alone, which the toggle takes out of the way.
+                    -->
+                    <div class="segmented" id="history-day">
+                        <button class="segment is-active" data-day="today" data-i18n="history.today">Today</button>
+                        <button class="segment" data-day="yesterday" data-i18n="history.yesterday">Yesterday</button>
+                        <button class="segment" data-day="all" data-i18n="history.all">All</button>
+                    </div>
+                    <button type="button" id="history-changes-only" class="button button-small toggle-button"
+                            aria-pressed="false" data-i18n="history.changesOnly">Changes only</button>
+                    <label class="rows-picker">
+                        <span data-i18n="history.rows">Rows</span>
+                        <select id="history-rows" class="control"></select>
+                    </label>
+                </div>
             </header>
             <ol class="timeline-list" id="timeline-history"></ol>
             <div class="pager" id="timeline-history-pager" hidden></div>

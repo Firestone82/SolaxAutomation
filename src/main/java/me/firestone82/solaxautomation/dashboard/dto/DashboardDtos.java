@@ -267,12 +267,16 @@ public final class DashboardDtos {
     }
 
     /** Static facts the front end needs once, at start-up. */
+    /**
+     * @param pvPeak production the tile's bar is drawn against, W
+     */
     public record DashboardConfig(
             String defaultLanguage,
             String defaultTheme,
             int refreshSeconds,
             boolean allowControl,
             String currency,
+            int pvPeak,
             String version
     ) {
     }

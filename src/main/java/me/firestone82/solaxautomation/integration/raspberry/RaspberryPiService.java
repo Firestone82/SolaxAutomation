@@ -98,10 +98,13 @@ public class RaspberryPiService {
 
             log.info("Connection switch changed from {} to {}", oldState, newState);
 
+            // The states are named rather than passed as enums: these two values are what the
+            // dashboard draws the day's supply band out of, and they have to read the same
+            // whether they come from this run or from the history file a restart read back.
             timeline.record(ID, ActionType.GPIO_STATE_CHANGE, Message
                             .key("history.raspberry.switch", "Connection switch " + oldState + " -> " + newState)
-                            .with("from", oldState)
-                            .with("to", newState)
+                            .with("from", oldState.name())
+                            .with("to", newState.name())
                             .build(),
                     true, newState.isHigh() ? "metered grid" : "second supply");
         });

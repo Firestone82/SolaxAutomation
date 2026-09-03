@@ -44,9 +44,10 @@ public class DischargeWindowPlanner {
     private final DischargeProperties properties;
 
     /**
-     * Discharge power is read from here rather than duplicated on {@link DischargeProperties}:
-     * it must never exceed what the installation may actually export, and that ceiling is
-     * already {@code automation.export.power.maximum}.
+     * The export limit the installation runs at. Two things are read off it: the discharge
+     * power, when {@code automation.discharge.discharge-power} is left at its default, and
+     * how much of that discharge can actually be sold - the meter never carries more than the
+     * limit, whatever the battery is asked for.
      */
     private final ExportProperties exportProperties;
 
@@ -97,7 +98,14 @@ public class DischargeWindowPlanner {
         // ---- 3. fit to the energy the battery can actually give up ---------
         int planningSoc = sizingSoc(batterySoc);
         double availableEnergyKwh = availableEnergyKwh(planningSoc);
-        int watts = exportProperties.getPower().getMaximum();
+
+        // The battery empties at the discharge power, whether that energy leaves through the
+        // meter or is eaten by the house, so the window is sized on that rather than on the
+        // part of it that earns anything.
+        int exportMaximum = exportProperties.getPower().getMaximum();
+        int watts = properties.resolveDischargePower(exportMaximum);
+        int exportWatts = properties.exportablePower(exportMaximum);
+
         int maxSlots = slotsCoveredBy(availableEnergyKwh, watts);
 
         if (maxSlots < properties.getMinSlots()) {
@@ -117,7 +125,7 @@ public class DischargeWindowPlanner {
         PriceWindow window = bestPlacement(plateau, maxSlots);
 
         Message reason = describe(window, plateau, peak, maxSlots, availableEnergyKwh);
-        return DischargePlan.armed(reason, window, peak, plateau, watts, availableEnergyKwh, maxSlots);
+        return DischargePlan.armed(reason, window, peak, plateau, watts, exportWatts, availableEnergyKwh, maxSlots);
     }
 
     // ------------------------------------------------------------------ steps

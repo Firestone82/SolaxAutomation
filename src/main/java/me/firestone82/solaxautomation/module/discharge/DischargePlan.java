@@ -19,9 +19,11 @@ import java.util.Map;
  * @param window             the window to discharge in, {@code null} when not armable
  * @param peak               most expensive interval considered, {@code null} when there were none
  * @param plateau            the run of intervals within the price tolerance around the peak
- * @param dischargeWatts     power the plan assumes
+ * @param dischargeWatts     battery power the plan assumes
+ * @param exportWatts        how much of that reaches the grid, once the export limit has had
+ *                           its say - the rest covers the house during the sale
  * @param availableEnergyKwh energy the battery can give up above the reserve
- * @param revenueCzk         what the window is expected to earn
+ * @param revenueCzk         what the window is expected to earn, on {@link #exportWatts()}
  * @param maxSlots           how many intervals the available energy covers
  */
 public record DischargePlan(
@@ -33,17 +35,18 @@ public record DischargePlan(
         PriceSlot peak,
         PriceWindow plateau,
         int dischargeWatts,
+        int exportWatts,
         double availableEnergyKwh,
         double revenueCzk,
         int maxSlots
 ) {
 
     public static DischargePlan rejected(Message reason) {
-        return new DischargePlan(false, reason.text(), reason.key(), reason.params(), null, null, null, 0, 0, 0, 0);
+        return new DischargePlan(false, reason.text(), reason.key(), reason.params(), null, null, null, 0, 0, 0, 0, 0);
     }
 
     public static DischargePlan rejected(Message reason, PriceSlot peak) {
-        return new DischargePlan(false, reason.text(), reason.key(), reason.params(), null, peak, null, 0, 0, 0, 0);
+        return new DischargePlan(false, reason.text(), reason.key(), reason.params(), null, peak, null, 0, 0, 0, 0, 0);
     }
 
     public static DischargePlan armed(
@@ -52,6 +55,7 @@ public record DischargePlan(
             PriceSlot peak,
             PriceWindow plateau,
             int dischargeWatts,
+            int exportWatts,
             double availableEnergyKwh,
             int maxSlots
     ) {
@@ -64,9 +68,11 @@ public record DischargePlan(
                 peak,
                 plateau,
                 dischargeWatts,
+                exportWatts,
                 availableEnergyKwh,
+                // Only what leaves through the meter is sold, so only that earns anything.
                 // Rounded here so the log, the API and the dashboard all quote the same figure.
-                Math.round(window.estimateRevenue(dischargeWatts) * 100.0) / 100.0,
+                Math.round(window.estimateRevenue(exportWatts) * 100.0) / 100.0,
                 maxSlots
         );
     }

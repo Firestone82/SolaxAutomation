@@ -831,27 +831,39 @@ const Charts = (() => {
     /* ----------------------------------------------------- work mode chart */
 
     /**
-     * The day's work mode as one continuous band.
+     * The day as one or more stacked bands sharing a single time axis.
      *
      * Segments come in already resolved - {from, to, mode, ...} - because deciding
      * what the inverter was in between two recorded changes is a question about the
      * activity history, not about drawing. Here they are only laid out: one colour
-     * per mode, a tick where the mode changed, and the dashed "now" marker the other
+     * per value, a tick where it changed, and the dashed "now" marker the other
      * charts use.
      *
-     * The axis always spans the whole window even though the band stops at the last
+     * More than one band because more than one thing holds a state all day and moves
+     * a handful of times: the work mode, and which supply the house is on. They are
+     * the same shape and the same question - what was it at this hour - so they share
+     * the axis rather than each getting a chart, and reading one against the other is
+     * the point: what the export limit was doing all afternoon only means something
+     * next to which supply it was exporting into.
+     *
+     * The axis always spans the whole window even though a band stops at its last
      * segment. An empty right-hand end is the point: it says the day is not over,
      * where a band stretched to the full width would read as a mode that is somehow
      * already known for the evening.
      *
-     * {@code options.overlays} are stretches where something was happening on top of
-     * the work mode rather than instead of it - a sale into the grid, which runs
-     * through a remote control session and leaves the mode where it was. They are
-     * drawn as a ribbon along the bottom of the band so both stay readable, and one
-     * still ahead of us is drawn hollow.
+     * A band's {@code overlays} are stretches where something was happening on top of
+     * its value rather than instead of it - a sale into the grid, which runs through a
+     * remote control session and leaves the mode where it was. They are drawn as a
+     * ribbon along the bottom of that band so both stay readable, and one still ahead
+     * of us is drawn hollow.
+     *
+     * @param bands [{segments, colours, labels, tooltip, overlays, overlayTooltip, secondary}]
+     *              in the order they are stacked; a band with no segments is skipped
      */
-    function workModeChart(container, segments, options = {}) {
-        if (!segments || segments.length === 0) {
+    function workModeChart(container, bands, options = {}) {
+        const rows = (bands || []).filter(band => band.segments && band.segments.length > 0);
+
+        if (rows.length === 0) {
             empty(container, options.emptyMessage || 'No work mode recorded');
             return;
         }
@@ -862,14 +874,13 @@ const Charts = (() => {
             ? {top: 20, right: 6, bottom: 18, left: 6}
             : {top: 22, right: 12, bottom: 20, left: 12};
 
-        const bandHeight = compact ? 26 : 34;
-        const height = padding.top + bandHeight + padding.bottom;
+        // A secondary band is drawn thinner: it is the context the first one is read
+        // against, and two bands of equal weight would argue over which is the subject.
+        const bandHeight = band => band.secondary ? (compact ? 12 : 16) : (compact ? 26 : 34);
+        const gap = compact ? 4 : 6;
 
-        // The ribbon lane along the bottom of the band. Reserved before the segments are
-        // drawn so a mode label can sit clear of it rather than on top of it.
-        const overlays = options.overlays || [];
-        const ribbonHeight = compact ? 6 : 8;
-        const ribbonY = padding.top + bandHeight - ribbonHeight - 3;
+        const bandsHeight = rows.reduce((total, band) => total + bandHeight(band), 0) + gap * (rows.length - 1);
+        const height = padding.top + bandsHeight + padding.bottom;
 
         const start = new Date(options.start);
         const end = new Date(options.end);
@@ -880,12 +891,22 @@ const Charts = (() => {
 
         const svg = createSvg(width, height);
 
-        // The track shows through wherever the band has nothing to say - the evening
+        // Where each band sits, worked out once: the tracks are drawn under the grid
+        // lines and the bands themselves over them.
+        let y = padding.top;
+
+        const placed = rows.map(band => {
+            const at = {band: band, top: y, height: bandHeight(band)};
+            y += at.height + gap;
+            return at;
+        });
+
+        // The track shows through wherever a band has nothing to say - the evening
         // ahead of us, and any gap the history cannot account for.
-        svg.appendChild(element('rect', {
+        placed.forEach(at => svg.appendChild(element('rect', {
             class: 'timeline-track',
-            x: padding.left, y: padding.top, width: plotWidth, height: bandHeight, rx: 6
-        }));
+            x: padding.left, y: at.top, width: plotWidth, height: at.height, rx: 6
+        })));
 
         const windowHours = Math.round((end - start) / 3600000);
         const hourStep = compact ? 6 : 3;
@@ -906,32 +927,62 @@ const Charts = (() => {
             svg.appendChild(text);
         }
 
-        segments.forEach(segment => {
+        placed.forEach(at => drawBand(svg, at.band, {
+            top: at.top,
+            height: at.height,
+            scaleX: scaleX,
+            width: width,
+            padding: padding,
+            compact: compact
+        }));
+
+        if (now >= start && now <= end) {
+            const nowX = scaleX(now);
+            svg.appendChild(element('line', {
+                class: 'timeline-now', x1: nowX, x2: nowX, y1: padding.top - 6, y2: height - padding.bottom
+            }));
+        }
+
+        container.replaceChildren(svg);
+    }
+
+    /** One band of {@link workModeChart}: its segments, their labels and its ribbon. */
+    function drawBand(svg, band, layout) {
+        const {top, height, scaleX, width, padding, compact} = layout;
+
+        // The ribbon lane along the bottom of the band. Reserved before the segments are
+        // drawn so a label can sit clear of it rather than on top of it.
+        const overlays = band.overlays || [];
+        const ribbonHeight = compact ? 6 : 8;
+        const ribbonY = top + height - ribbonHeight - 3;
+
+        band.segments.forEach(segment => {
             const from = new Date(segment.from);
             const to = new Date(segment.to);
 
             const x = scaleX(from);
-            // A change and the mode it produced can be minutes apart; a segment that
+            // A change and the value it produced can be minutes apart; a segment that
             // rounds to nothing would leave a hole in an otherwise continuous band.
             const segmentWidth = Math.max(2, scaleX(to) - x);
 
-            const colour = options.colours?.[segment.mode] || 'var(--text-faint)';
+            const colour = band.colours?.[segment.mode] || 'var(--text-faint)';
 
             const bar = element('rect', {
                 class: 'mode-bar' + (segment.mode ? '' : ' is-unknown'),
-                x: x, y: padding.top, width: segmentWidth, height: bandHeight,
+                x: x, y: top, width: segmentWidth, height: height,
                 fill: colour, opacity: segment.mode ? 0.85 : 0.25
             });
             svg.appendChild(bar);
 
-            // The label only goes in where it fits; the tooltip always says it.
-            const label = options.labels?.[segment.mode];
+            // The label only goes in where it fits; the tooltip always says it. A thin
+            // band has no room for one at all, and says what it is through its colour.
+            const label = band.labels?.[segment.mode];
 
-            if (label && !compact && segmentWidth > label.length * 6.5 + 14) {
+            if (label && !compact && height >= 24 && segmentWidth > label.length * 6.5 + 14) {
                 const text = element('text', {
                     class: 'mode-label',
                     x: x + segmentWidth / 2,
-                    y: padding.top + bandHeight / 2 + 4 - (overlays.length ? 4 : 0),
+                    y: top + height / 2 + 4 - (overlays.length ? 4 : 0),
                     'text-anchor': 'middle'
                 });
                 text.textContent = label;
@@ -940,24 +991,24 @@ const Charts = (() => {
 
             const hit = element('rect', {
                 class: 'hit-area',
-                x: x, y: padding.top, width: segmentWidth, height: bandHeight
+                x: x, y: top, width: segmentWidth, height: height
             });
 
             hoverable(
                 hit,
-                () => options.tooltip ? options.tooltip(segment) : null,
+                () => band.tooltip ? band.tooltip(segment) : null,
                 () => bar.setAttribute('opacity', '1'),
                 () => bar.setAttribute('opacity', String(segment.mode ? 0.85 : 0.25))
             );
 
             svg.appendChild(hit);
 
-            // Where the segment began because something changed the mode, rather than
+            // Where the segment began because something changed the value, rather than
             // because the window did. Drawn over the band so the change is findable.
             if (segment.changedBy) {
                 svg.appendChild(element('line', {
                     class: 'mode-change',
-                    x1: x, x2: x, y1: padding.top - 4, y2: padding.top + bandHeight + 4
+                    x1: x, x2: x, y1: top - 3, y2: top + height + 3
                 }));
             }
         });
@@ -984,27 +1035,18 @@ const Charts = (() => {
 
             // The ribbon is a few pixels tall; the whole band height is the hit area.
             const hit = element('rect', {
-                class: 'hit-area', x: x, y: padding.top, width: overlayWidth, height: bandHeight
+                class: 'hit-area', x: x, y: top, width: overlayWidth, height: height
             });
 
             hoverable(
                 hit,
-                () => options.overlayTooltip ? options.overlayTooltip(overlay) : null,
+                () => band.overlayTooltip ? band.overlayTooltip(overlay) : null,
                 () => bar.classList.add('is-hovered'),
                 () => bar.classList.remove('is-hovered')
             );
 
             svg.appendChild(hit);
         });
-
-        if (now >= start && now <= end) {
-            const nowX = scaleX(now);
-            svg.appendChild(element('line', {
-                class: 'timeline-now', x1: nowX, x2: nowX, y1: padding.top - 6, y2: height - padding.bottom
-            }));
-        }
-
-        container.replaceChildren(svg);
     }
 
     /* A re-render throws away the marks, so anything a touch is holding open goes with them. */

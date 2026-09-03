@@ -91,6 +91,25 @@ public class DischargeProperties implements ModuleProperties {
 
     // ------------------------------------------------------------------ execution
 
+    /**
+     * Power the battery is discharged at during a sale, W. {@code 0} follows
+     * {@code automation.export.power.maximum}.
+     * <p>
+     * This is <b>battery</b> power, not export power: the remote control session drives the
+     * battery, and whatever the house is using at that moment comes out of it first. Set to
+     * the export limit and the meter only ever sees the limit minus the house load - the
+     * kitchen is being run off the sale instead of the grid, at a price nobody pays for it.
+     * <p>
+     * Set it <b>above</b> the export limit to sell the limit in full: the extra covers the
+     * house, the inverter's own export limit holds the meter at the limit, and the difference
+     * between the two is the headroom for consumption during the sale. It cannot be more than
+     * the battery and the inverter can actually deliver - what is asked for beyond that the
+     * inverter simply does not produce - and while a sale runs, the export limit is the only
+     * thing keeping the extra off the meter, so raise this with the limit in mind rather than
+     * to the inverter's rating and no further thought.
+     */
+    private int dischargePower = 0;
+
     /** How often the battery level is checked while a discharge is running. */
     private Duration guardInterval = Duration.ofMinutes(2);
 
@@ -106,4 +125,25 @@ public class DischargeProperties implements ModuleProperties {
 
     /** Work mode the inverter is put back into after a fallback MANUAL mode sale. */
     private String modeAfterFallback = "SELF_USE";
+
+    /**
+     * The discharge power actually used, resolving the {@code 0} default against the export
+     * limit the installation runs at.
+     *
+     * @param exportMaximum {@code automation.export.power.maximum}
+     */
+    public int resolveDischargePower(int exportMaximum) {
+        return dischargePower > 0 ? dischargePower : exportMaximum;
+    }
+
+    /**
+     * How much of that discharge can actually reach the grid, W.
+     * <p>
+     * Anything above the export limit is not lost - it is what covers the house so the meter
+     * can stay at the limit - but it is not sold either, so it has no business in a revenue
+     * estimate.
+     */
+    public int exportablePower(int exportMaximum) {
+        return Math.min(resolveDischargePower(exportMaximum), exportMaximum);
+    }
 }

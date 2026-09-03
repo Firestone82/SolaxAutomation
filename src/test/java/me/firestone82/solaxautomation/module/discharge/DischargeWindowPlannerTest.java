@@ -272,6 +272,46 @@ class DischargeWindowPlannerTest {
     }
 
     @Test
+    @DisplayName("a discharge power above the export limit sizes the window but does not earn on the excess")
+    void dischargePowerAboveTheExportLimit() {
+        // The house is fed from the battery before anything reaches the meter, so a sale is
+        // run above the export limit: the extra covers the house and the whole limit is sold.
+        exportProperties.getPower().setMaximum(4000);
+        properties.setDischargePower(5000);
+
+        List<PriceSlot> prices = slots(LocalTime.of(18, 0), 3.6, 3.9, 4.2, 3.8, 3.7, 3.7);
+        DischargePlan plan = planner.plan(prices, 90, LocalTime.of(0, 0));
+
+        assertTrue(plan.armable(), plan.reason());
+        assertEquals(5000, plan.dischargeWatts(), "the battery is driven at the discharge power");
+        assertEquals(4000, plan.exportWatts(), "only the export limit ever reaches the meter");
+
+        // 5 kWh above the reserve at 5 kW empties the battery in an hour, not the 1 h 15 min
+        // the same energy would cover at the export limit.
+        assertEquals(4, plan.window().getSlotCount());
+
+        // The revenue is on what is sold, so it is the export power that prices the window -
+        // the energy the house eats during the sale is not bought by anybody.
+        double soldKwh = plan.window().estimateEnergyKwh(4000);
+        assertEquals(plan.window().estimateRevenue(4000), plan.revenueCzk(), 0.01);
+        assertTrue(soldKwh < plan.window().estimateEnergyKwh(5000));
+    }
+
+    @Test
+    @DisplayName("discharge power left at zero follows the export limit, as it did before")
+    void dischargePowerDefaultsToTheExportLimit() {
+        exportProperties.getPower().setMaximum(4000);
+        properties.setDischargePower(0);
+
+        DischargePlan plan = planner.plan(
+                slots(LocalTime.of(18, 0), 3.6, 3.9, 4.2, 3.8), 90, LocalTime.of(0, 0));
+
+        assertTrue(plan.armable(), plan.reason());
+        assertEquals(4000, plan.dischargeWatts());
+        assertEquals(4000, plan.exportWatts());
+    }
+
+    @Test
     @DisplayName("explains itself with dots for decimals whatever the machine locale is")
     void reasonIsLocaleIndependent() {
         Locale original = Locale.getDefault();

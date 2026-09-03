@@ -3,6 +3,7 @@ package me.firestone82.solaxautomation.integration.solax;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import me.firestone82.solaxautomation.integration.solax.cloud.SolaxCloudService;
+import me.firestone82.solaxautomation.integration.solax.event.WorkModeWritten;
 import me.firestone82.solaxautomation.integration.solax.modbus.ModbusInverterService;
 import me.firestone82.solaxautomation.integration.solax.model.ControlSource;
 import me.firestone82.solaxautomation.integration.solax.model.InverterMode;
@@ -10,6 +11,7 @@ import me.firestone82.solaxautomation.integration.solax.model.InverterSnapshot;
 import me.firestone82.solaxautomation.integration.solax.model.ManualMode;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
@@ -43,6 +45,7 @@ public class SolaxInverterGateway implements InverterGateway {
     private final SolaxControlProperties properties;
     private final ObjectProvider<ModbusInverterService> modbusProvider;
     private final ObjectProvider<SolaxCloudService> cloudProvider;
+    private final ApplicationEventPublisher events;
 
     private volatile InverterSnapshot cachedSnapshot = null;
     private volatile Instant cachedAt = Instant.EPOCH;
@@ -53,11 +56,13 @@ public class SolaxInverterGateway implements InverterGateway {
     public SolaxInverterGateway(
             SolaxControlProperties properties,
             ObjectProvider<ModbusInverterService> modbusProvider,
-            ObjectProvider<SolaxCloudService> cloudProvider
+            ObjectProvider<SolaxCloudService> cloudProvider,
+            ApplicationEventPublisher events
     ) {
         this.properties = properties;
         this.modbusProvider = modbusProvider;
         this.cloudProvider = cloudProvider;
+        this.events = events;
     }
 
     @PostConstruct
@@ -246,9 +251,30 @@ public class SolaxInverterGateway implements InverterGateway {
 
         if (written) {
             invalidateCache();
+            rememberWorkMode(mode);
+            // Tells the watcher this one is ours, so reading it back is not reported as a
+            // change somebody made on the app or the inverter's panel.
+            events.publishEvent(WorkModeWritten.now(mode));
         }
 
         return written;
+    }
+
+    /**
+     * Carries a successful write into the cached reading straight away.
+     * <p>
+     * Invalidating the cache is not enough on its own: a caller still gets the last reading
+     * while the refresh runs behind it, so for the next few seconds the dashboard would show
+     * the mode the inverter was in before the button was pressed - and someone watching the
+     * button they just pressed not change is going to press it again. The value written is
+     * the value the inverter now has, so there is nothing to wait for.
+     */
+    private void rememberWorkMode(InverterMode mode) {
+        InverterSnapshot cached = cachedSnapshot;
+
+        if (cached != null) {
+            cachedSnapshot = cached.toBuilder().workMode(mode).build();
+        }
     }
 
     @Override

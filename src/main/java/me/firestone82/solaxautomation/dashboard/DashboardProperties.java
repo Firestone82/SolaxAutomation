@@ -42,4 +42,21 @@ public class DashboardProperties {
 
     /** Currency label shown next to prices. */
     private String currency = "CZK";
+
+    /**
+     * Peak the production tile's bar is drawn against, W. {@code 0} falls back to
+     * {@code automation.export.power.maximum}.
+     * <p>
+     * A number on its own says how much the sun is giving; against a ceiling it says how
+     * much of the day's possible production is actually happening, which is the question
+     * somebody glancing at the tile is really asking. The fallback is what the installation
+     * can deliver at all, which is the honest ceiling until the array's real peak is
+     * configured here - set it to the installed Wp for a truer scale.
+     */
+    private int pvPeak = 0;
+
+    /** The peak the production bar is drawn against, resolving the fallback. */
+    public int resolvePvPeak(int exportMaximum) {
+        return pvPeak > 0 ? pvPeak : exportMaximum;
+    }
 }

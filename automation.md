@@ -146,7 +146,8 @@ Trh se vypořádává po **15 minutách**, den má tedy 96 cen. Plánovač postu
 
 **Plánovač se na baterii nedívá.** Běží v 15:00, tedy hodiny před večerní špičkou a ještě za
 slunce — nabití změřené v tu chvíli neříká nic o nabití v 19:00. Okno se proto plánuje jen podle
-ceny a délku určuje `(min-battery − 40 % rezerva) × 11,6 kWh × 0,92 ÷ 3 950 W`, nejvýše 4 hodiny.
+ceny a délku určuje `(min-battery − 40 % rezerva) × 11,6 kWh × 0,92 ÷ 4 600 W` (vybíjecí výkon),
+nejvýše 4 hodiny.
 `min-battery` je 50 % — nabití, které prodej stejně vyžaduje; když už je baterie výš, počítá se
 to skutečné. Nadhodnotit se nedá, protože stejná hodnota je i práh pro zahájení; podhodnotit ne,
 okno by bylo příliš krátké na využití špičky.
@@ -160,8 +161,23 @@ hodnotě:
 Okno naplánované ručně z nástěnky tuhle hranici ignoruje — je to rozhodnutí člověka —, rezervu
 ale nikdy.
 
-Vybíjecí výkon se nekonfiguruje zvlášť — je to `automation.export.power.maximum`, protože prodej
-nemůže z instalace odejít rychleji, než kolik smí ven do sítě.
+**Vybíjecí výkon `discharge-power` je výkon baterie, ne výkon do sítě.** Dálkové řízení řídí baterii
+a dům se z ní krmí dřív, než cokoli dorazí k elektroměru — při nastavení přesně na
+`automation.export.power.maximum` (3 950 W) tedy do sítě odejde limit *mínus* aktuální spotřeba domu
+a zbytek se „prodá“ do vlastní rychlovarné konvice, a to zrovna v nejdražší hodinu dne.
+
+> **POKUD** má do sítě odcházet celý limit
+> **PROVEĎ:** nastav `discharge-power` **nad** limit — rozdíl pokryje spotřebu domu a limit dodávky
+> ve střídači drží elektroměr na 3 950 W. Výchozí **4 600 W** je 3 950 W + 650 W rezervy na spotřebu.
+
+Platí dva stropy: co baterie a střídač zvládnou dodat (o víc se dá požádat, ale nevznikne to) a limit
+dodávky, který je po dobu prodeje jediné, co drží přebytek mimo elektroměr — rezervu proto nastavujte
+podle skutečné spotřeby domu, ne podle štítkového výkonu střídače. Hodnota `0` znamená „řiď se
+limitem dodávky“, tedy chování před zavedením tohoto nastavení.
+
+Obě čísla se používají jinde a log je uvádí obě: délka okna se počítá z **vybíjecího** výkonu, protože
+tou rychlostí se baterie doopravdy vyprazdňuje, kdežto očekávaný výnos jen z té části, která projde
+elektroměrem — co sní dům, nikdo nekoupí.
 
 Prodej se provádí **dálkovým řízením**, ne změnou režimu střídače: relace má vlastní dobu trvání a
 střídač se po ní sám vrátí do svého režimu — i kdyby tahle aplikace mezitím spadla. Hlídač kontroluje
@@ -184,9 +200,13 @@ Vedle karty prodeje sedí **Rychlé akce** — ruční zásahy pro to, o čem au
 Nic se neplánuje ani nepamatuje:
 
 - **Režim střídače** (_Vlastní spotřeba_, _Priorita dodávky_, _Záloha_) — trvalý. Přežije restart
-  a modul jej může při dalším běhu opět změnit.
+  a modul jej může při dalším běhu opět změnit. Aktuální režim je na tlačítkách zvýrazněný a přepne
+  se hned po přijetí příkazu, ne až s dalším čtením střídače; změna si navíc zapíše i režim, ze
+  kterého se přepínalo, takže pruh _Režim střídače dnes_ má čím obarvit úsek před ní.
 - **Dálkové řízení** (_Nabít ze sítě_, _Prodat do sítě_, _Ukončit dálkové řízení_) — střídač se sám
   vrátí do svého režimu, i kdyby tahle aplikace spadla. Vyžaduje připojení k SolaX Cloud.
+  _Ukončit dálkové řízení_ je aktivní jen tehdy, když nějaká relace opravdu běží; řádek pod kartou
+  napíše, proč je případně vypnuté.
 
 Nabíjet lze dvěma způsoby: **na dobu**, nebo **do nabití**. Vyplňte _Do nabití_ a relace poběží,
 dokud baterie nedosáhne zadané hodnoty, ať to trvá jakkoli dlouho — konec určí sám střídač, tenhle
@@ -212,16 +232,56 @@ Stav GPIO vstupu (BCM 17) je vidět v dlaždicích na přehledu: _Měřená sí�
 při LOW. Mimo Raspberry Pi, nebo s `raspberry.enabled: false`, se čte záskok hlásící trvale HIGH —
 dlaždice to napíše, aby se náhražka nepletla s měřením.
 
+Každé přehození přepínače se navíc zapisuje do historie, takže průběh dne se kreslí jako tenký pruh
+pod pruhem režimu střídače (graf _Režim střídače dnes_) — obojí na jedné časové ose, protože co
+dělal limit dodávky odpoledne dává smysl až vedle toho, do které přípojky se v tu chvíli dodávalo.
+Se záskokem místo skutečného GPIO se pruh nekreslí vůbec: celý den „měřené sítě“, který nikdo
+nezměřil, by byl výmysl.
+
+---
+
+## Změny režimu mimo aplikaci — `solax.control.work-mode-watch`
+
+Střídač nepřepíná jen tato aplikace: režim jde změnit z aplikace SolaX, přímo na displeji střídače
+i plánem uloženým v něm — a nic z toho se sem neohlásí. Pracovní režim se proto **jednou za minutu**
+(`interval`) čte zpátky a změna, kterou aplikace neudělala, se zapíše do historie jako každá jiná.
+
+> **POKUD** střídač hlásí jiný režim, než jaký měl při minulém čtení,
+> **a** není to režim, který aplikace sama krátce předtím zapsala
+> **PROVEĎ:** zapiš změnu do historie pod zdroj _Střídač_ — objeví se v _Poslední aktivitě_
+> i v pruhu _Režim střídače dnes_.
+
+Nic navíc se kvůli tomu nečte: kontrola se dívá na tentýž uložený snímek, který stejně obsluhuje
+nástěnku i moduly.
+
+**Vlastní zápisy se nezapisují dvakrát.** Každé úspěšné nastavení režimu se hlídači ohlásí a režim,
+který odpovídá zápisu mladšímu než `attribution-window` (**5 min**, aby přežil i frontu příkazu přes
+cloud), se bere jako vlastní — zaznamenal ho už ten, kdo ho nastavil.
+
+**Co hlídač nevidí:** změnu provedenou, když aplikace neběžela nebo byl střídač nedostupný — pod
+grafem se pak jen napíše, že se aktuální režim neshoduje s poslední zaznamenanou změnou — a cokoli
+během dálkového řízení, které střídač řídí bez sáhnutí na trvalý režim.
+
+**Nic se podle toho neděje.** Jde o záznam, ne o zásah: ručně nastavený režim vydrží, dokud
+nepřijde další kontrolní bod modulu počasí nebo baterie a nerozhodne jinak.
+
 ---
 
 ## Historie akcí
 
-Posledních 15 provedených akcí se ukládá do `data/timeline.json`, takže po restartu nástěnka
-nezačíná prázdná. Je to jen pohodlí pro zobrazení — trvalým záznamem zůstávají rotující logy
-v `logs/`.
+Zaznamenané akce se drží **48 hodin** (`timeline.retention`) a ukládají se do `data/timeline.json`,
+takže po restartu nástěnka nezačíná prázdná a grafy nemají díry, které už nic nedoplní. Strop
+`timeline.persisted-events` je jen pojistka, aby zacyklený modul soubor nenafoukl. Záznamy starší než
+okno se při čtení souboru zahodí — aplikace vypnutá týden se nesmí vrátit s týden starou „poslední
+aktivitou“. Je to pořád jen pohodlí pro zobrazení — trvalým záznamem zůstávají rotující logy v `logs/`.
 
 Každý řádek má nadpis a vysvětlení: co modul rozhodl a proč. Kolik řádků je vidět, se přepíná
 přímo v hlavičce karty _Poslední aktivita_ (5 až 100) a volba se pamatuje v prohlížeči.
+
+V hlavičce jsou i dva filtry, obojí zapamatované v prohlížeči: **Dnes / Včera / Vše** vybírá den
+(historie sahá dva dny zpět) a **Jen změny** schová kontroly, které nic neudělaly — limit dodávky se
+přepočítává každou čtvrthodinu a skoro vždy vyjde „není co dělat“, což je 68 řádků denně, pod kterými
+se ztratí těch pár, které něco říkají. **Neúspěšná** kontrola zůstane vidět vždycky.
 
 Tytéž záznamy kreslí i graf **Plánovaných akcí**, když se přepne na _Celý den_: hodiny před
 aktuálním časem se doplní tím, co doopravdy proběhlo, na řádku svého modulu a potlačeně, aby plán

@@ -121,8 +121,8 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
                         "State of charge required for the sale to happen; sizes the window and gates its start"),
                 ConfigEntry.of("automation.discharge.target-battery", "Reserve", properties.getTargetBattery(), "%",
                         "State of charge the discharge stops at"),
-                ConfigEntry.of("automation.discharge.discharge-power", "Discharge power", exportProperties.getPower().getMaximum(), "W",
-                        "Power the battery is discharged at; taken from automation.export.power.maximum, since a sale can never leave more than that"),
+                ConfigEntry.of("automation.discharge.discharge-power", "Discharge power", dischargePower(), "W",
+                        "Battery power during a sale. Above the export limit the extra covers the house, so the full limit reaches the meter"),
                 ConfigEntry.of("automation.discharge.battery-capacity", "Battery capacity", properties.getBatteryCapacity(), "kWh",
                         "Usable capacity, used to work out how long the battery lasts"),
                 ConfigEntry.of("automation.discharge.max-slots", "Maximum length", properties.getMaxSlots() * PriceSlot.SLOT_MINUTES, "min",
@@ -251,8 +251,16 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
         log.detail("Usable energy", "{} kWh -> {} interval(s) at {} W",
                 round(plan.availableEnergyKwh()), plan.maxSlots(), plan.dischargeWatts());
         log.list("Selling into", plan.window().getSlots(), PriceSlot::toString);
-        log.detail("Expected revenue", "{} CZK for {} kWh",
-                round(plan.revenueCzk()), round(plan.window().estimateEnergyKwh(plan.dischargeWatts())));
+
+        if (plan.exportWatts() < plan.dischargeWatts()) {
+            log.detail("Of that sold", "{} W - the other {} W covers the house while the sale runs",
+                    plan.exportWatts(), plan.dischargeWatts() - plan.exportWatts());
+        }
+
+        // On the exported energy, not the discharged energy: what the house eats during the
+        // sale is not bought by anybody.
+        log.detail("Expected revenue", "{} CZK for {} kWh sold",
+                round(plan.revenueCzk()), round(plan.window().estimateEnergyKwh(plan.exportWatts())));
 
         arm(new ArmedWindow(
                 plan.window().getStartOn(LocalDate.now()),
@@ -296,8 +304,8 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
                     .build());
         }
 
-        int power = watts == null ? exportProperties.getPower().getMaximum() : watts;
-        double revenue = estimateRevenue(from, to, power);
+        int power = watts == null ? dischargePower() : watts;
+        double revenue = estimateRevenue(from, to, exportableShareOf(power));
 
         log.header("Manual selling window armed from the dashboard");
         log.detail("Window", "{} - {}", from, to);
@@ -601,18 +609,32 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
     }
 
     /**
-     * The sale can only reach the grid through the export limit. If something has left that
-     * limit closed - the export module holding it down, or a manual change - the discharge
-     * would trickle out at the limit instead of the planned power, so say so loudly rather
-     * than let it look like a successful sale.
+     * The sale can only reach the grid through the export limit, so what the limit is set to
+     * right now decides how much of the discharge is actually sold.
+     * <p>
+     * Two different things can be true of a discharge power above the limit, which is why
+     * this does not simply warn on the difference. Deliberately above it - the normal setup -
+     * the extra is what covers the house so the meter can carry the full limit, and that is
+     * worth a line but not an alarm. Below what the installation is configured to export,
+     * because something has closed the limit down - the export module holding it there, or a
+     * change made by hand - the sale would trickle out at that limit instead, and looking
+     * like a successful sale is exactly what it must not do.
      */
     private void warnIfExportLimitTooLow(int watts) {
+        int intended = exportableShareOf(watts);
+
         inverter.getExportLimit().ifPresent(limit -> {
             log.detail("Export limit", "{} W", limit);
 
-            if (limit < watts) {
-                log.warn("Export limit is {} W but the sale wants {} W - only {} W will reach the grid",
-                        limit, watts, limit);
+            if (limit < intended) {
+                log.warn("Export limit is {} W but the sale expects to export {} W - only {} W will reach the grid",
+                        limit, intended, limit);
+                return;
+            }
+
+            if (watts > limit) {
+                log.detail("Load headroom", "{} W above the export limit, which covers the house during the sale",
+                        watts - limit);
             }
         });
     }
@@ -672,6 +694,19 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
     private LocalTime effectiveSearchTo() {
         LocalTime to = properties.getSearchTo();
         return to.equals(LocalTime.MIDNIGHT) ? LocalTime.MIDNIGHT : to.plusMinutes(PriceSlot.SLOT_MINUTES);
+    }
+
+    /** Battery power a sale runs at, resolved against the export limit it is configured from. */
+    private int dischargePower() {
+        return properties.resolveDischargePower(exportProperties.getPower().getMaximum());
+    }
+
+    /**
+     * How much of {@code watts} can be sold: the meter never carries more than the export
+     * limit, so anything above it covers the house instead of earning anything.
+     */
+    private int exportableShareOf(int watts) {
+        return Math.min(watts, exportProperties.getPower().getMaximum());
     }
 
     private double estimateRevenue(LocalDateTime from, LocalDateTime to, int watts) {

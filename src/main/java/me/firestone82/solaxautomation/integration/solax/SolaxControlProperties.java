@@ -56,6 +56,9 @@ public class SolaxControlProperties {
     /** SOC bounds sent alongside cloud work mode commands, which require them. */
     private CloudWorkMode cloudWorkMode = new CloudWorkMode();
 
+    /** Watches the work mode for changes this application did not make. */
+    private WorkModeWatch workModeWatch = new WorkModeWatch();
+
     /**
      * The cloud work mode endpoints have no "leave as configured" option for the SOC bounds,
      * so these values are sent with every cloud work mode change.
@@ -68,5 +71,37 @@ public class SolaxControlProperties {
 
         /** SOC at which charging stops, %. */
         private int chargeUpperSoc = 100;
+    }
+
+    /**
+     * The inverter can also be moved from the SolaX app, its own panel or a schedule stored
+     * on it, and nothing tells this application when that happens. The watcher reads the
+     * work mode back on a timer and records the changes it did not cause itself.
+     */
+    @Data
+    public static class WorkModeWatch {
+
+        /** Turn off to leave externally made changes unrecorded. */
+        private boolean enabled = true;
+
+        /**
+         * How often the work mode is read back.
+         * <p>
+         * The reading itself is the cached snapshot, so a shorter interval than
+         * {@code snapshot-cache} only re-reads what is already known - it costs nothing, but
+         * it does not notice anything sooner either.
+         */
+        private Duration interval = Duration.ofMinutes(1);
+
+        /**
+         * How long a mode this application wrote is still recognised as its own when the
+         * inverter finally reports it.
+         * <p>
+         * A cloud write is queued and can take a minute to reach the inverter, so the window
+         * has to outlast that; make it too long and a person switching the mode straight back
+         * to what a module had just set would be mistaken for the module's own change
+         * arriving late.
+         */
+        private Duration attributionWindow = Duration.ofMinutes(5);
     }
 }

@@ -59,12 +59,17 @@ public class TimelineService {
             List<TimelineEvent> restored = MAPPER.readValue(file.toFile(), new TypeReference<>() {
             });
 
+            // An application that was off for a week must not come back with a week-old
+            // "recent activity"; the dashboard would draw it as if it had just happened.
+            List<TimelineEvent> kept = restored.stream().filter(this::withinRetention).toList();
+
             synchronized (this) {
                 events.clear();
-                restored.forEach(events::addLast);
+                kept.forEach(events::addLast);
             }
 
-            log.info("Restored {} activity entries from {}", restored.size(), file.toAbsolutePath());
+            log.info("Restored {} activity entries from {} ({} dropped as older than {})",
+                    kept.size(), file.toAbsolutePath(), restored.size() - kept.size(), properties.getRetention());
         } catch (IOException e) {
             // A history file that cannot be read is not worth failing start-up over.
             log.warn("Could not read the activity history at {}: {}", file.toAbsolutePath(), e.getMessage());
@@ -99,6 +104,13 @@ public class TimelineService {
                 events.removeLast();
             }
 
+            // The list is newest first, so everything past its retention is at the tail.
+            while (!events.isEmpty() && !withinRetention(events.peekLast())) {
+                events.removeLast();
+            }
+
+            // Age decides what is worth carrying over a restart; the count is only there so
+            // a module stuck in a loop cannot grow the file without bound.
             toPersist = events.stream().limit(properties.getPersistedEvents()).toList();
         }
 
@@ -118,6 +130,16 @@ public class TimelineService {
     /** Most recent events first. */
     public synchronized List<TimelineEvent> getEvents(int limit) {
         return events.stream().limit(limit).toList();
+    }
+
+    /** Everything still held, newest first - the whole retention window. */
+    public synchronized List<TimelineEvent> getEvents() {
+        return List.copyOf(events);
+    }
+
+    /** Whether an entry is young enough to still be worth showing. */
+    private boolean withinRetention(TimelineEvent event) {
+        return event.at().isAfter(LocalDateTime.now().minus(properties.getRetention()));
     }
 
     /**

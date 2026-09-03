@@ -10,6 +10,8 @@
     const STORAGE_THEME = 'solax.theme';
     const STORAGE_PAGE = 'solax.page';
     const STORAGE_HISTORY_ROWS = 'solax.historyRows';
+    const STORAGE_HISTORY_DAY = 'solax.historyDay';
+    const STORAGE_HISTORY_CHANGES = 'solax.historyChangesOnly';
     const STORAGE_TIMELINE_RANGE = 'solax.timelineRange';
     const STORAGE_WEATHER_RANGE = 'solax.weatherRange';
     const STORAGE_TIMELINE_CHART = 'solax.timelineChart';
@@ -26,6 +28,11 @@
         page: 'overview',
         theme: 'system',
         historyRows: 10,
+
+        // Which day of the retained history the activity list shows, and whether the
+        // quarter-hourly checks that changed nothing are in it.
+        historyDay: 'today',
+        historyChangesOnly: false,
 
         // 'ahead' looks forward from this hour, 'day' shows today from midnight - the same
         // choice on both time charts, so switching one does not have to be relearned on the other.
@@ -364,23 +371,56 @@
 
         const tiles = [];
 
-        const push = (label, value, unit, note, bar) => tiles.push({label, value, unit, note, bar});
+        /**
+         * One tile. {@code notes} is a list rather than a sentence: two facts joined by a
+         * separator read as one long line and are scanned as neither, where a line each is
+         * read at a glance. {@code bar} is a percentage, or {@code null} where the value has
+         * no ceiling worth drawing it against.
+         */
+        const push = (label, value, unit, notes, bar, barColour = null) =>
+            tiles.push({label, value, unit, notes: [].concat(notes || []).filter(Boolean), bar, barColour});
+
+        /** Where a value has a known maximum, how full it is - clamped, never over 100. */
+        const share = (value, maximum) => {
+            if (value === null || value === undefined || !maximum) {
+                return null;
+            }
+
+            return Math.max(0, Math.min(100, (value / maximum) * 100));
+        };
 
         push(
             t('stat.battery'),
             formatNumber(overview.batterySoc, 0),
             '%',
-            overview.batteryRemainingKwh !== null && overview.batteryRemainingKwh !== undefined
-                ? t('stat.batteryNote', {
-                    remaining: formatNumber(overview.batteryRemainingKwh, 1),
-                    soh: formatNumber(overview.batterySoh, 0)
-                })
-                : null,
+            [
+                overview.batteryRemainingKwh === null || overview.batteryRemainingKwh === undefined
+                    ? null
+                    : t('stat.batteryStored', {remaining: formatNumber(overview.batteryRemainingKwh, 1)}),
+                overview.batterySoh === null || overview.batterySoh === undefined
+                    ? null
+                    : t('stat.batteryHealth', {soh: formatNumber(overview.batterySoh, 0)})
+            ],
             overview.batterySoc
         );
 
         const pv = formatPower(overview.pvPower);
-        push(t('stat.pv'), pv.value, pv.unit, null, null);
+        const pvPeak = state.config.pvPeak;
+
+        push(
+            t('stat.pv'),
+            pv.value,
+            pv.unit,
+            // What the bar is measured against, said in words - a bar with no scale is a
+            // decoration.
+            pvPeak && overview.pvPower !== null && overview.pvPower !== undefined
+                ? t('stat.ofPeak', {maximum: formatNumber(pvPeak, 0)})
+                : null,
+            share(overview.pvPower, pvPeak),
+            // Not the battery's traffic light: little production at eight in the morning is
+            // the sun's doing, not a problem to colour red.
+            'var(--accent)'
+        );
 
         if (overview.gridPower !== null && overview.gridPower !== undefined) {
             const grid = formatPower(Math.abs(overview.gridPower));
@@ -390,7 +430,22 @@
                 ? null
                 : (overview.gridPower > 0 ? t('stat.gridExport') : t('stat.gridImport'));
 
-            push(t('stat.grid'), grid.value, grid.unit, direction, null);
+            // Only the export has a ceiling to be measured against: what comes the other way
+            // is bounded by the house's appetite, not by anything this application knows.
+            const exporting = overview.gridPower > 0;
+            const limit = overview.exportLimit;
+
+            push(
+                t('stat.grid'),
+                grid.value,
+                grid.unit,
+                [
+                    direction,
+                    exporting && limit ? t('stat.ofLimit', {maximum: formatNumber(limit, 0)}) : null
+                ],
+                exporting ? share(overview.gridPower, limit) : null,
+                'var(--accent)'
+            );
         }
 
         if (overview.loadPower !== null && overview.loadPower !== undefined) {
@@ -415,11 +470,10 @@
         );
 
         if (overview.dailyYield !== null && overview.dailyYield !== undefined) {
-            push(t('stat.today'), formatNumber(overview.dailyYield, 1), 'kWh',
-                t('stat.todayNote', {
-                    export: formatNumber(overview.dailyExport ?? 0, 1),
-                    import: formatNumber(overview.dailyImport ?? 0, 1)
-                }), null);
+            push(t('stat.today'), formatNumber(overview.dailyYield, 1), 'kWh', [
+                t('stat.todayExport', {export: formatNumber(overview.dailyExport ?? 0, 1)}),
+                t('stat.todayImport', {import: formatNumber(overview.dailyImport ?? 0, 1)})
+            ], null);
         }
 
         if (overview.exportLimit !== null && overview.exportLimit !== undefined) {
@@ -464,12 +518,12 @@
 
             node.appendChild(value);
 
-            if (tile.note) {
+            tile.notes.forEach(text => {
                 const note = document.createElement('span');
                 note.className = 'stat-note';
-                note.textContent = tile.note;
+                note.textContent = text;
                 node.appendChild(note);
-            }
+            });
 
             if (typeof tile.bar === 'number') {
                 const bar = document.createElement('div');
@@ -477,7 +531,10 @@
 
                 const fill = document.createElement('i');
                 fill.style.width = Math.max(0, Math.min(100, tile.bar)) + '%';
-                fill.style.background = tile.bar < 25 ? 'var(--danger)' : (tile.bar < 50 ? 'var(--warning)' : 'var(--success)');
+                // A tile that names its own colour means the bar is a proportion; without
+                // one it is a level, and a level low enough is worth a warning.
+                fill.style.background = tile.barColour
+                    || (tile.bar < 25 ? 'var(--danger)' : (tile.bar < 50 ? 'var(--warning)' : 'var(--success)'));
 
                 bar.appendChild(fill);
                 node.appendChild(bar);
@@ -792,9 +849,25 @@
         return words.charAt(0).toUpperCase() + words.slice(1);
     }
 
+    /**
+     * Row labels for the timeline chart.
+     * <p>
+     * Not everything that writes history is a module: a quick action comes from the dashboard,
+     * a supply change from the GPIO, and a work mode somebody set on the inverter itself from
+     * the inverter. They have no widget to take a name from, so they are named here rather
+     * than labelling a row with a bare id.
+     */
+    const NON_MODULE_SOURCES = ['dashboard', 'raspberry', 'inverter'];
+
     function moduleNames() {
-        return Object.fromEntries(state.modules.map(module =>
+        const names = Object.fromEntries(state.modules.map(module =>
             [module.id, moduleText(module.id, 'name', module.name)]));
+
+        NON_MODULE_SOURCES.forEach(id => {
+            names[id] = moduleText(id, 'name', id);
+        });
+
+        return names;
     }
 
     /* ------------------------------------------------- work mode over time */
@@ -816,35 +889,85 @@
     };
 
     /**
-     * The day's work mode, rebuilt from the changes the automation recorded.
+     * The two ends of the connection switch.
      * <p>
-     * Nothing samples the inverter into a history, so the band is an inference: the mode
+     * Deliberately outside the mode palette: the supply is a different question, and reusing
+     * a mode's colour a band below it would read as the two saying the same thing. The
+     * metered grid is the ordinary case and gets the quiet slate; the second supply, where
+     * export never reaches the meter, is the one worth spotting from across the room.
+     */
+    const SUPPLY_COLOURS = {
+        HIGH: 'var(--supply-metered)',
+        LOW: 'var(--supply-second)'
+    };
+
+    /**
+     * The day's work mode, rebuilt from the recorded changes.
+     * <p>
+     * Both kinds are in there: what the automation did, and what somebody did from the SolaX
+     * app or the inverter's own panel - the backend reads the mode back on a timer and
+     * records a change it did not make like any other, which is why an entry filed under the
+     * inverter is one nothing here set.
+     */
+    function workModeSegments() {
+        return changeSegments('WORK_MODE_CHANGE', state.overview?.workMode || null);
+    }
+
+    /**
+     * The day's supply, rebuilt the same way from the connection switch.
+     * <p>
+     * HIGH is the metered grid connection, LOW the second supply, and which one the house is
+     * on decides whether exporting is billed at all - so it belongs under the work mode
+     * rather than in a chart of its own. Every physical throw of the switch is recorded as it
+     * happens, which makes this band the more reliable of the two; the same limits still
+     * apply to a throw made while the application was not running.
+     * <p>
+     * Nothing is drawn off a Raspberry Pi: the stub reports a constant HIGH, and a full day
+     * of "metered grid" that nothing ever measured would be an invention.
+     */
+    function supplySegments() {
+        const overview = state.overview;
+
+        if (!overview?.connectionSwitch || overview.connectionSwitchSimulated) {
+            return [];
+        }
+
+        return changeSegments('GPIO_STATE_CHANGE', overview.connectionSwitch);
+    }
+
+    /**
+     * The day of one thing that holds a state and changes a handful of times, rebuilt from
+     * the changes recorded for it and what it is right now.
+     * <p>
+     * Nothing samples any of this into a history, so a band is an inference: the value
      * between two recorded changes is whatever the earlier one set. That makes the boundaries
      * of what can be known worth drawing honestly rather than papering over:
      * <ul>
-     *   <li>before the first change of the day the mode is the one that change moved away
-     *       from - which only a module records, so a day that opens with a change made from
-     *       the dashboard opens as an unknown stretch instead of a guess;</li>
-     *   <li>with no change recorded at all the mode has not moved since before midnight, so
-     *       the live mode is drawn across the whole day and the tooltip says why;</li>
-     *   <li>a mode set outside this application - the SolaX app, the inverter's own panel -
-     *       is invisible here. When the live mode disagrees with the last change recorded,
-     *       the note under the chart says so rather than the band inventing a change.</li>
+     *   <li>before the first change of the day the value is the one that change moved away
+     *       from - which a change made from the dashboard does not record, so a day opening
+     *       with one opens as an unknown stretch instead of a guess;</li>
+     *   <li>with no change recorded at all it has not moved since before midnight, so the
+     *       live value is drawn across the whole day and the tooltip says why;</li>
+     *   <li>a change made while nothing was watching - over a restart, or with the source
+     *       unreachable - still cannot be placed in time. When the live value disagrees with
+     *       the last change recorded, the note under the chart says so rather than the band
+     *       inventing a change.</li>
      * </ul>
+     *
+     * @param type action type of the history entries that record a change of this value
+     * @param live what it is at this moment, or null when that is not known either
      */
-    function workModeSegments() {
+    function changeSegments(type, live) {
         const now = new Date();
         const start = startOfDay(now);
 
         // The history reads newest first, which is what the activity list wants and the
         // opposite of what a band does.
         const changes = (state.timeline?.history || [])
-            .filter(entry => entry.type === 'WORK_MODE_CHANGE' && entry.success && entry.params?.to)
+            .filter(entry => entry.type === type && entry.success && entry.params?.to)
             .map(entry => ({at: new Date(entry.at), to: entry.params.to, from: entry.params.from || null, entry}))
             .filter(change => change.at >= start && change.at <= now)
             .sort((first, second) => first.at - second.at);
-
-        const live = state.overview?.workMode || null;
 
         if (changes.length === 0) {
             return live ? [{from: start, to: now, mode: live, changedBy: null, entry: null, held: true}] : [];
@@ -968,17 +1091,22 @@
         };
     }
 
-    function workModeTooltip(segment) {
-        const mode = segment.mode ? t('mode.' + segment.mode) : t('workMode.unknown');
-
+    /**
+     * A stretch of either band: what it was, who moved it there, and for how long.
+     * <p>
+     * Only naming the value differs between the two, so that is all the caller passes -
+     * everything else a person wants to know about a stretch is the same question whether it
+     * is a work mode or a supply.
+     */
+    function segmentTooltip(segment, labels, colours) {
         const subtitle = segment.changedBy
             ? moduleText(segment.changedBy, 'name', segment.changedBy)
             : (segment.held ? t('workMode.held') : t('workMode.beforeFirst'));
 
         return {
-            title: mode,
+            title: labels[segment.mode] || t('workMode.unknown'),
             subtitle: subtitle,
-            accent: MODE_COLOURS[segment.mode] || 'var(--text-faint)',
+            accent: colours[segment.mode] || 'var(--text-faint)',
             rows: [
                 [t('tooltip.when'), `${formatTimeOnly(segment.from.toISOString())} – ${formatTimeOnly(segment.to.toISOString())}`],
                 [t('tooltip.duration'), durationBetween(segment.from.toISOString(), segment.to.toISOString())],
@@ -988,53 +1116,97 @@
         };
     }
 
+    /** Mode names as the rest of the page writes them, keyed the way a segment carries them. */
+    function modeLabels() {
+        return Object.fromEntries(Object.keys(MODE_COLOURS).map(mode => [mode, t('mode.' + mode)]));
+    }
+
+    /** The two ends of the connection switch, named as the stat tile names them. */
+    function supplyLabels() {
+        return {HIGH: t('stat.supplyMetered'), LOW: t('stat.supplySecond')};
+    }
+
     function renderWorkMode() {
         const segments = workModeSegments();
+        const supply = supplySegments();
         const overlays = sellingOverlays();
         const now = new Date();
         const start = startOfDay(now);
 
-        Charts.workModeChart(el('workmode-chart'), segments, {
+        const labels = modeLabels();
+        const supplyNames = supplyLabels();
+
+        // The work mode is the subject; the supply is what it is read against, so it goes
+        // underneath as the thinner band rather than beside it as a chart of its own.
+        const bands = [
+            {
+                segments: segments,
+                colours: MODE_COLOURS,
+                labels: labels,
+                tooltip: segment => segmentTooltip(segment, labels, MODE_COLOURS),
+                overlays: overlays,
+                overlayTooltip: sellingTooltip
+            },
+            {
+                segments: supply,
+                colours: SUPPLY_COLOURS,
+                labels: supplyNames,
+                tooltip: segment => segmentTooltip(segment, supplyNames, SUPPLY_COLOURS),
+                secondary: true
+            }
+        ];
+
+        Charts.workModeChart(el('workmode-chart'), bands, {
             emptyMessage: t('workMode.none'),
             start: start,
             end: new Date(start.getTime() + DAY_MS),
-            now: now,
-            colours: MODE_COLOURS,
-            labels: Object.fromEntries(Object.keys(MODE_COLOURS).map(mode => [mode, t('mode.' + mode)])),
-            tooltip: workModeTooltip,
-            overlays: overlays,
-            overlayTooltip: sellingTooltip
+            now: now
         });
 
-        renderWorkModeNote(segments);
-        renderWorkModeLegend(segments, overlays);
+        renderWorkModeNote(segments, supply);
+        renderWorkModeLegend(segments, supply, overlays);
     }
 
     /**
-     * The one thing the band cannot show: a mode this application did not set.
+     * The one thing a band cannot show: a change nothing was there to see.
      * <p>
-     * The inverter can be moved from the SolaX app or its own panel, and nothing tells us
-     * when that happened - so the band stops at the last change we know of and the mismatch
-     * is stated here instead of being drawn as a change at an invented time.
+     * A mode set from the SolaX app or the inverter's panel is caught by the backend reading
+     * the mode back, and every throw of the connection switch is recorded as it happens, so
+     * both are normally on their band. What neither can catch is a change made while nothing
+     * was watching - over a restart, or with the inverter unreachable - and no time can be
+     * put on one of those, so the band stops at the last change we know of and the mismatch
+     * is stated here instead of being drawn at an invented time.
      */
-    function renderWorkModeNote(segments) {
+    function renderWorkModeNote(segments, supply) {
         const note = el('workmode-note');
-        const live = state.overview?.workMode || null;
-        const last = segments.length ? segments[segments.length - 1] : null;
 
-        const outside = live && last && !last.held && last.mode && last.mode !== live;
+        // A band that was drawn from the live value alone (held) claims nothing about when
+        // anything changed, so it can never disagree with it.
+        const disagrees = (band, live) => {
+            const last = band.length ? band[band.length - 1] : null;
+            return live && last && !last.held && last.mode && last.mode !== live;
+        };
 
-        note.hidden = !outside;
+        const sentences = [];
 
-        if (outside) {
-            note.textContent = t('workMode.changedOutside', {mode: t('mode.' + live)});
+        const mode = state.overview?.workMode || null;
+        if (disagrees(segments, mode)) {
+            sentences.push(t('workMode.changedOutside', {mode: t('mode.' + mode)}));
         }
+
+        const switchState = state.overview?.connectionSwitch || null;
+        if (disagrees(supply, switchState)) {
+            sentences.push(t('workMode.supplyChangedOutside', {supply: supplyLabels()[switchState] || switchState}));
+        }
+
+        note.hidden = sentences.length === 0;
+        note.textContent = sentences.join(' ');
     }
 
     /** Only what the day actually contains - a legend of every mode is mostly noise. */
-    function renderWorkModeLegend(segments, overlays) {
+    function renderWorkModeLegend(segments, supply, overlays) {
         const legend = el('workmode-legend');
-        const modes = [...new Set(segments.map(segment => segment.mode).filter(Boolean))];
+        const supplyNames = supplyLabels();
 
         const item = (background, label) => {
             const node = document.createElement('li');
@@ -1048,10 +1220,18 @@
             return node;
         };
 
-        const items = modes.map(mode => item(MODE_COLOURS[mode] || 'var(--text-faint)', t('mode.' + mode)));
+        const present = band => [...new Set(band.map(segment => segment.mode).filter(Boolean))];
 
-        // The ribbon is the one mark on this chart that is not a work mode, so it is the one
-        // the legend has to explain rather than merely name.
+        const items = present(segments)
+            .map(mode => item(MODE_COLOURS[mode] || 'var(--text-faint)', t('mode.' + mode)));
+
+        // The supply band's colours mean nothing on their own - unlike a mode, which the band
+        // labels where it fits - so whichever of the two the day contains is named here.
+        present(supply).forEach(state_ =>
+            items.push(item(SUPPLY_COLOURS[state_] || 'var(--text-faint)', supplyNames[state_] || state_)));
+
+        // The ribbon is the one mark on this chart that is not a band, so it is the one the
+        // legend has to explain rather than merely name.
         if ((overlays || []).length > 0) {
             items.push(item('var(--sell)', t('prices.selling')));
         }
@@ -1167,7 +1347,9 @@
             badgeClass: entry.certain ? 'pill-sell' : 'pill-muted'
         }));
 
-        renderEntryList(el('timeline-history'), timeline?.history || [], t('history.none'), entry => ({
+        const history = historyEntries();
+
+        renderEntryList(el('timeline-history'), history, t(historyEmptyKey()), entry => ({
             time: formatDateTime(entry.at),
             summary: msg(entry),
             // What the module did, in a sentence - the headline above only names the outcome.
@@ -1175,6 +1357,81 @@
             badge: t('action.' + entry.type),
             badgeClass: entry.success ? 'pill-ok' : 'pill-error'
         }), state.historyRows);
+
+        renderHistoryFilters(history);
+    }
+
+    /**
+     * The activity list, filtered the way the two switches above it say.
+     * <p>
+     * The backend now keeps two days rather than the last handful, so that a restart does not
+     * leave the charts and this list with holes nothing can fill back in - which also makes
+     * "yesterday" a question worth being able to ask. Everything retained arrives in one
+     * payload and the filtering happens here, because switching days should not mean waiting
+     * for a round trip.
+     */
+    function historyEntries() {
+        const all = state.timeline?.history || [];
+        const day = state.historyDay;
+
+        const withinDay = entry => {
+            if (day === 'all') {
+                return true;
+            }
+
+            const at = new Date(entry.at);
+            const start = startOfDay(new Date());
+            const from = day === 'yesterday' ? new Date(start.getTime() - DAY_MS) : start;
+
+            return at >= from && at < new Date(from.getTime() + DAY_MS);
+        };
+
+        // A check that decided to leave everything alone is what the toggle is for. A check
+        // that failed is not: it is the one kind of row that has to stay findable, whatever
+        // is being filtered out around it.
+        const didSomething = entry => entry.type !== 'CHECK' || !entry.success;
+
+        return all.filter(entry => withinDay(entry) && (!state.historyChangesOnly || didSomething(entry)));
+    }
+
+    /** "Nothing happened" and "nothing is left after filtering" are different things to say. */
+    function historyEmptyKey() {
+        if ((state.timeline?.history || []).length === 0) {
+            return 'history.none';
+        }
+
+        return state.historyChangesOnly ? 'history.noneChanges' : 'history.noneDay';
+    }
+
+    /** Keeps the two switches showing what is actually being filtered, and how much of it. */
+    function renderHistoryFilters(shown) {
+        document.querySelectorAll('#history-day .segment').forEach(segment =>
+            segment.classList.toggle('is-active', segment.dataset.day === state.historyDay));
+
+        const toggle = el('history-changes-only');
+        toggle.classList.toggle('is-active', state.historyChangesOnly);
+        toggle.setAttribute('aria-pressed', String(state.historyChangesOnly));
+
+        // How many rows the toggle is currently hiding, so turning it on is not a leap of
+        // faith and turning it off is an informed choice.
+        const total = (state.timeline?.history || []).length;
+        toggle.title = t('history.filtered', {shown: shown.length, total: total});
+    }
+
+    function setHistoryDay(day) {
+        state.historyDay = day;
+        localStorage.setItem(STORAGE_HISTORY_DAY, day);
+
+        listPages['timeline-history'] = 0;
+        renderTimeline();
+    }
+
+    function setHistoryChangesOnly(only) {
+        state.historyChangesOnly = only;
+        localStorage.setItem(STORAGE_HISTORY_CHANGES, only ? '1' : '0');
+
+        listPages['timeline-history'] = 0;
+        renderTimeline();
     }
 
     /**
@@ -1355,6 +1612,12 @@
         // A shorter list means the remembered page can be past the end - start over.
         listPages['timeline-history'] = 0;
         renderTimeline();
+    }
+
+    /** The stored day filter, or today when nothing sensible is stored. */
+    function storedHistoryDay() {
+        const stored = localStorage.getItem(STORAGE_HISTORY_DAY);
+        return ['today', 'yesterday', 'all'].includes(stored) ? stored : 'today';
     }
 
     /** The stored row count, or the default when nothing sensible is stored. */
@@ -1538,8 +1801,6 @@
         const overview = state.overview;
         const controllable = state.config.allowControl;
 
-        renderQuickBadge(overview);
-
         const button = (label, className, onClick, enabled = true) => {
             const node = document.createElement('button');
             node.type = 'button';
@@ -1559,44 +1820,28 @@
         )));
 
         const remote = state.selling?.remoteControlAvailable;
+        // Nothing to cancel unless a session is actually running, and a button that is
+        // always live invites pressing it to find out.
+        const underRemoteControl = remote && overview?.remoteControlActive === true;
 
         el('quick-actions').replaceChildren(
             button(t('quick.charge'), '', chargeFromGrid, remote),
             // Same window the selling card arms - this is just the shorter way to reach it.
             button(t('quick.sell'), '', () => openArmDialog('arm'), state.selling?.enabled),
-            button(t('quick.exit'), 'button-danger', exitRemoteControl, remote)
+            button(t('quick.exit'), 'button-danger', exitRemoteControl, underRemoteControl)
         );
 
         // Its own line, not the message line: this is a standing fact about the setup, and
         // it must not wipe out what the last button press reported.
         const note = !controllable ? t('selling.controlDisabled')
             : !remote ? t('quick.remoteUnavailable')
-                : '';
+                : !underRemoteControl ? t('quick.noSession')
+                    : t('quick.underRemoteControl');
 
         el('quick-note').textContent = note;
         el('quick-note').hidden = !note;
 
         updateChargePreview();
-    }
-
-    /** Says what the inverter is doing right now, which is the context for every button. */
-    function renderQuickBadge(overview) {
-        const badge = el('quick-mode');
-
-        if (!overview?.online) {
-            badge.textContent = t('status.offline');
-            badge.className = 'pill pill-warn';
-            return;
-        }
-
-        if (overview.remoteControlActive) {
-            badge.textContent = t('quick.underRemoteControl');
-            badge.className = 'pill pill-sell';
-            return;
-        }
-
-        badge.textContent = overview.workMode ? t('mode.' + overview.workMode) : '—';
-        badge.className = 'pill pill-muted';
     }
 
     const STATE_PILLS = {
@@ -2244,6 +2489,15 @@
         renderHistoryRowsControl();
 
         el('history-rows').addEventListener('change', event => setHistoryRows(Number(event.target.value)));
+
+        state.historyDay = storedHistoryDay();
+        state.historyChangesOnly = localStorage.getItem(STORAGE_HISTORY_CHANGES) === '1';
+
+        document.querySelectorAll('#history-day .segment').forEach(button =>
+            button.addEventListener('click', () => setHistoryDay(button.dataset.day)));
+
+        el('history-changes-only').addEventListener('click',
+            () => setHistoryChangesOnly(!state.historyChangesOnly));
 
         state.timelineRange = storedRange(STORAGE_TIMELINE_RANGE);
         state.weatherRange = storedRange(STORAGE_WEATHER_RANGE);

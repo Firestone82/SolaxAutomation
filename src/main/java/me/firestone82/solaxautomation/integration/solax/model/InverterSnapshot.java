@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
  * reading, and {@code null} means "this source does not report it" rather than zero.
  */
 @Value
-@Builder
+@Builder(toBuilder = true)
 @Jacksonized
 public class InverterSnapshot {
 

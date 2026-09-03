@@ -72,14 +72,24 @@ public class InverterControlController {
 
         log.info("Dashboard is setting the work mode to {}", target);
 
+        // Read before the write, so the entry can name what the inverter is moving away
+        // from. Without it the work mode band has nothing to colour the stretch before this
+        // change with, and a day that opens with a change from the dashboard opens grey.
+        String previous = inverter.getWorkMode().map(InverterMode::name).orElse(null);
+
         boolean written = inverter.setWorkMode(target);
         // "to" is what the dashboard's work mode chart reads; "mode" is what the sentence
         // above interpolates. Same value, and both are cheap next to guessing either.
-        timeline.record("dashboard", ActionType.WORK_MODE_CHANGE, Message
-                        .key("history.quick.workMode", "Work mode set to " + target)
-                        .with("mode", target.name())
-                        .with("to", target.name())
-                        .build(),
+        Message.Builder entry = Message
+                .key("history.quick.workMode", "Work mode set to " + target)
+                .with("mode", target.name())
+                .with("to", target.name());
+
+        if (previous != null) {
+            entry.with("from", previous);
+        }
+
+        timeline.record("dashboard", ActionType.WORK_MODE_CHANGE, entry.build(),
                 written, "from the dashboard");
 
         return ResponseEntity.ok(written

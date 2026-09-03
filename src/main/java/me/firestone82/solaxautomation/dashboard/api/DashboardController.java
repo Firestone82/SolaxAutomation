@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import me.firestone82.solaxautomation.dashboard.DashboardProperties;
 import me.firestone82.solaxautomation.dashboard.DashboardService;
 import me.firestone82.solaxautomation.dashboard.dto.DashboardDtos.*;
+import me.firestone82.solaxautomation.module.export.ExportProperties;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -23,6 +24,7 @@ public class DashboardController {
 
     private final DashboardService dashboardService;
     private final DashboardProperties properties;
+    private final ExportProperties exportProperties;
 
     /** Static settings the front end reads once on load. */
     @GetMapping("/config")
@@ -33,6 +35,7 @@ public class DashboardController {
                 properties.getRefreshSeconds(),
                 properties.isAllowControl(),
                 properties.getCurrency(),
+                properties.resolvePvPeak(exportProperties.getPower().getMaximum()),
                 getClass().getPackage().getImplementationVersion()
         );
     }

@@ -5,6 +5,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
 import java.nio.file.Path;
+import java.time.Duration;
 
 /**
  * Configuration of the activity history shown on the dashboard.
@@ -26,13 +27,24 @@ public class TimelineProperties {
     private Path file = Path.of("data", "timeline.json");
 
     /**
-     * How many entries survive a restart.
+     * How long an entry is worth keeping at all.
      * <p>
-     * The dashboard shows more than this while the application runs; this is only what is
-     * worth carrying over, so the file stays small enough to rewrite on every event.
+     * The dashboard draws the day behind it out of these entries, so a restart that dropped
+     * everything older than the last handful left the charts and the activity list with holes
+     * that nothing could fill back in. Two days keeps yesterday whole - which is what makes
+     * "yesterday" a filter the activity list can actually offer - without the file growing
+     * into something a Raspberry Pi rewrites slowly.
      */
-    private int persistedEvents = 15;
+    private Duration retention = Duration.ofDays(2);
+
+    /**
+     * Hard cap on how many entries survive a restart, whatever {@link #getRetention()} says.
+     * <p>
+     * A safety valve rather than the usual limit: a module stuck in a loop must not be able
+     * to grow the file without bound.
+     */
+    private int persistedEvents = 500;
 
     /** How many entries are held in memory for the current run. */
-    private int memoryEvents = 500;
+    private int memoryEvents = 1000;
 }

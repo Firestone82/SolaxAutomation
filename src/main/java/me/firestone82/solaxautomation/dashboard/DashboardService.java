@@ -218,8 +218,11 @@ public class DashboardService {
                 .map(DashboardService::toPlannedEntry)
                 .toList();
 
-        // Enough to cover the day behind us on the chart, not only the activity list.
-        List<HistoryEntry> history = timeline.getEvents(300).stream()
+        // Everything the timeline still holds - two days by default. The activity list
+        // filters it down to a day at a time in the browser, and the charts take the part
+        // of it that falls inside the window they draw; both would rather have the whole
+        // retention window than ask the backend again for yesterday.
+        List<HistoryEntry> history = timeline.getEvents().stream()
                 .map(event -> new HistoryEntry(
                         event.at(), event.moduleId(), event.type(), event.summary(),
                         event.messageKey(), event.params(), event.success(),
@@ -274,7 +277,7 @@ public class DashboardService {
             return new SellingState(false, false, false, false, null, null, null, null,
                     "The selling module is not loaded", "plan.notLoaded", Map.of(),
                     inverter.isRemoteControlAvailable(), null,
-                    exportProperties.getPower().getMaximum(), List.of());
+                    dischargeProperties.resolveDischargePower(exportProperties.getPower().getMaximum()), List.of());
         }
 
         DischargeModule module = moduleOpt.get();
@@ -301,7 +304,7 @@ public class DashboardService {
                 module.getLastPlan().reasonParams(),
                 inverter.isRemoteControlAvailable(),
                 module.nextPlanningTime().orElse(null),
-                exportProperties.getPower().getMaximum(),
+                dischargeProperties.resolveDischargePower(exportProperties.getPower().getMaximum()),
                 window
         );
     }
