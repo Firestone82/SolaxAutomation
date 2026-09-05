@@ -58,6 +58,12 @@ public class DashboardController {
         return dashboardService.getWeather();
     }
 
+    /** Current and recent boiler temperature. */
+    @GetMapping("/boiler")
+    public Boiler getBoiler() {
+        return dashboardService.getBoiler();
+    }
+
     /** Planned actions and recent history across all modules. */
     @GetMapping("/timeline")
     public Timeline getTimeline() {

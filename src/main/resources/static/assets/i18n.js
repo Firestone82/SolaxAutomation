@@ -7,7 +7,8 @@ const I18N = (() => {
 
     const dictionaries = {
         en: {
-            'nav.overview': 'Overview',
+            'nav.overview': 'Photovoltaics',
+            'nav.boiler': 'Boiler',
             'nav.modules': 'Modules',
             'a11y.language': 'Language',
 
@@ -75,6 +76,17 @@ const I18N = (() => {
             'prices.sellable': 'Worth selling the battery into',
             'prices.sellableHint': 'Inside the {from}–{to} the planner searches and at or above the {price} {currency}/kWh a sale has to reach. Which of these intervals is armed depends on the peak and on the charge in the battery.',
             'prices.sellThreshold': 'Minimum selling price {price} {currency}/kWh',
+
+            'boiler.current': 'Current temperature',
+            'boiler.lastReading': 'Read at {time}',
+            'boiler.unavailable': 'Sensor unreachable',
+            'boiler.sensor': 'Sensor',
+            'boiler.sensorReal': 'DS18B20',
+            'boiler.sensorSimulated': 'Simulated — no sensor on this machine',
+            'boiler.chartTitle': 'Temperature over time',
+            'boiler.chartExplain': 'Recorded every time the sensor is polled - not a forecast, what the boiler actually measured.',
+            'boiler.hint': 'Last {duration}',
+            'boiler.none': 'No temperature readings yet.',
 
             'weather.title': 'Weather quality',
             'weather.explain': 'Lower is sunnier. The automation compares this value against its thresholds.',
@@ -252,6 +264,15 @@ const I18N = (() => {
             'module.export.description': 'Closes the export limit while the spot price is too low to be worth selling, and throttles it around midday on dull days.',
             'module.weather.name': 'Weather work mode',
             'module.weather.description': 'Switches between feed-in priority and self use based on how sunny the coming hours look, and moves to backup ahead of a thunderstorm.',
+            'module.boiler.name': 'Boiler temperature',
+            'module.boiler.description': "Reads the boiler's DS18B20 sensor and records it for the dashboard's Boiler page.",
+
+            'config.boiler.poll-cron': 'Poll schedule',
+            'config.boiler.poll-cron.desc': 'When the sensor is read',
+            'config.boiler.history-retention': 'History kept',
+            'config.boiler.history-retention.desc': 'How far back the temperature chart reaches',
+            'config.ds18b20.sensor-id': 'Sensor',
+            'config.ds18b20.sensor-id.desc': '1-Wire device id the reading comes from',
             'module.discharge.name': 'Grid selling',
             'module.discharge.description': 'Finds the most valuable quarter-hour window of the day and discharges the battery into the grid through a self-expiring remote control session.',
 
@@ -320,6 +341,8 @@ const I18N = (() => {
             'reason.export.priceTooLowMetered': 'The spot price {price} CZK/kWh is below the {minimum} CZK/kWh exporting is worth it at and the house is on the metered grid, so the limit is closed to {limit} W.',
             'reason.export.priceTooLowSecondSupply': 'The spot price {price} CZK/kWh is below the {minimum} CZK/kWh exporting is worth it at, but the house is on the second supply so the export is not billed — the limit stays open at {limit} W.',
             'reason.export.middayDull': 'It is the midday window and the forecast quality {quality} is at or below {threshold}, so the limit is held down to {limit} W to keep more production in the battery.',
+            'outcome.boiler.reading': 'Boiler at {value} °C',
+            'outcome.boiler.unavailable': 'Sensor unreadable',
             'outcome.weather.skipped': 'Weather check skipped',
             'outcome.weather.noData': 'The forecast or the inverter state is unavailable, so the work mode was left as it is.',
             'outcome.weather.otherMode': 'Nothing to do in {mode}',
@@ -500,7 +523,8 @@ const I18N = (() => {
         },
 
         cs: {
-            'nav.overview': 'Přehled',
+            'nav.overview': 'Fotovoltaika',
+            'nav.boiler': 'Bojler',
             'nav.modules': 'Moduly',
             'a11y.language': 'Jazyk',
 
@@ -568,6 +592,17 @@ const I18N = (() => {
             'prices.sellable': 'Vhodné pro prodej baterie',
             'prices.sellableHint': 'Uvnitř hodin {from}–{to}, které plánovač prohledává, a na minimu {price} {currency}/kWh pro prodej nebo nad ním. Který z těchhle intervalů se naplánuje, závisí na špičce a na nabití baterie.',
             'prices.sellThreshold': 'Minimální cena pro prodej {price} {currency}/kWh',
+
+            'boiler.current': 'Aktuální teplota',
+            'boiler.lastReading': 'Naměřeno {time}',
+            'boiler.unavailable': 'Snímač nedostupný',
+            'boiler.sensor': 'Snímač',
+            'boiler.sensorReal': 'DS18B20',
+            'boiler.sensorSimulated': 'Simulováno — na tomto zařízení není snímač',
+            'boiler.chartTitle': 'Teplota v čase',
+            'boiler.chartExplain': 'Zaznamenáno při každém čtení snímače - žádná předpověď, jde o to, co bojler skutečně naměřil.',
+            'boiler.hint': 'Posledních {duration}',
+            'boiler.none': 'Zatím žádná naměřená data.',
 
             'weather.title': 'Kvalita počasí',
             'weather.explain': 'Nižší hodnota znamená více slunce. Automatika ji porovnává se svými prahy.',
@@ -745,6 +780,16 @@ const I18N = (() => {
             'module.export.description': 'Uzavře limit dodávky, dokud je spotová cena příliš nízká na prodej, a přiškrtí jej kolem poledne za slabého slunce.',
             'module.weather.name': 'Režim podle počasí',
             'module.weather.description': 'Přepíná mezi prioritou dodávky a vlastní spotřebou podle toho, jak slunečné budou další hodiny, a před bouřkou přejde do zálohy.',
+            'module.boiler.name': 'Teplota bojleru',
+            'module.boiler.description': 'Čte snímač DS18B20 na bojleru a ukládá naměřené hodnoty pro kartu Bojler na nástěnce.',
+
+            'config.boiler.poll-cron': 'Rozvrh čtení',
+            'config.boiler.poll-cron.desc': 'Kdy se snímač čte',
+            'config.boiler.history-retention': 'Uchovaná historie',
+            'config.boiler.history-retention.desc': 'Jak daleko do minulosti sahá graf teploty',
+            'config.ds18b20.sensor-id': 'Snímač',
+            'config.ds18b20.sensor-id.desc': 'ID 1-Wire zařízení, ze kterého čtení pochází',
+
             'module.discharge.name': 'Prodej do sítě',
             'module.discharge.description': 'Najde nejcennější čtvrthodinové okno dne a vybije do něj baterii pomocí dálkového řízení, které samo vyprší.',
 
@@ -813,6 +858,8 @@ const I18N = (() => {
             'reason.export.priceTooLowMetered': 'Spotová cena {price} CZK/kWh je pod hranicí {minimum} CZK/kWh a dům je na měřené přípojce, takže se limit uzavírá na {limit} W.',
             'reason.export.priceTooLowSecondSupply': 'Spotová cena {price} CZK/kWh je pod hranicí {minimum} CZK/kWh, ale dům je na druhé přípojce, takže se dodávka neúčtuje — limit zůstává otevřený na {limit} W.',
             'reason.export.middayDull': 'Je polední okno a kvalita předpovědi {quality} je na hodnotě {threshold} nebo nižší, takže je limit přiškrcen na {limit} W, aby víc výroby zůstalo v baterii.',
+            'outcome.boiler.reading': 'Bojler na {value} °C',
+            'outcome.boiler.unavailable': 'Snímač nelze přečíst',
             'outcome.weather.skipped': 'Kontrola počasí přeskočena',
             'outcome.weather.noData': 'Předpověď nebo stav střídače nejsou k dispozici, režim proto zůstal beze změny.',
             'outcome.weather.otherMode': 'V režimu {mode} není co dělat',

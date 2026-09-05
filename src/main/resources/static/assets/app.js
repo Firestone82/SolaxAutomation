@@ -21,6 +21,7 @@
         overview: null,
         prices: null,
         weather: null,
+        boiler: null,
         timeline: null,
         modules: [],
         selling: null,
@@ -256,12 +257,17 @@
             tab.classList.toggle('is-active', tab.dataset.page === page));
 
         el('page-overview').hidden = page !== 'overview';
+        el('page-boiler').hidden = page !== 'boiler';
         el('page-modules').hidden = page !== 'modules';
 
         // A chart drawn while its page was hidden had no width to measure, so it was drawn
         // at the fallback size. Coming back to the page is when its real width exists.
         if (page === 'overview' && state.overview) {
             renderCharts();
+        }
+
+        if (page === 'boiler' && state.boiler) {
+            renderBoiler();
         }
     }
 
@@ -313,6 +319,10 @@
         resizeHandle = setTimeout(() => {
             if (state.page === 'overview' && state.overview) {
                 renderCharts();
+            }
+
+            if (state.page === 'boiler' && state.boiler) {
+                renderBoiler();
             }
 
             renderTimelineChartToggle();
@@ -496,52 +506,55 @@
             );
         }
 
-        container.replaceChildren(...tiles.map(tile => {
-            const node = document.createElement('div');
-            node.className = 'stat';
+        container.replaceChildren(...tiles.map(buildStatTile));
+    }
 
-            const label = document.createElement('span');
-            label.className = 'stat-label';
-            label.textContent = tile.label;
-            node.appendChild(label);
+    /** One stat tile's DOM, shared between the overview and boiler stat grids. */
+    function buildStatTile(tile) {
+        const node = document.createElement('div');
+        node.className = 'stat';
 
-            const value = document.createElement('span');
-            value.className = 'stat-value';
-            value.textContent = tile.value;
+        const label = document.createElement('span');
+        label.className = 'stat-label';
+        label.textContent = tile.label;
+        node.appendChild(label);
 
-            if (tile.unit) {
-                const unit = document.createElement('span');
-                unit.className = 'unit';
-                unit.textContent = tile.unit;
-                value.appendChild(unit);
-            }
+        const value = document.createElement('span');
+        value.className = 'stat-value';
+        value.textContent = tile.value;
 
-            node.appendChild(value);
+        if (tile.unit) {
+            const unit = document.createElement('span');
+            unit.className = 'unit';
+            unit.textContent = tile.unit;
+            value.appendChild(unit);
+        }
 
-            tile.notes.forEach(text => {
-                const note = document.createElement('span');
-                note.className = 'stat-note';
-                note.textContent = text;
-                node.appendChild(note);
-            });
+        node.appendChild(value);
 
-            if (typeof tile.bar === 'number') {
-                const bar = document.createElement('div');
-                bar.className = 'stat-bar';
+        (tile.notes || []).forEach(text => {
+            const note = document.createElement('span');
+            note.className = 'stat-note';
+            note.textContent = text;
+            node.appendChild(note);
+        });
 
-                const fill = document.createElement('i');
-                fill.style.width = Math.max(0, Math.min(100, tile.bar)) + '%';
-                // A tile that names its own colour means the bar is a proportion; without
-                // one it is a level, and a level low enough is worth a warning.
-                fill.style.background = tile.barColour
-                    || (tile.bar < 25 ? 'var(--danger)' : (tile.bar < 50 ? 'var(--warning)' : 'var(--success)'));
+        if (typeof tile.bar === 'number') {
+            const bar = document.createElement('div');
+            bar.className = 'stat-bar';
 
-                bar.appendChild(fill);
-                node.appendChild(bar);
-            }
+            const fill = document.createElement('i');
+            fill.style.width = Math.max(0, Math.min(100, tile.bar)) + '%';
+            // A tile that names its own colour means the bar is a proportion; without
+            // one it is a level, and a level low enough is worth a warning.
+            fill.style.background = tile.barColour
+                || (tile.bar < 25 ? 'var(--danger)' : (tile.bar < 50 ? 'var(--warning)' : 'var(--success)'));
 
-            return node;
-        }));
+            bar.appendChild(fill);
+            node.appendChild(bar);
+        }
+
+        return node;
     }
 
     /**
@@ -847,6 +860,63 @@
     function prettyWeather(code) {
         const words = code.toLowerCase().replace(/_/g, ' ');
         return words.charAt(0).toUpperCase() + words.slice(1);
+    }
+
+    /* ---------------------------------------------------------------- boiler */
+
+    function renderBoilerStats() {
+        const boiler = state.boiler;
+        const container = el('boiler-stat-tiles');
+
+        if (!boiler) {
+            container.replaceChildren();
+            return;
+        }
+
+        const tiles = [];
+
+        tiles.push({
+            label: t('boiler.current'),
+            value: boiler.available ? formatNumber(boiler.currentTemperatureC, 1) : t('common.unknown'),
+            unit: boiler.available ? '°C' : null,
+            notes: [
+                boiler.readAt ? t('boiler.lastReading', {time: formatDateTime(boiler.readAt)}) : null,
+                !boiler.available ? t('boiler.unavailable') : null
+            ]
+        });
+
+        tiles.push({
+            label: t('boiler.sensor'),
+            value: boiler.simulated ? t('boiler.sensorSimulated') : t('boiler.sensorReal'),
+            unit: null,
+            notes: null
+        });
+
+        container.replaceChildren(...tiles.map(buildStatTile));
+    }
+
+    function renderBoiler() {
+        renderBoilerStats();
+
+        const boiler = state.boiler;
+        const history = boiler?.history || [];
+
+        const now = new Date();
+        const start = history.length ? new Date(history[0].at) : new Date(now.getTime() - 3600 * 1000);
+
+        el('boiler-range-hint').textContent = t('boiler.hint', {
+            duration: humanMinutes(Math.round((now - start) / 60000))
+        });
+
+        Charts.temperatureChart(el('boiler-chart'), history, {
+            emptyMessage: t('boiler.none'),
+            start,
+            end: now,
+            tooltip: point => ({
+                title: formatDateTime(point.at),
+                rows: [[t('tooltip.temperature'), `${formatNumber(point.temperatureC, 1)} °C`]]
+            })
+        });
     }
 
     /**
@@ -2133,6 +2203,7 @@
         renderStats();
         renderPrices();
         renderWeather();
+        renderBoiler();
         renderWorkMode();
         renderTimeline();
         renderSelling();
@@ -2163,8 +2234,10 @@
         });
 
         el('stat-tiles').replaceChildren(...block('skeleton-tile', 4));
+        el('boiler-stat-tiles').replaceChildren(...block('skeleton-tile', 2));
         el('price-chart').replaceChildren(...block('skeleton-chart'));
         el('weather-chart').replaceChildren(...block('skeleton-chart'));
+        el('boiler-chart').replaceChildren(...block('skeleton-chart'));
         el('workmode-chart').replaceChildren(...block('skeleton-chart'));
         el('timeline-chart').replaceChildren(...block('skeleton-chart'));
         el('selling-hero').replaceChildren(...block('skeleton-hero'));
@@ -2431,11 +2504,11 @@
 
     async function refresh() {
         try {
-            const [overview, prices, weather, timeline, modules, selling] = await Promise.all([
-                Api.overview(), Api.prices(), Api.weather(), Api.timeline(), Api.modules(), Api.selling()
+            const [overview, prices, weather, boiler, timeline, modules, selling] = await Promise.all([
+                Api.overview(), Api.prices(), Api.weather(), Api.boiler(), Api.timeline(), Api.modules(), Api.selling()
             ]);
 
-            Object.assign(state, {overview, prices, weather, timeline, modules, selling});
+            Object.assign(state, {overview, prices, weather, boiler, timeline, modules, selling});
 
             setConnection(overview.online ? 'status.online' : 'status.offline',
                 overview.online ? 'pill-ok' : 'pill-warn');

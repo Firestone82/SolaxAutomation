@@ -266,6 +266,25 @@ public final class DashboardDtos {
         }
     }
 
+    /** One recorded boiler temperature reading. */
+    public record BoilerReading(LocalDateTime at, double temperatureC) {
+    }
+
+    /** Current and recent boiler temperature, shown on the Boiler page. */
+    public record Boiler(
+            Double currentTemperatureC,
+            LocalDateTime readAt,
+
+            /** False when the sensor has never been read successfully yet. */
+            boolean available,
+
+            /** True when the reading comes from the off-Pi/no-sensor stub rather than real hardware. */
+            boolean simulated,
+
+            List<BoilerReading> history
+    ) {
+    }
+
     /** Static facts the front end needs once, at start-up. */
     /**
      * @param pvPeak production the tile's bar is drawn against, W

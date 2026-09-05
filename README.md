@@ -78,6 +78,7 @@ pick it up. Deleting a module means deleting its package.
 | Export limit | `automation.export` | Closes the export limit while the spot price is too low to be worth selling, and throttles it around midday on dull days. Runs every quarter of an hour, matching how often the price changes. |
 | Weather work mode | `automation.weather` | Chooses between feed-in priority and self use from the forecast, and moves to backup ahead of a thunderstorm. |
 | Grid selling | `automation.discharge` | Finds the most valuable quarter-hour window of the day and sells the battery into it through remote control. |
+| Boiler temperature | `automation.boiler` | Reads the boiler's DS18B20 sensor and keeps a short history of it for the dashboard's own Boiler page. Decides nothing — there is no threshold here, just a temperature to show — so a reading never goes to the shared activity timeline; a row every minute would bury the events that actually matter. |
 
 ### Writing a new module
 
@@ -312,6 +313,14 @@ whether the inverter took it. The weather quality formula sits behind the ⓘ bu
 header rather than taking up space on every visit, and the two thresholds are named in the legend
 instead of being written across the plot.
 
+**Boiler** — its own page between _Photovoltaics_ and _Modules_: the boiler's current temperature, when
+it was last read, whether the sensor is real or the off-Pi/no-sensor stub, and a chart of what it has
+actually measured (`automation.boiler.history-retention`, 48 h by default). Every point on that chart
+already happened — there is no forecast half to it, unlike the weather curve — so the whole line is
+drawn the same way, and the scale is not pinned to zero: a boiler swings a handful of degrees around
+its set point, and a 0–100 axis would flatten that swing into a barely moving line. See the DS18B20
+section below for wiring it up.
+
 **Modules** — two columns of widgets, each split into three panels: status (what the module is and how
 its last run went), configuration (every documented value it reads) and plan (what it will do next).
 A switch disables a module until the next restart. Every card is exactly as tall as its own content:
@@ -478,11 +487,67 @@ interleave. Console output is coloured; `logs/app.log` rotates daily and is kept
 
 ---
 
+## Boiler sensor (DS18B20)
+
+A DS18B20 is a 1-Wire digital thermometer: three wires, no ADC needed, and the Pi's kernel reads it
+as a plain text file once the 1-Wire overlay is on — no native library, which is why
+`Ds18b20Service` is just a file read, the same way `RaspberryPiService` reads
+`/proc/device-tree/model`.
+
+**Wiring** — the sensor has three pins, usually laid out GND / DATA / VDD on the flat side facing you:
+
+```
+DS18B20                              Raspberry Pi (physical pins)
+┌───────────┐
+│  G  D  V  │
+└──┬──┬──┬──┘
+   │  │  └───────────────────────── Pin 1  (3.3V)
+   │  └──────────────┬────────────  Pin 7  (GPIO4 / BCM4)
+   │                  │
+   │            4.7 kΩ resistor
+   │                  │
+   └──────────────────┴──────────── Pin 6  (GND)
+```
+
+The **4.7 kΩ pull-up resistor between DATA and VDD is required** — the 1-Wire bus is open-drain and
+floats without it, and readings will fail their CRC check intermittently or outright. GPIO4 (physical
+pin 7) is the pin Raspberry Pi OS's overlay defaults to; any other GPIO works too, as long as the
+overlay and this sensor agree on it.
+
+**Enable 1-Wire** — add the overlay to `/boot/firmware/config.txt` (`/boot/config.txt` on older
+Raspberry Pi OS releases) and reboot:
+
+```ini
+dtoverlay=w1-gpio,gpiopin=4
+```
+
+`raspi-config` → _Interface Options_ → _1-Wire_ does the same thing without editing the file by hand.
+After the reboot the sensor shows up under `/sys/bus/w1/devices/`:
+
+```bash
+ls /sys/bus/w1/devices/          # 28-0000123456 (the sensor) and one w1_bus_master
+cat /sys/bus/w1/devices/28-*/w1_slave
+4e 01 4b 46 7f ff 0e 10 68 : crc=68 YES
+4e 01 4b 46 7f ff 0e 10 68 t=20500
+```
+
+`YES` is the CRC check passing; `t=20500` is 20.500 °C. That is the whole protocol — `Ds18b20Service`
+reads exactly this file, once per `automation.boiler.poll-cron` (every minute by default).
+
+**Configuration** — `ds18b20.sensor-id` can name the device explicitly (`28-0000123456`); left empty,
+the first `28-*` device found is used, which is all a single-sensor installation needs. With the
+sensor disabled, not present, or the application running somewhere that is not a Raspberry Pi at all,
+`Ds18b20Service` falls back to a simulated reading (a slow drift around a plausible boiler
+temperature) so the Boiler page and its chart still have something to show — the dashboard's sensor
+tile says plainly when a reading is simulated rather than real.
+
+---
+
 ## Prerequisites
 
 **Hardware** — Raspberry Pi 4B, a Solax X3-Hybrid-G4 with Modbus TCP reachable (an RS485→Ethernet
 converter in front of it is fine), optionally a GPIO switch on BCM 17 reporting which supply the house
-is on.
+is on, and optionally a DS18B20 sensor on the boiler (see below).
 
 **Accounts**
 
@@ -541,10 +606,11 @@ sudo systemctl enable --now solax-automation
 ### Running away from the installation
 
 ```bash
-java -jar target/SolaxAutomation-*.jar --solax.modbus.enabled=false --raspberry.enabled=false
+java -jar target/SolaxAutomation-*.jar --solax.modbus.enabled=false --raspberry.enabled=false --ds18b20.enabled=false
 ```
 
-Modbus and the GPIO switch are stubbed out, the dashboard still serves real prices and weather.
+Modbus, the GPIO switch and the boiler sensor are all stubbed out, the dashboard still serves real
+prices and weather.
 
 ---
 
@@ -575,8 +641,9 @@ integration/
   ote/           quarter-hour spot prices
   meteosource/   weather forecast
   raspberry/     GPIO supply switch
+  ds18b20/       1-Wire boiler temperature sensor
 module/
-  battery/ export/ weather/ discharge/     one package per automation
+  battery/ export/ weather/ discharge/ boiler/     one package per automation
 dashboard/       REST API + DTOs; the SPA lives in resources/static
                  (index.html, assets/, plus manifest.webmanifest, sw.js and icons/ for the installable app)
 ```

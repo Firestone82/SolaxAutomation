@@ -37,6 +37,17 @@ raspberry:
   connection-switch-pin: 17
   debounce: 500ms
 
+# DS18B20 1-Wire temperature sensor on the boiler. Needs the kernel's 1-Wire overlay enabled
+# (dtoverlay=w1-gpio in /boot/firmware/config.txt) - see the Boiler section in README.md for
+# the wiring and the overlay.
+ds18b20:
+  enabled: true
+  # Where the kernel exposes 1-Wire devices once w1-gpio/w1-therm are loaded.
+  base-path: /sys/bus/w1/devices
+  # 1-Wire device id, e.g. 28-0000123456. Empty auto-detects the first DS18B20 found -
+  # fine for a single sensor, which is the usual case.
+  sensor-id: ""
+
 # -----------------------------------------------------------------------------
 #  Inverter
 # -----------------------------------------------------------------------------
@@ -381,6 +392,19 @@ automation:
     # inverter discharging until someone notices.
     fallback-to-manual-mode: false
     mode-after-fallback: SELF_USE
+
+  # ---------------------------------------------------------------------------
+  #  Boiler temperature
+  #  Reads the DS18B20 sensor (see the ds18b20 section above) and keeps a short
+  #  history of it for the dashboard's Boiler page. Does not decide anything -
+  #  there is no threshold here, just a temperature to show.
+  # ---------------------------------------------------------------------------
+  boiler:
+    enabled: true
+    # A boiler's temperature moves slowly; once a minute is plenty.
+    poll-cron: "0 * * * * *"
+    # How far back the temperature chart reaches.
+    history-retention: 48h
 
 # -----------------------------------------------------------------------------
 #  Logging

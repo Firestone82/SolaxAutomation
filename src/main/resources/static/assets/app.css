@@ -481,6 +481,18 @@ main {
 .quality-past { fill: var(--text-faint); opacity: .07; pointer-events: none; }
 .quality-now  { stroke: var(--danger); stroke-width: 1.5; stroke-dasharray: 3 3; pointer-events: none; }
 
+/* Boiler temperature curve - warm colour, since every point on it already happened. */
+.temperature-area { fill: var(--warning); opacity: .14; }
+.temperature-line { stroke: var(--warning); stroke-width: 2; fill: none; }
+.temperature-dot  { fill: var(--warning); }
+
+.temperature-marker {
+    stroke: var(--text-faint);
+    stroke-width: 1;
+    stroke-dasharray: 3 3;
+    pointer-events: none;
+}
+
 /* One segment of the work mode band. The colour comes from the mode itself, so only
    the shape and the resting opacity live here. */
 .mode-bar { transition: opacity .1s; }

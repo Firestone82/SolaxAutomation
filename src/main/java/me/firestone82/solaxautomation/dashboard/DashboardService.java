@@ -17,6 +17,7 @@ import me.firestone82.solaxautomation.integration.ote.model.PriceSlot;
 import me.firestone82.solaxautomation.integration.solax.InverterGateway;
 import me.firestone82.solaxautomation.integration.solax.cloud.model.DeviceStatus;
 import me.firestone82.solaxautomation.integration.solax.model.InverterSnapshot;
+import me.firestone82.solaxautomation.module.boiler.BoilerModule;
 import me.firestone82.solaxautomation.module.discharge.ArmedWindow;
 import me.firestone82.solaxautomation.module.discharge.DischargeModule;
 import me.firestone82.solaxautomation.module.discharge.DischargeProperties;
@@ -64,6 +65,7 @@ public class DashboardService {
     private final MeteoSourceService weatherService;
     private final WeatherProperties weatherProperties;
     private final RaspberryPiService raspberryPi;
+    private final BoilerModule boilerModule;
     private final ExportProperties exportProperties;
     private final DischargeProperties dischargeProperties;
     private final ObjectProvider<DischargeModule> dischargeModule;
@@ -207,6 +209,24 @@ public class DashboardService {
                 weatherProperties.getCloudyThreshold(),
                 weatherProperties.getStormThreshold(),
                 qualityFormula()
+        );
+    }
+
+    // ------------------------------------------------------------------ boiler
+
+    public Boiler getBoiler() {
+        Optional<BoilerModule.Reading> current = boilerModule.getCurrentReading();
+
+        List<BoilerReading> history = boilerModule.getHistory().stream()
+                .map(reading -> new BoilerReading(reading.at(), reading.temperatureC()))
+                .toList();
+
+        return new Boiler(
+                current.map(BoilerModule.Reading::temperatureC).orElse(null),
+                current.map(BoilerModule.Reading::at).orElse(null),
+                current.isPresent(),
+                boilerModule.isSensorSimulated(),
+                history
         );
     }
 

@@ -33,7 +33,8 @@
     </div>
 
     <nav class="tabs" role="tablist">
-        <button class="tab" data-page="overview" role="tab" data-i18n="nav.overview">Overview</button>
+        <button class="tab" data-page="overview" role="tab" data-i18n="nav.overview">Photovoltaics</button>
+        <button class="tab" data-page="boiler" role="tab" data-i18n="nav.boiler">Boiler</button>
         <button class="tab" data-page="modules" role="tab" data-i18n="nav.modules">Modules</button>
     </nav>
 
@@ -270,6 +271,23 @@
             </header>
             <ol class="timeline-list" id="timeline-history"></ol>
             <div class="pager" id="timeline-history-pager" hidden></div>
+        </article>
+    </section>
+
+    <!-- ============================================================ BOILER -->
+    <section id="page-boiler" class="page" hidden>
+
+        <div class="grid grid-stats" id="boiler-stat-tiles"></div>
+
+        <article class="card">
+            <header class="card-head">
+                <h2 data-i18n="boiler.chartTitle">Temperature over time</h2>
+                <span class="card-hint" id="boiler-range-hint">—</span>
+            </header>
+            <p class="card-sub" data-i18n="boiler.chartExplain">
+                Recorded every time the sensor is polled - not a forecast, what the boiler actually measured.
+            </p>
+            <div class="chart" id="boiler-chart"></div>
         </article>
     </section>
 

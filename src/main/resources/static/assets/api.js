@@ -38,6 +38,7 @@ const Api = (() => {
         overview: () => request('api/overview'),
         prices:   () => request('api/prices'),
         weather:  () => request('api/weather'),
+        boiler:   () => request('api/boiler'),
         timeline: () => request('api/timeline'),
         modules:  () => request('api/modules'),
         selling:  () => request('api/selling'),

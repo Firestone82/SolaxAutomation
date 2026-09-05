@@ -663,6 +663,137 @@ const Charts = (() => {
         container.replaceChildren(svg);
     }
 
+    /* --------------------------------------------------------- boiler chart */
+
+    /**
+     * Measured boiler temperature over time.
+     * <p>
+     * Unlike the weather curve every point here already happened - there is no forecast half
+     * to shade - so the whole line is drawn the same way. The scale is not pinned to zero: a
+     * boiler swings a handful of degrees around its set point, and a 0-100 axis would flatten
+     * that swing into a barely-moving line.
+     */
+    function temperatureChart(container, points, options = {}) {
+        if (!points || points.length === 0) {
+            empty(container, options.emptyMessage || 'No data');
+            return;
+        }
+
+        const {width, compact} = measure(container);
+        const height = compact ? 200 : 260;
+        const padding = compact
+            ? {top: 12, right: 8, bottom: 20, left: 30}
+            : {top: 16, right: 16, bottom: 24, left: 44};
+
+        const plotWidth = width - padding.left - padding.right;
+        const plotHeight = height - padding.top - padding.bottom;
+
+        const values = points.map(point => point.temperatureC);
+        const rawMin = Math.min(...values);
+        const rawMax = Math.max(...values);
+        // At least 2 degrees of headroom either side, or a nearly flat line reads as noise
+        // hugging the top and bottom of the chart.
+        const margin = Math.max(2, (rawMax - rawMin) * 0.15);
+        const minValue = rawMin - margin;
+        const maxValue = rawMax + margin;
+        const valueSpan = Math.max(0.1, maxValue - minValue);
+
+        const scaleY = value => padding.top + plotHeight - ((value - minValue) / valueSpan) * plotHeight;
+
+        const times = points.map(point => new Date(point.at));
+        const start = options.start ? new Date(options.start) : times[0];
+        const end = options.end ? new Date(options.end) : times[times.length - 1];
+        const span = Math.max(1, end - start);
+
+        const scaleX = at => padding.left + ((at - start) / span) * plotWidth;
+
+        const svg = createSvg(width, height);
+
+        const ticks = compact ? 3 : 4;
+
+        for (let i = 0; i <= ticks; i++) {
+            const value = minValue + (valueSpan * i) / ticks;
+            const y = scaleY(value);
+
+            svg.appendChild(element('line', {
+                class: 'grid-line', x1: padding.left, x2: width - padding.right, y1: y, y2: y
+            }));
+
+            const text = element('text', {class: 'axis-text', x: padding.left - 6, y: y + 3, 'text-anchor': 'end'});
+            text.textContent = value.toFixed(0);
+            svg.appendChild(text);
+        }
+
+        const linePoints = points.map((point, index) => `${scaleX(times[index])},${scaleY(point.temperatureC)}`);
+        const baseline = padding.top + plotHeight;
+
+        svg.appendChild(element('polygon', {
+            class: 'temperature-area',
+            points: `${scaleX(times[0])},${baseline} ${linePoints.join(' ')} ${scaleX(times[times.length - 1])},${baseline}`
+        }));
+
+        svg.appendChild(element('polyline', {class: 'temperature-line', points: linePoints.join(' ')}));
+
+        points.forEach((point, index) => {
+            svg.appendChild(element('circle', {
+                class: 'temperature-dot', cx: scaleX(times[index]), cy: scaleY(point.temperatureC), r: 2.5
+            }));
+        });
+
+        // Hour labels come from the window rather than from the points, so a stretch with no
+        // reading still gets an axis instead of silently closing the gap.
+        const windowHours = Math.max(1, Math.round(span / 3600000));
+        const labelStep = compact
+            ? (windowHours > 26 ? 12 : 6)
+            : (windowHours > 26 ? 6 : 3);
+
+        for (let hour = 0; hour <= windowHours; hour += labelStep) {
+            const at = new Date(start.getTime() + hour * 3600 * 1000);
+            const x = scaleX(at);
+
+            const anchor = x < padding.left + 16 ? 'start'
+                : x > width - padding.right - 16 ? 'end' : 'middle';
+
+            const text = element('text', {
+                class: 'axis-text', x: x, y: height - 6, 'text-anchor': anchor
+            });
+            text.textContent = String(at.getHours()).padStart(2, '0') + ':00';
+            svg.appendChild(text);
+        }
+
+        // hover layer: one column per reading, so the whole strip is hoverable
+        const columnWidth = Math.max(4, plotWidth / Math.max(1, points.length - 1));
+
+        points.forEach((point, index) => {
+            const centre = scaleX(times[index]);
+
+            const marker = element('line', {
+                class: 'temperature-marker',
+                x1: centre, x2: centre, y1: padding.top, y2: baseline, opacity: 0
+            });
+            svg.appendChild(marker);
+
+            const hit = element('rect', {
+                class: 'hit-area',
+                x: centre - columnWidth / 2,
+                y: padding.top,
+                width: columnWidth,
+                height: plotHeight
+            });
+
+            hoverable(
+                hit,
+                () => options.tooltip ? options.tooltip(point, index) : null,
+                () => marker.setAttribute('opacity', '1'),
+                () => marker.setAttribute('opacity', '0')
+            );
+
+            svg.appendChild(hit);
+        });
+
+        container.replaceChildren(svg);
+    }
+
     /* ------------------------------------------------------ timeline chart */
 
     /** The hour {@code date} falls in, as a new Date. */
@@ -1050,5 +1181,5 @@ const Charts = (() => {
     }
 
     /* A re-render throws away the marks, so anything a touch is holding open goes with them. */
-    return {priceChart, weatherChart, timelineChart, workModeChart, hideTooltip: Tooltip.release, COMPACT_WIDTH};
+    return {priceChart, weatherChart, temperatureChart, timelineChart, workModeChart, hideTooltip: Tooltip.release, COMPACT_WIDTH};
 })();

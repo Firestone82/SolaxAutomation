@@ -194,6 +194,23 @@ na zvolenou dobu. Varianta „začít hned“ se řídí hodinami aplikace, ne p
 
 ---
 
+## Bojler — `automation.boiler`
+
+Čte snímač DS18B20 na bojleru (`ds18b20`) a ukládá naměřené hodnoty pro vlastní kartu _Bojler_ na
+nástěnce, mezi _Fotovoltaikou_ a _Moduly_ — aktuální teplotu, kdy byla naměřena, a graf toho, co
+bojler skutečně naměřil za posledních `history-retention` (**48 h**).
+
+Na rozdíl od ostatních modulů tenhle nic nerozhoduje — není tu žádný práh, jen teplota k zobrazení
+— a proto se čtení nezapisují do sdílené historie akcí: řádek každou minutu (`poll-cron`) by tam
+zavalil ty události, na kterých skutečně záleží. Kartu _Bojler_ to nijak neomezuje, protože ta si
+graf staví přímo z historie uchovávané modulem, ne ze sdílené historie akcí.
+
+Bez snímače, s vypnutým `ds18b20.enabled`, nebo mimo Raspberry Pi čte modul místo skutečné hodnoty
+pozvolna kolísající simulaci, aby šla karta i graf předvést na jakémkoli počítači — dlaždice
+snímače na kartě to řekne otevřeně.
+
+---
+
 ## Rychlé akce z nástěnky
 
 Vedle karty prodeje sedí **Rychlé akce** — ruční zásahy pro to, o čem automatika vědět nemůže.
