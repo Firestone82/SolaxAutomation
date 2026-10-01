@@ -13,6 +13,9 @@ import java.time.LocalDateTime;
  * @param manual      {@code true} when a person armed it from the dashboard
  * @param armedAt     when the window was armed
  * @param running     {@code true} once the remote control session has actually started
+ * @param sessionEnd  when the inverter ends the current remote control session on its own,
+ *                    {@code null} until it runs - before {@link #to()} when the battery
+ *                    reaches the reserve first
  */
 public record ArmedWindow(
         LocalDateTime from,
@@ -21,7 +24,8 @@ public record ArmedWindow(
         double revenueCzk,
         boolean manual,
         LocalDateTime armedAt,
-        boolean running
+        boolean running,
+        LocalDateTime sessionEnd
 ) {
 
     public Duration duration() {
@@ -34,7 +38,8 @@ public record ArmedWindow(
         return remaining.isNegative() ? Duration.ZERO : remaining;
     }
 
-    public ArmedWindow started() {
-        return new ArmedWindow(from, to, watts, revenueCzk, manual, armedAt, true);
+    /** The window with a remote control session running until {@code sessionEnd}. */
+    public ArmedWindow started(LocalDateTime sessionEnd) {
+        return new ArmedWindow(from, to, watts, revenueCzk, manual, armedAt, true, sessionEnd);
     }
 }

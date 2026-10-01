@@ -165,8 +165,13 @@ The two numbers are used for different things, and the log says both: the window
 revenue is on the **exported** part alone — what the house eats during the sale is not bought by
 anybody.
 
-At the window's start a remote control session is opened for exactly the window's length. A guard
-checks the battery every `guard-interval` and ends the session early once the reserve is reached. If
+At the window's start a remote control session is opened for the window's length, but never longer
+than the battery lasts above the reserve at the discharge power — so the inverter ends the sale near
+the reserve by itself, even if this application has stopped. A guard reads the battery straight from
+the inverter every `guard-interval` (not from the cached dashboard reading, which lags a refresh
+behind), ends the session once the reserve is reached and retries a stop the inverter refused; when
+the battery gave less than asked and a session runs out with charge left, the guard starts the next
+one. Switching the module off mid-sale does not stop the guard watching the sale already running. If
 the export limit happens to be closed below what the sale means to export — the export module holding
 it down, or a change made by hand — the run logs a warning rather than quietly trickling energy out
 at the limit.

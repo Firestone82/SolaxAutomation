@@ -359,7 +359,9 @@ automation:
     # afternoon with the battery still charging, so a window is always armed on price
     # and simply dropped at its start if the battery did not get there.
     min-battery: 50
-    # Reserve left for the night; the discharge stops here.
+    # Reserve left for the night; the discharge stops here. Each remote control session
+    # is also only as long as the battery lasts above it at discharge-power, so the
+    # inverter ends the sale near the reserve by itself even if this application does not.
     target-battery: 40
     battery-capacity: 11.6
     # Round-trip conversion loss applied when sizing the window, so the plan does not
@@ -374,8 +376,10 @@ automation:
     # is what keeps the extra off the meter, and the battery and inverter cap what
     # can be asked for at all. 0 follows automation.export.power.maximum.
     discharge-power: 4600
-    # How often the battery is checked while a discharge runs.
-    guard-interval: 5m
+    # How often the battery is checked while a discharge runs. Each check reads the
+    # battery from the inverter directly, and whatever it drops between two checks is
+    # how far a sale can run past the reserve - about 0.7 % a minute at 4600 W.
+    guard-interval: 1m
     # Falls back to the persistent MANUAL work mode when remote control is
     # unavailable. Off by default: a crash mid-sale would then leave the
     # inverter discharging until someone notices.

@@ -269,7 +269,8 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
                 plan.revenueCzk(),
                 false,
                 LocalDateTime.now(),
-                false
+                false,
+                null
         ));
 
         return plan;
@@ -312,7 +313,7 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
         log.detail("Power", "{} W", power);
         log.detail("Expected revenue", "{} CZK", round(revenue));
 
-        arm(new ArmedWindow(from, to, power, revenue, true, LocalDateTime.now(), false));
+        arm(new ArmedWindow(from, to, power, revenue, true, LocalDateTime.now(), false, null));
         publishStatus(ModuleState.ACTIVE,
                 Message.key("summary.discharge.manuallyArmed",
                                 String.format(Locale.ROOT, "Manually armed %s-%s", from.toLocalTime(), to.toLocalTime()))
@@ -419,8 +420,13 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
 
     // ------------------------------------------------------------------ execution
 
-    /** Fired by the timer when the armed window opens. */
-    private void startDischarge() {
+    /**
+     * Fired by the timer when the armed window opens.
+     * <p>
+     * Synchronized with {@link #cancelArming(Message)}: a cancel landing between reading the
+     * window and starting the session would otherwise be undone by the start.
+     */
+    private synchronized void startDischarge() {
         run(Message.key("running.discharge.windowOpened", "Selling window opened").build(), () -> {
             ArmedWindow window = armedWindow;
 
@@ -431,7 +437,7 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
                                 "The window was cancelled before it opened, so nothing was sold.").build());
             }
 
-            Optional<Integer> socOpt = inverter.getBatterySoc();
+            Optional<Integer> socOpt = inverter.readBatterySoc();
             if (socOpt.isEmpty()) {
                 return RunOutcome.incomplete(
                         Message.key("outcome.discharge.notStarted", "Sale did not start").build(),
@@ -484,6 +490,16 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
             }
 
             log.detail("Duration", "{} (until {})", humanize(duration), window.to().toLocalTime());
+
+            // The fallback work mode has no length of its own; the guard ends it with the window.
+            Duration session = inverter.isRemoteControlAvailable()
+                    ? sessionLength(window.to(), soc, window.watts())
+                    : duration;
+            if (session.compareTo(duration) < 0) {
+                log.detail("Session", "{} - what {} % lasts above the {} % reserve at {} W, renewed while the battery holds out",
+                        humanize(session), soc, properties.getTargetBattery(), window.watts());
+            }
+
             warnIfExportLimitTooLow(window.watts());
 
             Message detail = Message
@@ -496,7 +512,7 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
                     .with("reserve", properties.getTargetBattery())
                     .build();
 
-            boolean started = startSelling(window.watts(), duration);
+            boolean started = startSelling(window.watts(), session);
             if (!started) {
                 armedWindow = null;
 
@@ -506,7 +522,7 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
                                 "The inverter did not accept the discharge command, so nothing is being sold.").build());
             }
 
-            armedWindow = window.started();
+            armedWindow = window.started(sessionEndFor(session, window.to()));
             log.success("Discharging {} W until {}", window.watts(), window.to().toLocalTime());
             // "sale" brackets the stretch the battery was actually being sold in. The armed
             // window is forgotten the moment it ends, so a sale that already ran is only in
@@ -530,19 +546,34 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
     /**
      * Watches the battery while a discharge runs and stops it as soon as the reserve is hit.
      * <p>
-     * The remote control session would end on its own at the end of the window, but the
-     * battery usually reaches the reserve first - stopping early leaves the reserve intact
-     * for the night.
+     * The battery level is read from the inverter on every check rather than taken from the
+     * cached snapshot - that one is a refresh behind, and at full discharge power a refresh is
+     * a few percent of the battery. The remote control session is only ever as long as the
+     * battery lasts above the reserve (see {@link #sessionLength}), so this is the precise
+     * stop and the inverter is the backstop.
+     * <p>
+     * Not gated on the module being enabled: switching the module off mid-sale stops the next
+     * sale from being planned, never the watch over the one already emptying the battery.
+     * Synchronized with {@link #cancelArming(Message)} so a renewal cannot restart a sale that
+     * was cancelled meanwhile.
      */
-    @Scheduled(fixedDelayString = "${automation.discharge.guard-interval:PT2M}", initialDelay = 60_000)
-    public void guardRunningDischarge() {
+    @Scheduled(fixedDelayString = "${automation.discharge.guard-interval:PT1M}", initialDelay = 60_000)
+    public synchronized void guardRunningDischarge() {
         ArmedWindow window = armedWindow;
 
-        if (!isEnabled() || window == null || !window.running()) {
+        if (window == null || !window.running()) {
             return;
         }
 
         if (LocalDateTime.now().isAfter(window.to())) {
+            // A remote control session ends with the window by itself. The fallback work
+            // mode does not, and with the window forgotten nothing would be left to stop it.
+            if (!inverter.isRemoteControlAvailable() && !stopDischarge("the selling window ended")) {
+                log.error("The inverter did not leave the fallback work mode - trying again in {}",
+                        humanize(properties.getGuardInterval()));
+                return;
+            }
+
             log.info("Selling window {}-{} finished", window.from().toLocalTime(), window.to().toLocalTime());
             armedWindow = null;
             timeline.record(ID, ActionType.REMOTE_CONTROL_EXIT, Message
@@ -559,9 +590,10 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
             return;
         }
 
-        Optional<Integer> socOpt = inverter.getBatterySoc();
+        Optional<Integer> socOpt = inverter.readBatterySoc();
         if (socOpt.isEmpty()) {
-            log.warn("Battery level unavailable while selling; letting the remote control session run to its end");
+            log.warn("Battery level unavailable while selling; the session ends on its own at {} at the latest",
+                    window.sessionEnd().toLocalTime());
             return;
         }
 
@@ -570,6 +602,7 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
                 soc, properties.getTargetBattery(), humanize(window.remaining()));
 
         if (soc > properties.getTargetBattery()) {
+            renewSessionIfRunningOut(window, soc);
             publishStatus(ModuleState.ACTIVE,
                     Message.key("summary.discharge.selling", String.format(Locale.ROOT,
                                     "Selling %d W into the grid", window.watts()))
@@ -590,6 +623,15 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
         log.action("Ending the discharge {} early", humanize(window.remaining()));
 
         boolean stopped = stopDischarge("battery reached the " + properties.getTargetBattery() + "% reserve");
+
+        // A refused stop is tried again at the next check instead of being forgotten with the
+        // window - the reserve depends on it. Only a session already over needs no second try.
+        if (!stopped && LocalDateTime.now().isBefore(window.sessionEnd())) {
+            log.error("The inverter did not accept the stop - trying again in {}",
+                    humanize(properties.getGuardInterval()));
+            return;
+        }
+
         armedWindow = null;
 
         timeline.record(ID, ActionType.REMOTE_CONTROL_EXIT, Message
@@ -606,6 +648,35 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
                         .build());
         publishStatus(ModuleState.IDLE,
                 Message.key("summary.discharge.finishedAtReserve", "Selling finished at the battery reserve").build());
+    }
+
+    /**
+     * Starts the next remote control session when the current one runs out before the window
+     * does and before the guard looks again.
+     * <p>
+     * A session lasts only as long as the battery would at full power, so one running out with
+     * charge still above the reserve means the battery was giving less than that - the sale
+     * carries on from the level it actually reached. If the renewal is refused the session
+     * simply lapses, above the reserve, and the next check tries again.
+     */
+    private void renewSessionIfRunningOut(ArmedWindow window, int soc) {
+        LocalDateTime nextCheck = LocalDateTime.now().plus(properties.getGuardInterval());
+
+        if (!window.sessionEnd().isBefore(window.to()) || window.sessionEnd().isAfter(nextCheck)) {
+            return;
+        }
+
+        Duration session = sessionLength(window.to(), soc, window.watts());
+        log.action("Renewing the remote control session for {} - battery still at {} %, reserve {} %",
+                humanize(session), soc, properties.getTargetBattery());
+
+        if (!inverter.startRemoteDischarge(window.watts(), session)) {
+            log.warn("The inverter did not accept the renewed session - trying again in {}",
+                    humanize(properties.getGuardInterval()));
+            return;
+        }
+
+        armedWindow = window.started(sessionEndFor(session, window.to()));
     }
 
     /**
@@ -689,6 +760,36 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
     }
 
     // ------------------------------------------------------------------ helpers
+
+    /**
+     * How long a remote control session may run from now: to the end of the window, but
+     * never past the time the battery takes to fall from {@code soc} to the reserve at
+     * {@code watts}.
+     * <p>
+     * This is what holds the reserve when nothing here is watching - the application stopped,
+     * the network down, the battery level unreadable. The inverter ends the session by itself,
+     * so the reserve no longer hangs on this side stopping it in time. Worked out at the full
+     * power asked for, the fastest the battery can empty: a battery that gives less only
+     * leaves the session ending above the reserve, and the guard starts the next one.
+     */
+    private Duration sessionLength(LocalDateTime windowEnd, int soc, int watts) {
+        Duration untilWindowEnd = Duration.between(LocalDateTime.now(), windowEnd);
+
+        if (properties.getBatteryCapacity() <= 0 || watts <= 0) {
+            return untilWindowEnd;
+        }
+
+        double kwhAboveReserve = Math.max(0, soc - properties.getTargetBattery()) / 100.0 * properties.getBatteryCapacity();
+        Duration untilReserve = Duration.ofSeconds(Math.round(kwhAboveReserve * 3_600_000 / watts));
+
+        return untilReserve.compareTo(untilWindowEnd) < 0 ? untilReserve : untilWindowEnd;
+    }
+
+    /** When a session started now for {@code session} ends, never past the window. */
+    private static LocalDateTime sessionEndFor(Duration session, LocalDateTime windowEnd) {
+        LocalDateTime end = LocalDateTime.now().plus(session);
+        return end.isBefore(windowEnd) ? end : windowEnd;
+    }
 
     /** {@code search-to} of {@code 00:00} means "search to the end of the day". */
     private LocalTime effectiveSearchTo() {

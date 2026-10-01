@@ -75,7 +75,7 @@ class DischargeStartGateTest {
     @Test
     @DisplayName("sells when the battery reached the threshold")
     void sellsWithEnoughCharge() {
-        when(inverter.getBatterySoc()).thenReturn(Optional.of(85));
+        when(inverter.readBatterySoc()).thenReturn(Optional.of(85));
 
         armNow();
 
@@ -86,7 +86,7 @@ class DischargeStartGateTest {
     @Test
     @DisplayName("sells at exactly the threshold")
     void sellsAtTheThreshold() {
-        when(inverter.getBatterySoc()).thenReturn(Optional.of(80));
+        when(inverter.readBatterySoc()).thenReturn(Optional.of(80));
 
         armNow();
 
@@ -96,11 +96,11 @@ class DischargeStartGateTest {
     @Test
     @DisplayName("drops an automatic window when the battery fell short")
     void dropsAnAutomaticWindowBelowTheThreshold() {
-        when(inverter.getBatterySoc()).thenReturn(Optional.of(79));
+        when(inverter.readBatterySoc()).thenReturn(Optional.of(79));
 
         // The same shape the planner arms: manual = false, and no battery check on the way in.
         LocalDateTime from = LocalDateTime.now().minusMinutes(1);
-        module.arm(new ArmedWindow(from, from.plusHours(1), 3950, 120.0, false, LocalDateTime.now(), false));
+        module.arm(new ArmedWindow(from, from.plusHours(1), 3950, 120.0, false, LocalDateTime.now(), false, null));
 
         verify(inverter, never()).startRemoteDischarge(anyInt(), any());
         assertFalse(module.isDischarging());
@@ -110,7 +110,7 @@ class DischargeStartGateTest {
     @Test
     @DisplayName("a window armed by hand ignores the threshold")
     void manualWindowIgnoresTheThreshold() {
-        when(inverter.getBatterySoc()).thenReturn(Optional.of(45));
+        when(inverter.readBatterySoc()).thenReturn(Optional.of(45));
 
         armNow();
 
@@ -128,7 +128,7 @@ class DischargeStartGateTest {
     @Test
     @DisplayName("a sale brackets itself in the history with a start and an end marker")
     void theSaleBracketsItselfInTheHistory() {
-        when(inverter.getBatterySoc()).thenReturn(Optional.of(85));
+        when(inverter.readBatterySoc()).thenReturn(Optional.of(85));
 
         armNow();
         assertEquals("start", newest(ActionType.GRID_SELL).params().get("sale"));
@@ -148,7 +148,7 @@ class DischargeStartGateTest {
     @Test
     @DisplayName("never sells into the reserve, however the window was armed")
     void neverSellsIntoTheReserve() {
-        when(inverter.getBatterySoc()).thenReturn(Optional.of(40));
+        when(inverter.readBatterySoc()).thenReturn(Optional.of(40));
 
         armNow();
 

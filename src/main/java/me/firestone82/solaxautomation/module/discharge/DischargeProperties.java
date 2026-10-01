@@ -110,8 +110,13 @@ public class DischargeProperties implements ModuleProperties {
      */
     private int dischargePower = 0;
 
-    /** How often the battery level is checked while a discharge is running. */
-    private Duration guardInterval = Duration.ofMinutes(2);
+    /**
+     * How often the battery level is checked while a discharge is running.
+     * <p>
+     * Whatever the battery drops between two checks is how far a sale can run past the
+     * reserve: at 4.6 kW an 11.6 kWh battery loses about 0.7 % a minute.
+     */
+    private Duration guardInterval = Duration.ofMinutes(1);
 
     /**
      * Falls back to the old MANUAL / FORCE_DISCHARGE work mode when remote control is

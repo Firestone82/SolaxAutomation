@@ -22,6 +22,15 @@ public interface InverterGateway {
     /** Battery state of charge, %. */
     Optional<Integer> getBatterySoc();
 
+    /**
+     * Battery state of charge read from the inverter now, past the cached snapshot, %.
+     * <p>
+     * {@link #getBatterySoc()} answers from the last reading and refreshes behind the caller,
+     * which suits the dashboard and nothing that stops the battery at a level: acted on, that
+     * value is always one refresh behind a battery that is being emptied at full power.
+     */
+    Optional<Integer> readBatterySoc();
+
     /** Configured persistent work mode. */
     Optional<InverterMode> getWorkMode();
 

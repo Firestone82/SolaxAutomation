@@ -3,6 +3,7 @@ package me.firestone82.solaxautomation.integration.solax;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import me.firestone82.solaxautomation.integration.solax.cloud.SolaxCloudService;
+import me.firestone82.solaxautomation.integration.solax.cloud.model.BatteryRealtimeData;
 import me.firestone82.solaxautomation.integration.solax.event.WorkModeWritten;
 import me.firestone82.solaxautomation.integration.solax.modbus.ModbusInverterService;
 import me.firestone82.solaxautomation.integration.solax.model.ControlSource;
@@ -212,6 +213,39 @@ public class SolaxInverterGateway implements InverterGateway {
     @Override
     public Optional<Integer> getBatterySoc() {
         return snapshot().map(InverterSnapshot::getBatterySoc);
+    }
+
+    /**
+     * Reads the battery level alone, from the same source a snapshot would take it from.
+     * <p>
+     * Over Modbus that is one register, so it is cheap enough to ask for every minute while a
+     * sale runs. The value read is carried into the cached snapshot too, so the dashboard
+     * does not show a level the selling guard has already acted past.
+     */
+    @Override
+    public Optional<Integer> readBatterySoc() {
+        ControlSource source = properties.getReadSource();
+
+        Optional<Integer> soc = source == ControlSource.CLOUD
+                ? Optional.empty()
+                : modbus().flatMap(ModbusInverterService::getBatterySoc);
+
+        if (soc.isEmpty() && source != ControlSource.MODBUS) {
+            soc = cloud().flatMap(SolaxCloudService::getBatteryData)
+                    .map(BatteryRealtimeData::getBatterySoc)
+                    .map(value -> (int) Math.round(value));
+        }
+
+        soc.ifPresent(this::rememberBatterySoc);
+        return soc;
+    }
+
+    private void rememberBatterySoc(int soc) {
+        InverterSnapshot cached = cachedSnapshot;
+
+        if (cached != null) {
+            cachedSnapshot = cached.toBuilder().batterySoc(soc).build();
+        }
     }
 
     @Override
