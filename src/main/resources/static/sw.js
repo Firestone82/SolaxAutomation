@@ -16,7 +16,7 @@
    Bump this when a file in APP_SHELL changes: the new worker takes the new name,
    fills a fresh cache and deletes every older one on activation.
 */
-const CACHE = 'solax-shell-v10';
+const CACHE = 'solax-shell-v11';
 
 const APP_SHELL = [
     './',

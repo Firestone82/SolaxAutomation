@@ -74,7 +74,71 @@
     <!-- ============================================================ OVERVIEW -->
     <section id="page-overview" class="page">
 
-        <!-- The controls lead: they are what the page is opened for. -->
+        <!--
+            What the day is worth and what the sky will do lead the page: every decision the
+            controls below make - sell now, charge tonight - is read off these two.
+        -->
+        <div class="grid grid-two">
+            <article class="card">
+                <header class="card-head">
+                    <h2 data-i18n="prices.title">Spot price</h2>
+                    <div class="segmented" id="price-day-switch">
+                        <button class="segment is-active" data-day="today" data-i18n="prices.today">Today</button>
+                        <button class="segment" data-day="tomorrow" data-i18n="prices.tomorrow">Tomorrow</button>
+                    </div>
+                </header>
+                <p class="card-sub" id="price-summary"></p>
+                <div class="chart" id="price-chart"></div>
+                <ul class="legend">
+                    <li><i class="swatch swatch-low"></i><span data-i18n="prices.low">Low</span></li>
+                    <li><i class="swatch swatch-medium"></i><span data-i18n="prices.medium">Medium</span></li>
+                    <li><i class="swatch swatch-high"></i><span data-i18n="prices.high">High</span></li>
+                    <li><i class="swatch swatch-selling"></i><span data-i18n="prices.selling">Selling window</span></li>
+                    <!-- What the two automations make of the day. Each names a mark whose
+                         meaning is not self-evident, and each is hidden until its module's
+                         rules are known. -->
+                    <li id="legend-export-blocked" hidden>
+                        <i class="swatch swatch-blocked"></i><span id="legend-export-blocked-text"></span>
+                    </li>
+                    <li id="legend-sellable" hidden>
+                        <i class="swatch swatch-sellable"></i><span id="legend-sellable-text"></span>
+                    </li>
+                    <li id="legend-sell-threshold" hidden>
+                        <i class="swatch line-sell"></i><span id="legend-sell-threshold-text"></span>
+                    </li>
+                </ul>
+            </article>
+
+            <article class="card">
+                <header class="card-head">
+                    <h2 data-i18n="weather.title">Weather quality</h2>
+                    <div class="card-head-actions">
+                        <div class="segmented" id="weather-range">
+                            <button class="segment is-active" data-range="ahead" data-i18n="range.ahead">From now</button>
+                            <button class="segment" data-range="day" data-i18n="range.day">Whole day</button>
+                        </div>
+                        <button type="button" id="weather-info-toggle" class="control icon-button"
+                                aria-expanded="false" aria-controls="weather-info"
+                                data-i18n-title="weather.howCalculated" title="How is this calculated?">i</button>
+                    </div>
+                </header>
+                <p class="card-sub" data-i18n="weather.explain">
+                    Lower is sunnier. The automation compares this value against its thresholds.
+                </p>
+                <div class="chart" id="weather-chart"></div>
+                <p class="chart-note" id="weather-gap" hidden></p>
+                <ul class="legend" id="weather-legend"></ul>
+                <div class="formula" id="weather-info" hidden>
+                    <code id="weather-formula"></code>
+                    <p class="hint" data-i18n="weather.formulaHint">
+                        The weather type contributes its base level (0 for a clear sky, 3–5 for overcast or
+                        rain, 10+ for a thunderstorm) and the cloud cover adds up to 1 more.
+                    </p>
+                </div>
+            </article>
+        </div>
+
+        <!-- Then the controls, which are what the page is opened for. -->
         <div class="grid grid-selling">
             <article class="card">
                 <header class="card-head">
@@ -221,88 +285,10 @@
                 </div>
             </details>
         </article>
+    </section>
 
-
-        <div class="grid grid-two">
-            <article class="card">
-                <header class="card-head">
-                    <h2 data-i18n="prices.title">Spot price</h2>
-                    <div class="segmented" id="price-day-switch">
-                        <button class="segment is-active" data-day="today" data-i18n="prices.today">Today</button>
-                        <button class="segment" data-day="tomorrow" data-i18n="prices.tomorrow">Tomorrow</button>
-                    </div>
-                </header>
-                <p class="card-sub" id="price-summary"></p>
-                <div class="chart" id="price-chart"></div>
-                <ul class="legend">
-                    <li><i class="swatch swatch-low"></i><span data-i18n="prices.low">Low</span></li>
-                    <li><i class="swatch swatch-medium"></i><span data-i18n="prices.medium">Medium</span></li>
-                    <li><i class="swatch swatch-high"></i><span data-i18n="prices.high">High</span></li>
-                    <li><i class="swatch swatch-selling"></i><span data-i18n="prices.selling">Selling window</span></li>
-                    <!-- What the two automations make of the day. Each names a mark whose
-                         meaning is not self-evident, and each is hidden until its module's
-                         rules are known. -->
-                    <li id="legend-export-blocked" hidden>
-                        <i class="swatch swatch-blocked"></i><span id="legend-export-blocked-text"></span>
-                    </li>
-                    <li id="legend-sellable" hidden>
-                        <i class="swatch swatch-sellable"></i><span id="legend-sellable-text"></span>
-                    </li>
-                    <li id="legend-sell-threshold" hidden>
-                        <i class="swatch line-sell"></i><span id="legend-sell-threshold-text"></span>
-                    </li>
-                </ul>
-            </article>
-
-            <article class="card">
-                <header class="card-head">
-                    <h2 data-i18n="weather.title">Weather quality</h2>
-                    <div class="card-head-actions">
-                        <div class="segmented" id="weather-range">
-                            <button class="segment is-active" data-range="ahead" data-i18n="range.ahead">From now</button>
-                            <button class="segment" data-range="day" data-i18n="range.day">Whole day</button>
-                        </div>
-                        <button type="button" id="weather-info-toggle" class="control icon-button"
-                                aria-expanded="false" aria-controls="weather-info"
-                                data-i18n-title="weather.howCalculated" title="How is this calculated?">i</button>
-                    </div>
-                </header>
-                <p class="card-sub" data-i18n="weather.explain">
-                    Lower is sunnier. The automation compares this value against its thresholds.
-                </p>
-                <div class="chart" id="weather-chart"></div>
-                <p class="chart-note" id="weather-gap" hidden></p>
-                <ul class="legend" id="weather-legend"></ul>
-                <div class="formula" id="weather-info" hidden>
-                    <code id="weather-formula"></code>
-                    <p class="hint" data-i18n="weather.formulaHint">
-                        The weather type contributes its base level (0 for a clear sky, 3–5 for overcast or
-                        rain, 10+ for a thunderstorm) and the cloud cover adds up to 1 more.
-                    </p>
-                </div>
-            </article>
-        </div>
-
-        <!--
-            The day's work mode, rebuilt from the changes the modules recorded. It answers
-            the question the stat tile above cannot - not what the inverter is doing now,
-            but when it started doing it, and which module decided that.
-        -->
-        <article class="card">
-            <header class="card-head">
-                <h2 data-i18n="workMode.title">Work mode today</h2>
-                <span class="card-hint" data-i18n="workMode.hint">Since midnight</span>
-            </header>
-            <p class="card-sub" data-i18n="workMode.explain">
-                Built from the recorded changes - the automation's own and the ones made from the
-                SolaX app or the inverter's own panel alike. The thin band underneath is which
-                supply the house was on.
-            </p>
-            <div class="chart" id="workmode-chart"></div>
-            <p class="chart-note" id="workmode-note" hidden></p>
-            <ul class="legend" id="workmode-legend"></ul>
-        </article>
-
+    <!-- ============================================================ HISTORY -->
+    <section id="page-history" class="page" hidden>
         <article class="card">
             <header class="card-head">
                 <h2 data-i18n="timeline.title">Planned actions</h2>
@@ -322,10 +308,7 @@
             <ol class="timeline-list" id="timeline-planned"></ol>
             <div class="pager" id="timeline-planned-pager" hidden></div>
         </article>
-    </section>
 
-    <!-- ============================================================ HISTORY -->
-    <section id="page-history" class="page" hidden>
         <article class="card">
             <header class="card-head">
                 <h2 data-i18n="history.title">Recent activity</h2>

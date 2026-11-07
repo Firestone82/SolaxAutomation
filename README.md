@@ -46,8 +46,8 @@ The inverter is not only this application's to move: the SolaX app, the panel on
 itself and a schedule stored on it can all change the persistent work mode, and none of them say
 so. So the work mode is **read back on a timer** (`solax.control.work-mode-watch`, every minute by
 default) and a mode that moved on its own is recorded in the activity history like any other
-change — filed under _Inverter_ rather than a module, so the day's work mode band shows when it
-happened and the tooltip says who did not do it.
+change — filed under _Inverter_ rather than a module, so the activity list shows when it happened
+and says who did not do it.
 
 Nothing extra is read for this. It looks at the same cached snapshot the dashboard and the modules
 already poll, so the only cost is a Modbus round trip that would have happened anyway.
@@ -204,18 +204,21 @@ battery earns, so they are pinned down rather than only observed in production l
 
 `http://<host>:8080/` — no build step, no CDN, works offline on the Pi.
 
-Two pages: **Overview**, which is the dashboard, and **History**, which is the activity list.
+Two pages: **Overview**, which is the dashboard, and **History**, which is what the modules will do
+and what they did.
 
-**Overview** — the controls first: the selling card and the quick actions, because they are what the
-page is opened for. Then the live tiles — battery/PV/grid/load, work mode, current price, and the
-Raspberry Pi's connection switch (HIGH is the metered grid, LOW the second supply — the tile says
-which, and says plainly when it is the off-Pi stub rather than a pin). Then the **statistics** for the
-last 7, 30 or 90 days (below). Then the day's 96 quarter-hour prices with the armed selling window
-highlighted; the weather quality curve with the thresholds the modules compare against; the day's work
-mode as one band; and a timeline of what every module intends to do and what it already did.
+**Overview** — first the day's 96 quarter-hour prices with the armed selling window highlighted, and
+the weather quality curve with the thresholds the modules compare against: every decision the
+controls make is read off those two. Then the controls — the selling card and the quick actions.
+Then the live tiles — battery/PV/grid/load, work mode, current price, and the Raspberry Pi's
+connection switch (HIGH is the metered grid, LOW the second supply — the tile says which, and says
+plainly when it is the off-Pi stub rather than a pin). Then the **statistics** for the last 7, 30 or
+90 days (below).
 
-**History** — the activity list, with its day filter, _Changes only_ and row count, on a page of its
-own so the overview does not end in a list that grows all day.
+**History** — the planned actions (a timeline of what every module intends to do and what it already
+did, with the list of what is coming) and the activity list, with its day filter, _Changes only_ and
+row count. Neither grows the overview: the plan is long on a busy day and the activity list grows all
+day.
 
 ### Statistics
 
@@ -277,50 +280,6 @@ The wash is where a window *can* be armed, not where one *will* be: which of tho
 actually chosen depends on the peak, the plateau around it and the charge in the battery, and only
 the planner can answer that. The armed window itself keeps its own solid colour on top.
 
-**Work mode today** is the day as two stacked bands, midnight to now, sharing one axis. The upper
-one is the mode the inverter was in — self use green, feed-in priority blue, backup amber, manual
-cyan — with a tick wherever something moved it. The stat tile above says what the mode is; this says when it became that, and
-which module decided so. Hovering a stretch names the module, how long the mode held, and the same
-headline and sentence the activity list shows for that change.
-
-Nothing samples the inverter into a history, so the band is built from the changes on record — the
-automation's own, and the ones somebody made from the SolaX app or the inverter's panel, which the
-work mode watcher notices when it reads the mode back (so their time is right to about a minute).
-What it still cannot know is worth drawing rather than papering over. The mode between two changes
-is whatever the earlier one set. Before the first change of the day it is the mode that change moved
-away from, and a day that opens with a change made from the dashboard — which records no previous
-mode — opens as a grey unknown stretch instead of a guess. With no change recorded at all the mode
-has not moved since before midnight, so the live mode is drawn across the whole day. And a change
-made while nothing was reading the mode back, over a restart or with the inverter unreachable, can
-be placed nowhere in time: when the live mode disagrees with the last change on record, a line under
-the chart says so rather than the band inventing a change at a time nobody knows. The axis always
-spans the full day even though the band stops at now — the empty evening is the point.
-
-**Under it, a thinner band says which supply the house was on** — slate for the metered grid, rose
-for the second supply — built the same way, from the switch's own transitions in the activity
-history, and sharing the axis rather than getting a chart of its own. That is the point of putting
-it there: what the export limit was doing all afternoon only means something next to which supply it
-was exporting into, and reading one band against the other is a glance instead of a comparison. It
-is the more reliable of the two, since every throw of the switch is recorded as it happens; the same
-limits apply to one thrown while the application was not running, and the same line under the chart
-says so. Off a Raspberry Pi the band is simply absent: the stub reports a constant HIGH, and a full
-day of "metered grid" that nothing ever measured would be an invention. Neither band labels itself
-where a stretch is too narrow for the text, which is what the legend under the chart is for — it
-names only what the day actually contains.
-
-**Selling runs on the same band, not beside it.** A sale does not change the work mode — it runs
-through a remote control session and hands the inverter back afterwards — so it is drawn as a
-**ribbon along the bottom of the band** rather than as a row of its own: solid where the battery was
-actually being sold, hollow for a window that is armed but has not started, which is usually out in
-the empty evening and explains what that stretch of axis is waiting for. Hovering it gives the
-window, its power and expected revenue, and how a finished one ended (the window ran out, or the
-battery hit its reserve first).
-
-That ribbon also comes from two places, because neither covers the day on its own: the module forgets
-an armed window the moment it ends, so a sale that already ran is only in the activity history, where
-a start and an end marker bracket it; a window that has not started yet is only in the module, which
-is the one that knows when it intends to run.
-
 The timeline shows every run each module has coming up, not just the next one. Two modules are left
 out of it: the export limit is re-checked every quarter of an hour and the weather work mode every
 hour, nearly always with the same outcome, and 92 identical rows bury the handful that say something.
@@ -368,7 +327,7 @@ window are dropped when the file is read, so an application that was off for a w
 back with a week-old "recent activity". It is still a convenience for the dashboard, not an audit
 log — the rolling log files remain the durable record.
 
-All four charts are hoverable. A price interval reports its exact price in both currencies, how it
+Every chart is hoverable. A price interval reports its exact price in both currencies, how it
 compares with that day's average and, where it falls into one of the two bands, the rule that put it
 there; a forecast hour reports its quality, the band that quality falls into, cloud cover and
 temperature, and says when it is already behind us; a planned action is titled by its kind and the
@@ -413,7 +372,7 @@ instead of three times. It is split the way the commands themselves are:
   the mark moves the moment a change is accepted rather than on the next reading — a successful write
   is carried straight into the cached snapshot, since the value written is the value the inverter now
   has and there is nothing to wait for. A change made here also records which mode it moved away
-  from, so the work mode band can colour the stretch before it instead of opening the day grey.
+  from, so the activity list can say what it replaced.
 - **Remote control** — _Charge from grid_, _Sell to grid_ (the same dialog the selling card opens) and
   _Exit remote control_. These hand the inverter back on their own, even if this application stops;
   the work mode is left alone. They need the SolaX Cloud connection, and say so plainly when it is

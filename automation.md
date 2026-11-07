@@ -214,7 +214,7 @@ Nic se neplánuje ani nepamatuje:
 - **Režim střídače** (_Vlastní spotřeba_, _Priorita dodávky_, _Záloha_) — trvalý. Přežije restart
   a modul jej může při dalším běhu opět změnit. Aktuální režim je na tlačítkách zvýrazněný a přepne
   se hned po přijetí příkazu, ne až s dalším čtením střídače; změna si navíc zapíše i režim, ze
-  kterého se přepínalo, takže pruh _Režim střídače dnes_ má čím obarvit úsek před ní.
+  kterého se přepínalo, takže historie umí říct, co nahradila.
 - **Dálkové řízení** (_Nabít ze sítě_, _Prodat do sítě_, _Ukončit dálkové řízení_) — střídač se sám
   vrátí do svého režimu, i kdyby tahle aplikace spadla. Vyžaduje připojení k SolaX Cloud.
   _Ukončit dálkové řízení_ je aktivní jen tehdy, když nějaká relace opravdu běží; řádek pod kartou
@@ -244,11 +244,8 @@ Stav GPIO vstupu (BCM 17) je vidět v dlaždicích na přehledu: _Měřená sí�
 při LOW. Mimo Raspberry Pi, nebo s `raspberry.enabled: false`, se čte záskok hlásící trvale HIGH —
 dlaždice to napíše, aby se náhražka nepletla s měřením.
 
-Každé přehození přepínače se navíc zapisuje do historie, takže průběh dne se kreslí jako tenký pruh
-pod pruhem režimu střídače (graf _Režim střídače dnes_) — obojí na jedné časové ose, protože co
-dělal limit dodávky odpoledne dává smysl až vedle toho, do které přípojky se v tu chvíli dodávalo.
-Se záskokem místo skutečného GPIO se pruh nekreslí vůbec: celý den „měřené sítě“, který nikdo
-nezměřil, by byl výmysl.
+Každé přehození přepínače se navíc zapisuje do historie (stránka _Historie_), takže je dohledatelné,
+kdy se přípojka měnila.
 
 ---
 
@@ -260,8 +257,7 @@ i plánem uloženým v něm — a nic z toho se sem neohlásí. Pracovní režim
 
 > **POKUD** střídač hlásí jiný režim, než jaký měl při minulém čtení,
 > **a** není to režim, který aplikace sama krátce předtím zapsala
-> **PROVEĎ:** zapiš změnu do historie pod zdroj _Střídač_ — objeví se v _Poslední aktivitě_
-> i v pruhu _Režim střídače dnes_.
+> **PROVEĎ:** zapiš změnu do historie pod zdroj _Střídač_ — objeví se v _Poslední aktivitě_.
 
 Nic navíc se kvůli tomu nečte: kontrola se dívá na tentýž uložený snímek, který stejně obsluhuje
 nástěnku i moduly.
@@ -296,7 +292,8 @@ V hlavičce jsou i dva filtry, obojí zapamatované v prohlížeči: **Dnes / V�
 přepočítává každou čtvrthodinu a skoro vždy vyjde „není co dělat“, což je 68 řádků denně, pod kterými
 se ztratí těch pár, které něco říkají. **Neúspěšná** kontrola zůstane vidět vždycky.
 
-Tytéž záznamy kreslí i graf **Plánovaných akcí**, když se přepne na _Celý den_: hodiny před
+Na stejné stránce _Historie_ jsou i **Plánované akce**. Tytéž záznamy kreslí jejich graf, když se
+přepne na _Celý den_: hodiny před
 aktuálním časem se doplní tím, co doopravdy proběhlo, na řádku svého modulu a potlačeně, aby plán
 zůstal to první, co je vidět. Neúspěšný běh je červený. Graf **Kvality počasí** se přepíná stejně;
 hodiny, které už proběhly, se ukládají průběžně do `data/weather-history.json`, protože předpověď

@@ -27,13 +27,6 @@
     --sell-soft: #ede9fe;
     --charge: #0891b2;
 
-    /* The connection switch, kept out of the mode palette: which supply the house is on is
-       a different question from what the inverter is doing, and the band below the work
-       mode has to read as such. Slate is the metered grid, the ordinary case; rose is the
-       second supply, where export never reaches the meter. */
-    --supply-metered: #475569;
-    --supply-second: #be185d;
-
     --price-low: #22c55e;
     --price-medium: #eab308;
     --price-high: #ef4444;
@@ -75,9 +68,6 @@
     --sell: #a78bfa;
     --sell-soft: #4c1d95;
     --charge: #22d3ee;
-
-    --supply-metered: #94a3b8;
-    --supply-second: #f472b6;
 
     --price-low: #4ade80;
     --price-medium: #fbbf24;
@@ -463,48 +453,6 @@ main {
 /* The hours already behind us, on the weather curve. */
 .quality-past { fill: var(--text-faint); opacity: .07; pointer-events: none; }
 .quality-now  { stroke: var(--danger); stroke-width: 1.5; stroke-dasharray: 3 3; pointer-events: none; }
-
-/* One segment of the work mode band. The colour comes from the mode itself, so only
-   the shape and the resting opacity live here. */
-.mode-bar { transition: opacity .1s; }
-
-/* An unknown stretch is a wash rather than a colour: it is the absence of knowledge,
-   not a fourth mode. */
-.mode-bar.is-unknown { fill: var(--text-faint); }
-
-.mode-label {
-    fill: var(--surface);
-    font-size: 11px;
-    font-family: var(--font);
-    font-weight: 600;
-    pointer-events: none;
-}
-
-/* A stretch where something ran on top of the work mode rather than instead of it -
-   a sale into the grid, which leaves the mode where it was. A ribbon along the bottom
-   of the band, so the mode underneath stays readable. */
-.mode-overlay {
-    fill: var(--sell);
-    stroke: var(--sell);
-    stroke-width: 1;
-    transition: opacity .1s;
-}
-
-/* Armed but not started: hollow, because nothing has been sold yet. */
-.mode-overlay.is-pending {
-    fill: var(--sell);
-    fill-opacity: .2;
-}
-
-.mode-overlay.is-hovered { opacity: 1; stroke-width: 2; }
-
-/* Where a module actually moved the mode, as opposed to where the day started. */
-.mode-change {
-    stroke: var(--text);
-    stroke-width: 1.5;
-    opacity: .55;
-    pointer-events: none;
-}
 
 .timeline-track { fill: var(--surface-alt); }
 .timeline-label { fill: var(--text-muted); font-size: 10px; font-family: var(--font); }
