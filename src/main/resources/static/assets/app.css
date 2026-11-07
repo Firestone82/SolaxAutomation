@@ -483,6 +483,22 @@ main {
 
 /* -------------------------------------------------------------- statistics */
 
+/* The month browser beside the range switch: back a month, pick one, forward a month. */
+.month-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.month-nav .control { min-width: 9.5em; }
+
+/* While a rolling range is on screen, the month in the list is not what is shown - it steps
+   back until it is used, but stays one press away. */
+.month-nav.is-idle .control {
+    color: var(--text-muted);
+    border-color: var(--border);
+}
+
 /* Saturday and Sunday, so the rhythm of a week reads at a glance. */
 .day-weekend { fill: var(--text-faint); opacity: .07; pointer-events: none; }
 

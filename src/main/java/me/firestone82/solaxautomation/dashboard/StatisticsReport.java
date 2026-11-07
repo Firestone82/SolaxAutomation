@@ -28,6 +28,48 @@ public final class StatisticsReport {
     private StatisticsReport() {
     }
 
+    /** The days a statistics view covers, both inclusive. */
+    public record Period(LocalDate from, LocalDate to) {
+    }
+
+    /**
+     * Resolves what a request asked for into the days that can actually be shown.
+     * <p>
+     * An explicit {@code from}/{@code to} is a chosen period - a calendar month browsed back
+     * to - and is clipped to what is kept: nothing before the retention window, nothing after
+     * today. Without one, the view is the last {@code days} days ending today. Either way the
+     * result is never empty and never inverted, so a hand-typed URL cannot break the page.
+     *
+     * @param from          first day asked for, or {@code null}
+     * @param to            last day asked for, or {@code null} for today
+     * @param days          length of the rolling view when no {@code from} is given
+     * @param today         the day it is now
+     * @param retentionDays how many days back are kept
+     */
+    public static Period period(LocalDate from, LocalDate to, int days, LocalDate today, int retentionDays) {
+        int kept = Math.max(1, retentionDays);
+        LocalDate oldest = today.minusDays(kept - 1L);
+
+        LocalDate end = to == null || to.isAfter(today) ? today : to;
+        if (end.isBefore(oldest)) {
+            end = oldest;
+        }
+
+        LocalDate start = from != null
+                ? from
+                : end.minusDays(Math.max(1, Math.min(days, kept)) - 1L);
+
+        if (start.isBefore(oldest)) {
+            start = oldest;
+        }
+
+        if (start.isAfter(end)) {
+            start = end;
+        }
+
+        return new Period(start, end);
+    }
+
     public static Statistics build(List<DayStatistics> recorded, LocalDate from, LocalDate to,
                                    LocalDate collectingSince, int retentionDays, String currency) {
         Map<LocalDate, DayStatistics> byDate = new LinkedHashMap<>();

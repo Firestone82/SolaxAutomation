@@ -316,7 +316,9 @@ které ho střídač nahlásil, a co odešlo během prodeje, se počítá zvlá�
 spotovou cenu bez distribučních poplatků — odhad tržní hodnoty, ne vyúčtování. Den, jehož první
 měření přišlo dlouho po půlnoci (první den, restart), má peníze označené jako částečné.
 
-Na přehledu je za posledních 7, 30 nebo 90 dní: dlaždice se součty, energie po dnech, peníze po dnech
+Na přehledu se volí posledních 7, 30 nebo 90 dní, nebo **kalendářní měsíc**: šipka ‹ vrátí o měsíc
+zpět (z klouzavého pohledu rovnou na minulý měsíc), › zase dopředu a ze seznamu jde vybrat kterýkoli
+měsíc, za který něco zaznamenáno je. Aktuální měsíc běží od 1. do dneška. Zobrazuje se: dlaždice se součty, energie po dnech, peníze po dnech
 (příjem nad osou, náklady pod ní, čárka = čistý výsledek), rozsah nabití baterie po dnech, čas v
 jednotlivých režimech a rozbalovací tabulka všech dní. Energie a peníze potřebují připojení k SolaX
 Cloudu; samotný Modbus je nehlásí.

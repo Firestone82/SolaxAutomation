@@ -320,18 +320,18 @@ public class DashboardService {
     // ------------------------------------------------------------------ statistics
 
     /**
-     * The last {@code days} days, today included, as the statistics section draws them.
+     * Statistics for a chosen period - {@code from} to {@code to}, such as a calendar month
+     * browsed back to - or, without one, for the last {@code days} days, today included.
      * Asking for more than is kept returns what is kept.
      */
-    public Statistics getStatistics(int days) {
-        int span = Math.max(1, Math.min(days, statisticsService.getRetentionDays()));
-        LocalDate to = LocalDate.now();
-        LocalDate from = to.minusDays(span - 1L);
+    public Statistics getStatistics(LocalDate from, LocalDate to, int days) {
+        StatisticsReport.Period period = StatisticsReport.period(
+                from, to, days, LocalDate.now(), statisticsService.getRetentionDays());
 
         return StatisticsReport.build(
-                statisticsService.getDays(from, to),
-                from,
-                to,
+                statisticsService.getDays(period.from(), period.to()),
+                period.from(),
+                period.to(),
                 statisticsService.getCollectingSince().orElse(null),
                 statisticsService.getRetentionDays(),
                 dashboardProperties.getCurrency()

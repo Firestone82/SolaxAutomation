@@ -7,9 +7,11 @@ import me.firestone82.solaxautomation.dashboard.DashboardService;
 import me.firestone82.solaxautomation.dashboard.dto.DashboardDtos.*;
 import me.firestone82.solaxautomation.module.export.ExportProperties;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -65,12 +67,17 @@ public class DashboardController {
     }
 
     /**
-     * Daily totals for the last {@code days} days, today included - energy, money at the spot
-     * price, the battery's range and the time spent in each work mode.
+     * Daily totals - energy, money at the spot price, the battery's range and the time spent
+     * in each work mode - either for a chosen period ({@code from}/{@code to} as ISO dates,
+     * e.g. a calendar month) or for the last {@code days} days, today included.
      */
     @GetMapping("/statistics")
-    public Statistics getStatistics(@RequestParam(defaultValue = "30") int days) {
-        return dashboardService.getStatistics(days);
+    public Statistics getStatistics(
+            @RequestParam(defaultValue = "30") int days,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        return dashboardService.getStatistics(from, to, days);
     }
 
     /** Everything about every module: configuration, health and what it plans to do. */

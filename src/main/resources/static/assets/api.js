@@ -41,7 +41,8 @@ const Api = (() => {
         timeline: () => request('api/timeline'),
         modules:  () => request('api/modules'),
         selling:  () => request('api/selling'),
-        statistics: days => request(`api/statistics?days=${encodeURIComponent(days)}`),
+        /** query: {days} for the last N days, or {from, to} as ISO dates for a chosen period. */
+        statistics: query => request('api/statistics?' + new URLSearchParams(query)),
 
         setModuleEnabled: (id, value) =>
             request(`api/modules/${encodeURIComponent(id)}/enabled?value=${value}`, {method: 'POST'}),

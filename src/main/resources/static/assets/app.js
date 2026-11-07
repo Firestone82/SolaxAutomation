@@ -26,8 +26,11 @@
         selling: null,
         statistics: null,
 
-        // How many days back the statistics section looks.
-        statsDays: 30,
+        // What the statistics section shows: the last 7, 30 or 90 days, or a calendar month.
+        statsRange: '30',
+
+        // The month browsed to, 'YYYY-MM', while statsRange is 'month'.
+        statsMonth: null,
 
         priceDay: 'today',
         page: 'overview',
@@ -1540,28 +1543,162 @@
     /** Money in whole units - the spot valuation is an estimate, the halíře would be noise. */
     const money = value => hasValue(value) ? formatNumber(value, 0) : '—';
 
-    function storedStatsDays() {
-        const stored = Number(localStorage.getItem(STORAGE_STATS_DAYS));
-        return STATS_RANGES.includes(stored) ? stored : 30;
+    /**
+     * The stored choice: one of the rolling ranges, or 'month'. Only the kind of view is
+     * remembered, not which month - coming back a week later should not open on a month
+     * browsed to long ago, so the month always starts out as the current one.
+     */
+    function storedStatsRange() {
+        const stored = localStorage.getItem(STORAGE_STATS_DAYS);
+        return stored === 'month' || STATS_RANGES.includes(Number(stored)) ? stored : '30';
     }
 
+    const pad2 = n => String(n).padStart(2, '0');
+
+    /** 'YYYY-MM' of a date, in local time. */
+    function monthKey(date) {
+        return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}`;
+    }
+
+    /** The month {@code delta} months away from 'YYYY-MM'. */
+    function shiftMonth(key, delta) {
+        const [year, month] = key.split('-').map(Number);
+        return monthKey(new Date(year, month - 1 + delta, 1));
+    }
+
+    /** "Listopad 2026" - the month's own name, capitalised for a heading. */
+    function monthLabel(key) {
+        const [year, month] = key.split('-').map(Number);
+        const text = new Date(year, month - 1, 1).toLocaleDateString(locale(), {month: 'long', year: 'numeric'});
+        return text.charAt(0).toUpperCase() + text.slice(1);
+    }
+
+    /**
+     * Every month there can be anything to show for, newest first: from the month recording
+     * started in - or the oldest still kept, if that is later - to this one.
+     */
+    function availableMonths() {
+        const current = monthKey(new Date());
+        const stats = state.statistics;
+
+        if (!stats?.collectingSince) {
+            return [current];
+        }
+
+        const kept = new Date();
+        kept.setDate(kept.getDate() - (stats.retentionDays || 400) + 1);
+
+        const since = stats.collectingSince.slice(0, 7);
+        const oldest = since > monthKey(kept) ? since : monthKey(kept);
+
+        const months = [];
+        for (let key = current; key >= oldest; key = shiftMonth(key, -1)) {
+            months.push(key);
+        }
+
+        return months;
+    }
+
+    /** What to ask the backend for: a calendar month by its first and last day, or the last N days. */
+    function statsQuery() {
+        if (state.statsRange !== 'month') {
+            return {days: state.statsRange};
+        }
+
+        const [year, month] = state.statsMonth.split('-').map(Number);
+        const last = new Date(year, month, 0).getDate();
+
+        return {from: `${state.statsMonth}-01`, to: `${state.statsMonth}-${pad2(last)}`};
+    }
+
+    /**
+     * The range switch and the month browser beside it. The browser is always there, so going
+     * back a month is one press from any view; while a rolling range is shown it steps back
+     * to its quieter look, because the month in it is not what is on screen.
+     */
     function markStatsRange() {
         document.querySelectorAll('#stats-range .segment').forEach(button =>
-            button.classList.toggle('is-active', Number(button.dataset.days) === state.statsDays));
+            button.classList.toggle('is-active', button.dataset.days === state.statsRange));
+
+        const months = availableMonths();
+        const select = el('stats-month');
+        const browsing = state.statsRange === 'month';
+        const shown = browsing ? state.statsMonth : monthKey(new Date());
+
+        // Rebuilt only when the list itself changed, so an open dropdown is not yanked shut
+        // by a refresh, and relabelled when the language changes.
+        const signature = I18N.language + '|' + months.join(',');
+
+        if (select.dataset.signature !== signature) {
+            select.replaceChildren(...months.map(key => {
+                const option = document.createElement('option');
+                option.value = key;
+                option.textContent = monthLabel(key);
+                return option;
+            }));
+            select.dataset.signature = signature;
+        }
+
+        select.value = months.includes(shown) ? shown : months[0];
+        el('stats-month-nav').classList.toggle('is-idle', !browsing);
+
+        // From a rolling view the arrow goes to last month; inside a month, to the one before.
+        const back = browsing ? shiftMonth(state.statsMonth, -1) : shiftMonth(monthKey(new Date()), -1);
+        el('stats-month-prev').disabled = !months.includes(back);
+        el('stats-month-next').disabled = !browsing || state.statsMonth >= months[0];
+
+        // The arrows carry no words of their own, so a screen reader gets them in the page's language.
+        el('stats-month-prev').setAttribute('aria-label', t('stats.prevMonth'));
+        el('stats-month-next').setAttribute('aria-label', t('stats.nextMonth'));
     }
 
-    async function setStatsDays(days) {
-        state.statsDays = days;
-        localStorage.setItem(STORAGE_STATS_DAYS, String(days));
+    async function loadStatistics() {
         markStatsRange();
 
         try {
-            state.statistics = await Api.statistics(days);
+            state.statistics = await Api.statistics(statsQuery());
         } catch (error) {
             console.warn('Statistics unavailable', error);
         }
 
         renderStatistics();
+    }
+
+    function setStatsRange(range) {
+        state.statsRange = range;
+        localStorage.setItem(STORAGE_STATS_DAYS, range);
+
+        if (range === 'month' && !state.statsMonth) {
+            state.statsMonth = monthKey(new Date());
+        }
+
+        loadStatistics();
+    }
+
+    function setStatsMonth(key) {
+        state.statsMonth = key;
+        setStatsRange('month');
+    }
+
+    /** One month back - or, from a rolling view, last month. */
+    function previousStatsMonth() {
+        const from = state.statsRange === 'month' ? state.statsMonth : monthKey(new Date());
+        setStatsMonth(shiftMonth(from, -1));
+    }
+
+    function nextStatsMonth() {
+        if (state.statsRange === 'month') {
+            setStatsMonth(shiftMonth(state.statsMonth, 1));
+        }
+    }
+
+    /** The period on screen, in words: "Listopad 2026", or "9. 10. – 7. 11." for a rolling view. */
+    function statsPeriodLabel(stats) {
+        if (state.statsRange === 'month' && state.statsMonth) {
+            return monthLabel(state.statsMonth);
+        }
+
+        return `${formatDay(stats.from)} – ${formatDay(stats.to)}`;
     }
 
     /** "3 Nov", or "Mon 3 Nov" with the weekday. */
@@ -1595,7 +1732,8 @@
             return;
         }
 
-        const parts = [t('stats.since', {
+        const parts = [t('stats.periodSummary', {
+            period: statsPeriodLabel(stats),
             date: formatDay(stats.collectingSince),
             recorded: stats.totals.recordedDays,
             days: stats.days.length
@@ -2236,7 +2374,7 @@
                 Api.overview(), Api.prices(), Api.weather(), Api.timeline(), Api.selling(),
                 // The statistics are a section of the page, not the page: failing to load them
                 // keeps what was shown last rather than taking the whole refresh down.
-                Api.statistics(state.statsDays).catch(error => {
+                Api.statistics(statsQuery()).catch(error => {
                     console.warn('Statistics unavailable', error);
                     return state.statistics;
                 })
@@ -2320,11 +2458,20 @@
         el('timeline-chart-toggle').addEventListener('click', toggleTimelineChart);
         renderTimelineChartToggle();
 
-        state.statsDays = storedStatsDays();
+        state.statsRange = storedStatsRange();
+        state.statsMonth = monthKey(new Date());
         markStatsRange();
 
         document.querySelectorAll('#stats-range .segment').forEach(button =>
-            button.addEventListener('click', () => setStatsDays(Number(button.dataset.days))));
+            button.addEventListener('click', () => {
+                // A rolling range always ends today; the month browser starts over from this month.
+                state.statsMonth = monthKey(new Date());
+                setStatsRange(button.dataset.days);
+            }));
+
+        el('stats-month').addEventListener('change', event => setStatsMonth(event.target.value));
+        el('stats-month-prev').addEventListener('click', previousStatsMonth);
+        el('stats-month-next').addEventListener('click', nextStatsMonth);
 
         // The table is only built while it is open, so opening it has to build it.
         el('stats-details').addEventListener('toggle', () => {

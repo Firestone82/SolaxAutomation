@@ -250,8 +250,17 @@ The section shows:
 - **Daily breakdown** — every recorded day in a table, newest first, with totals; built only while
   it is open.
 
+**Which days.** The switch picks the last 7, 30 or 90 days, ending today. Beside it is a **month
+browser**: ‹ goes back a calendar month (from a rolling view, to last month), › forward again, and the
+list jumps straight to any month there is something recorded for — back to the month recording began,
+or the oldest month still within `retention`. The current month runs from the 1st to today. Which
+kind of view is remembered per browser; the month browsed to is not, so the page always opens on the
+present. The line under the heading names the period on screen and how many of its days have data.
+The API takes either shape: `GET /api/statistics?days=30` or
+`GET /api/statistics?from=2026-10-01&to=2026-10-31`, clipped to what is kept and never past today.
+
 Weekends get a faint wash and today, still running, a faint outline; hovering any day gives every
-number recorded for it. The range is remembered per browser. Consumption is the energy balance
+number recorded for it. Consumption is the energy balance
 (production + import + battery out − export − battery in), and the energies and money need the SolaX
 Cloud connection — Modbus alone reports neither, so without the cloud only the battery, production
 peak and work mode time are recorded. The file is rewritten at most every `persist-interval` (15 min),

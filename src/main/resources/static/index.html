@@ -219,10 +219,21 @@
         <article class="card">
             <header class="card-head">
                 <h2 data-i18n="stats.title">Statistics</h2>
-                <div class="segmented" id="stats-range">
-                    <button class="segment" data-days="7" data-i18n="stats.range7">7 days</button>
-                    <button class="segment is-active" data-days="30" data-i18n="stats.range30">30 days</button>
-                    <button class="segment" data-days="90" data-i18n="stats.range90">90 days</button>
+                <div class="card-head-actions">
+                    <div class="segmented" id="stats-range">
+                        <button class="segment" data-days="7" data-i18n="stats.range7">7 days</button>
+                        <button class="segment is-active" data-days="30" data-i18n="stats.range30">30 days</button>
+                        <button class="segment" data-days="90" data-i18n="stats.range90">90 days</button>
+                    </div>
+                    <!-- A calendar month, browsed a month at a time or picked from the list. -->
+                    <div class="month-nav" id="stats-month-nav">
+                        <button type="button" class="button button-small" id="stats-month-prev"
+                                data-i18n-title="stats.prevMonth" title="Previous month" aria-label="Previous month">‹</button>
+                        <label class="visually-hidden" for="stats-month" data-i18n="stats.month">Month</label>
+                        <select id="stats-month" class="control"></select>
+                        <button type="button" class="button button-small" id="stats-month-next"
+                                data-i18n-title="stats.nextMonth" title="Next month" aria-label="Next month">›</button>
+                    </div>
                 </div>
             </header>
             <p class="card-sub" id="stats-sub"></p>
