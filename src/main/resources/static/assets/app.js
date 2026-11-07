@@ -15,6 +15,7 @@
     const STORAGE_TIMELINE_RANGE = 'solax.timelineRange';
     const STORAGE_WEATHER_RANGE = 'solax.weatherRange';
     const STORAGE_TIMELINE_CHART = 'solax.timelineChart';
+    const STORAGE_STATS_DAYS = 'solax.statisticsDays';
 
     const state = {
         config: {refreshSeconds: 30, allowControl: true, currency: 'CZK', defaultLanguage: 'en', defaultTheme: 'system'},
@@ -22,8 +23,12 @@
         prices: null,
         weather: null,
         timeline: null,
-        modules: [],
         selling: null,
+        statistics: null,
+
+        // How many days back the statistics section looks.
+        statsDays: 30,
+
         priceDay: 'today',
         page: 'overview',
         theme: 'system',
@@ -64,20 +69,6 @@
 
     /** Module name/description, translated when the dashboard knows the module. */
     const moduleText = (id, field, fallback) => I18N.message(`module.${id}.${field}`, null, fallback);
-
-    /** Config label, translated through the key the backend supplies. */
-    const configLabel = entry => I18N.message(entry.i18nKey, entry.i18nParams, entry.label);
-
-    /** Config help text, translated through `<i18nKey>.desc`. */
-    const configDescription = entry =>
-        I18N.message(entry.i18nKey ? entry.i18nKey + '.desc' : null, null, entry.description);
-
-    /** Module status headline, e.g. "Export limit unchanged". */
-    const moduleSummary = module => I18N.message(module.summaryKey, module.summaryParams, module.summary) || '';
-
-    /** The sentence under it, saying what the module actually decided and why. */
-    const moduleDetail = module =>
-        I18N.message(module.summaryDetailKey, module.summaryDetailParams, module.summaryDetail) || '';
 
     /** Timeline bar colours, mirrored from charts.js so tooltips match the marks. */
     const ACTION_COLOURS = {
@@ -248,15 +239,21 @@
 
     /* --------------------------------------------------------------- routing */
 
-    function showPage(page) {
+    /** The pages there are. A stored page that no longer exists - the old modules page - opens the overview. */
+    const PAGES = ['overview', 'history'];
+
+    function showPage(requested) {
+        const page = PAGES.includes(requested) ? requested : 'overview';
+
         state.page = page;
         localStorage.setItem(STORAGE_PAGE, page);
 
         document.querySelectorAll('.tab').forEach(tab =>
             tab.classList.toggle('is-active', tab.dataset.page === page));
 
-        el('page-overview').hidden = page !== 'overview';
-        el('page-modules').hidden = page !== 'modules';
+        PAGES.forEach(id => {
+            el('page-' + id).hidden = id !== page;
+        });
 
         // A chart drawn while its page was hidden had no width to measure, so it was drawn
         // at the fallback size. Coming back to the page is when its real width exists.
@@ -320,13 +317,14 @@
         }, 150);
     }
 
-    /** Just the three charts - the lists and cards around them do not depend on the width. */
+    /** Just the charts - the lists and cards around them do not depend on the width. */
     function renderCharts() {
         Charts.hideTooltip();
         renderPrices();
         renderWeather();
         renderWorkMode();
         renderTimeline();
+        renderStatisticsCharts();
     }
 
     /**
@@ -496,52 +494,59 @@
             );
         }
 
-        container.replaceChildren(...tiles.map(tile => {
-            const node = document.createElement('div');
-            node.className = 'stat';
+        container.replaceChildren(...tiles.map(tileNode));
+    }
 
-            const label = document.createElement('span');
-            label.className = 'stat-label';
-            label.textContent = tile.label;
-            node.appendChild(label);
+    /**
+     * One stat tile: label, value with its unit, a line per note, and a bar where the value
+     * has a ceiling. Shared by the live tiles and the statistics section, so the two read as
+     * one system.
+     */
+    function tileNode(tile) {
+        const node = document.createElement('div');
+        node.className = 'stat';
 
-            const value = document.createElement('span');
-            value.className = 'stat-value';
-            value.textContent = tile.value;
+        const label = document.createElement('span');
+        label.className = 'stat-label';
+        label.textContent = tile.label;
+        node.appendChild(label);
 
-            if (tile.unit) {
-                const unit = document.createElement('span');
-                unit.className = 'unit';
-                unit.textContent = tile.unit;
-                value.appendChild(unit);
-            }
+        const value = document.createElement('span');
+        value.className = 'stat-value';
+        value.textContent = tile.value;
 
-            node.appendChild(value);
+        if (tile.unit) {
+            const unit = document.createElement('span');
+            unit.className = 'unit';
+            unit.textContent = tile.unit;
+            value.appendChild(unit);
+        }
 
-            tile.notes.forEach(text => {
-                const note = document.createElement('span');
-                note.className = 'stat-note';
-                note.textContent = text;
-                node.appendChild(note);
-            });
+        node.appendChild(value);
 
-            if (typeof tile.bar === 'number') {
-                const bar = document.createElement('div');
-                bar.className = 'stat-bar';
+        tile.notes.forEach(text => {
+            const note = document.createElement('span');
+            note.className = 'stat-note';
+            note.textContent = text;
+            node.appendChild(note);
+        });
 
-                const fill = document.createElement('i');
-                fill.style.width = Math.max(0, Math.min(100, tile.bar)) + '%';
-                // A tile that names its own colour means the bar is a proportion; without
-                // one it is a level, and a level low enough is worth a warning.
-                fill.style.background = tile.barColour
-                    || (tile.bar < 25 ? 'var(--danger)' : (tile.bar < 50 ? 'var(--warning)' : 'var(--success)'));
+        if (typeof tile.bar === 'number') {
+            const bar = document.createElement('div');
+            bar.className = 'stat-bar';
 
-                bar.appendChild(fill);
-                node.appendChild(bar);
-            }
+            const fill = document.createElement('i');
+            fill.style.width = Math.max(0, Math.min(100, tile.bar)) + '%';
+            // A tile that names its own colour means the bar is a proportion; without
+            // one it is a level, and a level low enough is worth a warning.
+            fill.style.background = tile.barColour
+                || (tile.bar < 25 ? 'var(--danger)' : (tile.bar < 50 ? 'var(--warning)' : 'var(--success)'));
 
-            return node;
-        }));
+            bar.appendChild(fill);
+            node.appendChild(bar);
+        }
+
+        return node;
     }
 
     /**
@@ -859,15 +864,20 @@
      */
     const NON_MODULE_SOURCES = ['dashboard', 'raspberry', 'inverter'];
 
+    /**
+     * Every source the history can name. The modules are named from the dictionary rather
+     * than fetched - the dashboard no longer has a modules page to fetch them for - and an id
+     * that turns up in the history without a translation is shown as it is.
+     */
+    const KNOWN_MODULES = ['battery', 'export', 'weather', 'discharge'];
+
     function moduleNames() {
-        const names = Object.fromEntries(state.modules.map(module =>
-            [module.id, moduleText(module.id, 'name', module.name)]));
+        const ids = new Set([...KNOWN_MODULES, ...NON_MODULE_SOURCES]);
 
-        NON_MODULE_SOURCES.forEach(id => {
-            names[id] = moduleText(id, 'name', id);
-        });
+        [...(state.timeline?.history || []), ...(state.timeline?.planned || [])]
+            .forEach(entry => ids.add(entry.moduleId));
 
-        return names;
+        return Object.fromEntries([...ids].map(id => [id, moduleText(id, 'name', id)]));
     }
 
     /* ------------------------------------------------- work mode over time */
@@ -1745,8 +1755,18 @@
 
         hero.replaceChildren(figures);
 
+        // While a sale runs with the panels carrying part of it, what the battery is giving is
+        // the number that says how fast the reserve is coming.
+        const pvShare = selling.running && hasValue(selling.batteryWatts) && selling.batteryWatts < selling.watts
+            ? t('selling.split', {
+                battery: formatNumber(selling.batteryWatts, 0),
+                pv: formatNumber(selling.watts - selling.batteryWatts, 0)
+            })
+            : null;
+
         const notes = [
             selling.running ? t('selling.endsIn', {duration: relativeTo(selling.to)}) : relativeToStart(selling.from),
+            pvShare,
             selling.manual ? t('selling.manual') : t('selling.automatic')
         ].filter(Boolean);
 
@@ -1844,280 +1864,423 @@
         updateChargePreview();
     }
 
-    const STATE_PILLS = {
-        DISABLED: 'pill-muted',
-        IDLE: 'pill-muted',
-        RUNNING: 'pill-active',
-        ACTIVE: 'pill-ok',
-        DEGRADED: 'pill-warn',
-        FAILED: 'pill-error'
+    /* ------------------------------------------------------------ statistics */
+
+    /** The ranges the statistics section offers, in days. */
+    const STATS_RANGES = [7, 30, 90];
+
+    /**
+     * One colour per quantity, from the stylesheet so they follow the theme: production the
+     * sun's yellow, consumption the house's slate, export the blue the live grid tile draws
+     * it in, import a rose that reads as the other direction, and a sale the selling purple
+     * the rest of the page already uses for it.
+     */
+    const STAT_COLOURS = {
+        production: 'var(--stat-production)',
+        consumption: 'var(--stat-consumption)',
+        export: 'var(--stat-export)',
+        import: 'var(--stat-import)',
+        sold: 'var(--sell)',
+        net: 'var(--text)',
+        battery: 'var(--success)'
     };
 
-    function renderModules() {
-        const grid = el('module-grid');
+    const hasValue = value => value !== null && value !== undefined && !Number.isNaN(value);
 
-        if (!state.modules.length) {
-            const empty = document.createElement('p');
-            empty.className = 'empty-row';
-            empty.textContent = t('modules.none');
-            grid.replaceChildren(empty);
+    /** kWh with a decimal where it still says something. */
+    const kwh = value => hasValue(value) ? formatNumber(value, Math.abs(value) >= 100 ? 0 : 1) : '—';
+
+    /** Money in whole units - the spot valuation is an estimate, the halíře would be noise. */
+    const money = value => hasValue(value) ? formatNumber(value, 0) : '—';
+
+    function storedStatsDays() {
+        const stored = Number(localStorage.getItem(STORAGE_STATS_DAYS));
+        return STATS_RANGES.includes(stored) ? stored : 30;
+    }
+
+    function markStatsRange() {
+        document.querySelectorAll('#stats-range .segment').forEach(button =>
+            button.classList.toggle('is-active', Number(button.dataset.days) === state.statsDays));
+    }
+
+    async function setStatsDays(days) {
+        state.statsDays = days;
+        localStorage.setItem(STORAGE_STATS_DAYS, String(days));
+        markStatsRange();
+
+        try {
+            state.statistics = await Api.statistics(days);
+        } catch (error) {
+            console.warn('Statistics unavailable', error);
+        }
+
+        renderStatistics();
+    }
+
+    /** "3 Nov", or "Mon 3 Nov" with the weekday. */
+    function formatDay(isoDate, withWeekday = false) {
+        return new Date(isoDate + 'T00:00:00').toLocaleDateString(locale(), withWeekday
+            ? {weekday: 'short', day: 'numeric', month: 'short'}
+            : {day: 'numeric', month: 'short'});
+    }
+
+    function isToday(isoDate) {
+        return new Date(isoDate + 'T00:00:00').toDateString() === new Date().toDateString();
+    }
+
+    function renderStatistics() {
+        const stats = state.statistics;
+
+        markStatsRange();
+        renderStatsSub(stats);
+        renderStatsTiles(stats);
+        renderStatisticsCharts();
+        renderModeShare(stats);
+        renderStatsTable(stats);
+    }
+
+    /** Where the numbers come from, and since when - the record starts when the application did. */
+    function renderStatsSub(stats) {
+        const sub = el('stats-sub');
+
+        if (!stats || !stats.collectingSince) {
+            sub.textContent = t('stats.notYet');
             return;
         }
 
-        grid.replaceChildren(...state.modules.map(renderModuleCard));
+        const parts = [t('stats.since', {
+            date: formatDay(stats.collectingSince),
+            recorded: stats.totals.recordedDays,
+            days: stats.days.length
+        })];
+
+        if (stats.totals.partialDays > 0) {
+            parts.push(t('stats.partial', {count: stats.totals.partialDays}));
+        }
+
+        sub.textContent = parts.join(' ');
+    }
+
+    function renderStatsTiles(stats) {
+        const container = el('stats-tiles');
+        const totals = stats?.totals;
+
+        if (!totals) {
+            container.replaceChildren();
+            return;
+        }
+
+        const currency = stats.currency || state.config.currency;
+        const tiles = [];
+        const push = (label, value, unit, notes, bar = null, barColour = null) =>
+            tiles.push({label, value, unit, notes: [].concat(notes || []).filter(Boolean), bar, barColour});
+
+        if (hasValue(totals.yieldKwh)) {
+            push(t('stats.production'), kwh(totals.yieldKwh), 'kWh', [
+                hasValue(totals.averageDailyYield) ? t('stats.perDay', {value: kwh(totals.averageDailyYield)}) : null,
+                totals.bestDay ? t('stats.bestDay', {date: formatDay(totals.bestDay), value: kwh(totals.bestDayYield)}) : null
+            ]);
+        }
+
+        if (hasValue(totals.consumptionKwh)) {
+            push(t('stats.consumption'), kwh(totals.consumptionKwh), 'kWh', [
+                hasValue(totals.averageDailyConsumption)
+                    ? t('stats.perDay', {value: kwh(totals.averageDailyConsumption)}) : null,
+                hasValue(totals.selfSufficiency)
+                    ? t('stats.selfSufficiency', {value: formatNumber(totals.selfSufficiency, 0)}) : null
+            ], totals.selfSufficiency, STAT_COLOURS.production);
+        }
+
+        if (hasValue(totals.exportKwh)) {
+            push(t('stats.exported'), kwh(totals.exportKwh), 'kWh',
+                hasValue(totals.exportValue) ? t('stats.worth', {value: money(totals.exportValue), currency}) : null);
+        }
+
+        if (hasValue(totals.importKwh)) {
+            push(t('stats.imported'), kwh(totals.importKwh), 'kWh',
+                hasValue(totals.importCost) ? t('stats.cost', {value: money(totals.importCost), currency}) : null);
+        }
+
+        if (hasValue(totals.net)) {
+            push(t('stats.net'), money(totals.net), currency, t('stats.netNote'));
+        }
+
+        if (hasValue(totals.soldValue)) {
+            push(t('stats.sales'), money(totals.soldValue), currency,
+                t('stats.salesNote', {kwh: kwh(totals.soldKwh), count: totals.sales}));
+        }
+
+        if (hasValue(totals.dischargedKwh)) {
+            push(t('stats.batteryOut'), kwh(totals.dischargedKwh), 'kWh',
+                hasValue(totals.chargedKwh) ? t('stats.batteryCharged', {value: kwh(totals.chargedKwh)}) : null);
+        }
+
+        if (hasValue(totals.priceAverage)) {
+            push(t('stats.price'), formatNumber(totals.priceAverage, 2), `${currency}/kWh`,
+                hasValue(totals.priceMin) && hasValue(totals.priceMax)
+                    ? t('stats.priceRange', {min: formatNumber(totals.priceMin, 2), max: formatNumber(totals.priceMax, 2)})
+                    : null);
+        }
+
+        if (hasValue(totals.pvPeak)) {
+            const peak = formatPower(totals.pvPeak);
+            const pvPeak = state.config.pvPeak;
+
+            push(t('stats.pvPeak'), peak.value, peak.unit,
+                pvPeak ? t('stat.ofPeak', {maximum: formatNumber(pvPeak, 0)}) : null,
+                pvPeak ? Math.min(100, totals.pvPeak / pvPeak * 100) : null, 'var(--accent)');
+        }
+
+        container.replaceChildren(...tiles.map(tileNode));
+    }
+
+    /** Day labels: the weekday as well when there is room for a week, the date alone otherwise. */
+    function statsDayLabel(days) {
+        return day => new Date(day.date + 'T00:00:00').toLocaleDateString(locale(), days.length <= 7
+            ? {weekday: 'short', day: 'numeric'}
+            : {day: 'numeric'});
+    }
+
+    /** Everything recorded about a day - the same tooltip on every statistics chart. */
+    function statsTooltip(day, accent) {
+        const currency = state.statistics?.currency || state.config.currency;
+
+        if (!day.recorded) {
+            return {title: formatDay(day.date, true), accent: 'var(--text-faint)', note: t('stats.notRecorded')};
+        }
+
+        const range = hasValue(day.socMin) && hasValue(day.socMax) ? `${day.socMin} – ${day.socMax} %` : null;
+        const net = hasValue(day.exportValue) || hasValue(day.importCost)
+            ? (day.exportValue || 0) - (day.importCost || 0) : null;
+
+        const status = [
+            isToday(day.date) ? t('stats.today') : null,
+            day.partial ? t('stats.partialDay') : null
+        ].filter(Boolean).join(' · ');
+
+        return {
+            title: formatDay(day.date, true),
+            subtitle: status || null,
+            accent: accent,
+            rows: [
+                [t('stats.production'), hasValue(day.yieldKwh) ? `${kwh(day.yieldKwh)} kWh` : null],
+                [t('stats.consumption'), hasValue(day.consumptionKwh) ? `${kwh(day.consumptionKwh)} kWh` : null],
+                [t('stats.exported'), hasValue(day.exportKwh) ? `${kwh(day.exportKwh)} kWh` : null],
+                [t('stats.imported'), hasValue(day.importKwh) ? `${kwh(day.importKwh)} kWh` : null],
+                [t('stats.col.selfSufficiency'), hasValue(day.selfSufficiency) ? `${formatNumber(day.selfSufficiency, 0)} %` : null],
+                [t('stats.legend.exportValue'), hasValue(day.exportValue) ? `${money(day.exportValue)} ${currency}` : null],
+                [t('stats.sales'), day.sales > 0 ? `${money(day.soldValue)} ${currency} · ${kwh(day.soldKwh)} kWh` : null],
+                [t('stats.legend.importCost'), hasValue(day.importCost) ? `${money(day.importCost)} ${currency}` : null],
+                [t('stats.net'), hasValue(net) ? `${money(net)} ${currency}` : null],
+                [t('stats.col.battery'), range],
+                [t('stats.col.price'), hasValue(day.priceAverage) ? `${formatNumber(day.priceAverage, 2)} ${currency}/kWh` : null]
+            ]
+        };
+    }
+
+    function renderLegend(id, items) {
+        el(id).replaceChildren(...items.map(([colour, label, line]) => {
+            const item = document.createElement('li');
+            const swatch = document.createElement('i');
+
+            swatch.className = 'swatch' + (line ? ' swatch-tick' : '');
+            swatch.style.background = colour;
+
+            item.append(swatch, textSpan(label));
+            return item;
+        }));
+    }
+
+    function renderStatisticsCharts() {
+        const stats = state.statistics;
+        const days = stats?.days || [];
+        const currency = stats?.currency || state.config.currency;
+        const emptyMessage = t(stats?.collectingSince ? 'stats.noneInRange' : 'stats.notYetShort');
+        const xLabel = statsDayLabel(days);
+        const axisFormat = value => formatNumber(value, Math.abs(value) < 10 && value % 1 !== 0 ? 1 : 0);
+
+        el('stats-money-unit').textContent = currency;
+
+        Charts.dailyChart(el('stats-energy-chart'), days, {
+            mode: 'grouped',
+            series: [
+                {value: day => day.yieldKwh, colour: STAT_COLOURS.production},
+                {value: day => day.consumptionKwh, colour: STAT_COLOURS.consumption},
+                {value: day => day.exportKwh, colour: STAT_COLOURS.export},
+                {value: day => day.importKwh, colour: STAT_COLOURS.import}
+            ],
+            axisFormat, xLabel, emptyMessage,
+            tooltip: day => statsTooltip(day, STAT_COLOURS.production)
+        });
+
+        renderLegend('stats-energy-legend', [
+            [STAT_COLOURS.production, t('stats.production')],
+            [STAT_COLOURS.consumption, t('stats.consumption')],
+            [STAT_COLOURS.export, t('stats.exported')],
+            [STAT_COLOURS.import, t('stats.imported')]
+        ]);
+
+        // Income stacks up from the axis, cost hangs below it. A sale is part of the export,
+        // so it is taken out of the export bar rather than drawn on top of all of it.
+        Charts.dailyChart(el('stats-money-chart'), days, {
+            mode: 'stacked',
+            series: [
+                {value: day => day.soldValue, colour: STAT_COLOURS.sold},
+                {value: day => hasValue(day.exportValue) ? day.exportValue - (day.soldValue || 0) : null, colour: STAT_COLOURS.export},
+                {value: day => hasValue(day.importCost) ? -day.importCost : null, colour: STAT_COLOURS.import}
+            ],
+            marker: day => hasValue(day.exportValue) || hasValue(day.importCost)
+                ? (day.exportValue || 0) - (day.importCost || 0) : null,
+            axisFormat, xLabel, emptyMessage,
+            tooltip: day => statsTooltip(day, STAT_COLOURS.sold)
+        });
+
+        renderLegend('stats-money-legend', [
+            [STAT_COLOURS.sold, t('stats.sales')],
+            [STAT_COLOURS.export, t('stats.legend.otherExport')],
+            [STAT_COLOURS.import, t('stats.legend.importCost')],
+            [STAT_COLOURS.net, t('stats.net'), true]
+        ]);
+
+        Charts.dailyChart(el('stats-battery-chart'), days, {
+            mode: 'range',
+            min: 0,
+            max: 100,
+            range: {low: day => day.socMin, high: day => day.socMax, colour: STAT_COLOURS.battery},
+            axisFormat: value => formatNumber(value, 0),
+            xLabel, emptyMessage,
+            tooltip: day => statsTooltip(day, STAT_COLOURS.battery)
+        });
+    }
+
+    /** "12 h", or "3.5 h" while it is still short enough for the half to matter. */
+    function formatHours(minutes) {
+        return t('stats.hours', {hours: formatNumber(minutes / 60, minutes < 600 ? 1 : 0)});
+    }
+
+    /** How the watched time split between the work modes, as one bar and a legend that says it in numbers. */
+    function renderModeShare(stats) {
+        const container = el('stats-modes');
+        const minutes = stats?.totals?.modeMinutes || {};
+        const entries = Object.entries(minutes).filter(([, value]) => value > 0).sort((a, b) => b[1] - a[1]);
+        const total = entries.reduce((sum, [, value]) => sum + value, 0);
+
+        if (!total) {
+            const empty = document.createElement('p');
+            empty.className = 'chart-empty';
+            empty.textContent = t('stats.modesNone');
+            container.replaceChildren(empty);
+            el('stats-modes-legend').replaceChildren();
+            el('stats-modes-sub').textContent = '';
+            return;
+        }
+
+        el('stats-modes-sub').textContent = t('stats.modesSub', {hours: formatHours(total)});
+
+        const bar = document.createElement('div');
+        bar.className = 'mode-share-bar';
+
+        entries.forEach(([mode, value]) => {
+            const part = document.createElement('span');
+            part.style.width = (value / total * 100) + '%';
+            part.style.background = MODE_COLOURS[mode] || 'var(--text-faint)';
+            part.title = `${t('mode.' + mode)} · ${formatHours(value)}`;
+            bar.appendChild(part);
+        });
+
+        container.replaceChildren(bar);
+
+        renderLegend('stats-modes-legend', entries.map(([mode, value]) => [
+            MODE_COLOURS[mode] || 'var(--text-faint)',
+            t('stats.modeShare', {
+                mode: t('mode.' + mode),
+                hours: formatHours(value),
+                percent: formatNumber(value / total * 100, 0)
+            })
+        ]));
     }
 
     /**
-     * One module widget, built as three clearly separated blocks: what it is and
-     * how it is doing, what it is configured with, and what it will do next.
+     * Every recorded day in numbers, newest first. Only built while the section is open:
+     * ninety rows of twelve columns are not worth building on every refresh for nobody.
      */
-    function renderModuleCard(module) {
-        const card = document.createElement('article');
-        card.className = 'module-card' + (module.enabled ? '' : ' is-disabled');
+    function renderStatsTable(stats) {
+        const table = el('stats-table');
 
-        card.appendChild(moduleHeader(module));
-
-        // Everything below the header scrolls together, so a long configuration table
-        // cannot stretch the whole row of cards.
-        const body = document.createElement('div');
-        body.className = 'module-body';
-        body.appendChild(moduleInfoSection(module));
-        body.appendChild(moduleConfigSection(module));
-        body.appendChild(modulePlannedSection(module));
-
-        card.appendChild(body);
-        return card;
-    }
-
-    function moduleHeader(module) {
-        const head = document.createElement('div');
-        head.className = 'module-head';
-
-        const titleBlock = document.createElement('div');
-        titleBlock.className = 'module-title';
-
-        const name = document.createElement('h2');
-        name.textContent = moduleText(module.id, 'name', module.name);
-        titleBlock.appendChild(name);
-
-        const prefix = document.createElement('code');
-        prefix.textContent = module.configPrefix;
-        titleBlock.appendChild(prefix);
-
-        head.appendChild(titleBlock);
-
-        const toggle = document.createElement('label');
-        toggle.className = 'switch';
-        toggle.title = module.configPrefix + '.enabled';
-
-        const input = document.createElement('input');
-        input.type = 'checkbox';
-        input.checked = module.enabled;
-        input.disabled = !state.config.allowControl;
-        input.addEventListener('change', () => toggleModule(module.id, input.checked));
-        toggle.appendChild(input);
-
-        const track = document.createElement('span');
-        track.className = 'switch-track';
-        toggle.appendChild(track);
-
-        head.appendChild(toggle);
-        return head;
-    }
-
-    /** What the module is, and how its last run went. */
-    function moduleInfoSection(module) {
-        const section = moduleSection(t('modules.status'));
-
-        const description = document.createElement('p');
-        description.className = 'module-desc';
-        description.textContent = moduleText(module.id, 'description', module.description);
-        section.appendChild(description);
-
-        // A module that has not run yet has nothing to report, and "Idle - not run yet"
-        // says less than the schedule below it already does. The line appears once it
-        // means something: the module acted, or it is doing something now.
-        const summaryText = moduleSummary(module);
-        const neverRun = module.state === 'IDLE' && !module.runCount;
-
-        if (!neverRun) {
-            const status = document.createElement('div');
-            status.className = 'module-status';
-
-            const statePill = document.createElement('span');
-            statePill.className = 'pill pill-state ' + (STATE_PILLS[module.state] || 'pill-muted');
-            statePill.textContent = t('state.' + module.state);
-            status.appendChild(statePill);
-
-            if (summaryText) {
-                const summary = document.createElement('span');
-                summary.className = 'module-summary';
-                summary.textContent = summaryText;
-                status.appendChild(summary);
-            }
-
-            section.appendChild(status);
-
-            // The headline says what happened, this says why - the same split the activity
-            // list uses, so the two read the same way.
-            const detailText = moduleDetail(module);
-
-            if (detailText) {
-                const detail = document.createElement('p');
-                detail.className = 'module-status-detail';
-                detail.textContent = detailText;
-                section.appendChild(detail);
-            }
+        if (!el('stats-details').open) {
+            table.replaceChildren();
+            return;
         }
 
-        const facts = document.createElement('dl');
-        facts.className = 'module-facts';
+        const days = (stats?.days || []).filter(day => day.recorded).reverse();
 
-        // dt and dd are wrapped together so each pair is one grid cell rather than two.
-        const addFact = (label, value, danger) => {
-            const pair = document.createElement('div');
+        if (!days.length) {
+            const caption = document.createElement('caption');
+            caption.textContent = t(stats?.collectingSince ? 'stats.noneInRange' : 'stats.notYetShort');
+            table.replaceChildren(caption);
+            return;
+        }
 
-            const term = document.createElement('dt');
-            term.textContent = label;
-            pair.appendChild(term);
+        const currency = stats.currency || state.config.currency;
+        const totals = stats.totals;
+        const net = day => hasValue(day.exportValue) || hasValue(day.importCost)
+            ? (day.exportValue || 0) - (day.importCost || 0) : null;
 
-            const definition = document.createElement('dd');
-            definition.textContent = value;
+        const columns = [
+            {label: t('stats.col.day'), day: day => formatDay(day.date, true), total: () => t('stats.col.total'), text: true},
+            {label: `${t('stats.production')} (kWh)`, day: day => kwh(day.yieldKwh), total: () => kwh(totals.yieldKwh)},
+            {label: `${t('stats.consumption')} (kWh)`, day: day => kwh(day.consumptionKwh), total: () => kwh(totals.consumptionKwh)},
+            {label: `${t('stats.exported')} (kWh)`, day: day => kwh(day.exportKwh), total: () => kwh(totals.exportKwh)},
+            {label: `${t('stats.imported')} (kWh)`, day: day => kwh(day.importKwh), total: () => kwh(totals.importKwh)},
+            {label: `${t('stats.col.selfSufficiency')} (%)`,
+                day: day => hasValue(day.selfSufficiency) ? formatNumber(day.selfSufficiency, 0) : '—',
+                total: () => hasValue(totals.selfSufficiency) ? formatNumber(totals.selfSufficiency, 0) : '—'},
+            {label: `${t('stats.legend.exportValue')} (${currency})`, day: day => money(day.exportValue), total: () => money(totals.exportValue)},
+            {label: `${t('stats.sales')} (${currency})`, day: day => day.sales > 0 ? money(day.soldValue) : '—', total: () => money(totals.soldValue)},
+            {label: `${t('stats.legend.importCost')} (${currency})`, day: day => money(day.importCost), total: () => money(totals.importCost)},
+            {label: `${t('stats.net')} (${currency})`, day: day => money(net(day)), total: () => money(totals.net)},
+            {label: `${t('stats.col.battery')} (%)`,
+                day: day => hasValue(day.socMin) && hasValue(day.socMax) ? `${day.socMin}–${day.socMax}` : '—',
+                total: () => ''},
+            {label: `${t('stats.col.price')} (${currency}/kWh)`,
+                day: day => hasValue(day.priceAverage) ? formatNumber(day.priceAverage, 2) : '—',
+                total: () => hasValue(totals.priceAverage) ? formatNumber(totals.priceAverage, 2) : '—'}
+        ];
 
-            if (danger) {
-                definition.style.color = 'var(--danger)';
+        const cell = (tag, text, numeric) => {
+            const node = document.createElement(tag);
+            node.textContent = text;
+            if (numeric) {
+                node.className = 'num';
             }
-
-            pair.appendChild(definition);
-            facts.appendChild(pair);
+            return node;
         };
 
-        addFact(t('modules.lastRun'), module.lastRunAt ? formatDateTime(module.lastRunAt) : t('modules.never'));
-        addFact(t('modules.nextRun'), module.nextRunAt ? formatDateTime(module.nextRunAt) : '—');
-        addFact(t('modules.runCount'), String(module.runCount));
-
-        if (module.failCount > 0) {
-            addFact(t('modules.failCount'), String(module.failCount), true);
-        }
-
-        section.appendChild(facts);
-
-        if (module.lastError) {
-            const error = document.createElement('p');
-            error.className = 'module-error';
-            error.textContent = module.lastError;
-            section.appendChild(error);
-        }
-
-        return section;
-    }
-
-    function moduleConfigSection(module) {
-        const section = moduleSection(t('modules.configuration'));
-
-        if (!module.configuration?.length) {
-            section.appendChild(emptyNote(t('modules.noConfiguration')));
-            return section;
-        }
-
-        const table = document.createElement('table');
-        table.className = 'config-table';
+        const head = document.createElement('thead');
+        const headRow = document.createElement('tr');
+        columns.forEach(column => headRow.appendChild(cell('th', column.label, !column.text)));
+        head.appendChild(headRow);
 
         const body = document.createElement('tbody');
-
-        module.configuration.forEach(entry => {
+        days.forEach(day => {
             const row = document.createElement('tr');
 
-            const label = document.createElement('td');
-            label.className = 'config-label';
-            label.textContent = configLabel(entry);
-
-            const help = configDescription(entry);
-            if (help) {
-                const description = document.createElement('small');
-                description.textContent = help;
-                label.appendChild(description);
+            if (day.partial || isToday(day.date)) {
+                row.className = 'is-partial';
+                row.title = [isToday(day.date) ? t('stats.today') : null, day.partial ? t('stats.partialDay') : null]
+                    .filter(Boolean).join(' · ');
             }
 
-            row.appendChild(label);
-
-            const value = document.createElement('td');
-            value.className = 'config-value';
-            value.textContent = entry.unit ? `${entry.value} ${entry.unit}` : String(entry.value);
-            row.appendChild(value);
-
+            columns.forEach(column => row.appendChild(cell('td', column.day(day), !column.text)));
             body.appendChild(row);
         });
 
-        table.appendChild(body);
-        section.appendChild(table);
-        return section;
-    }
+        const foot = document.createElement('tfoot');
+        const footRow = document.createElement('tr');
+        columns.forEach(column => footRow.appendChild(cell('td', column.total(), !column.text)));
+        foot.appendChild(footRow);
 
-    /**
-     * A module that checks every quarter of an hour publishes dozens of runs a day. The
-     * timeline wants all of them; a widget wants the next few and a count of the rest.
-     */
-    const PLANNED_IN_WIDGET = 6;
-
-    function modulePlannedSection(module) {
-        const section = moduleSection(t('modules.planned'));
-
-        if (!module.planned?.length) {
-            section.appendChild(emptyNote(t('modules.noPlanned')));
-            return section;
-        }
-
-        const actions = document.createElement('ul');
-        actions.className = 'module-actions';
-
-        module.planned.slice(0, PLANNED_IN_WIDGET).forEach(action => {
-            const item = document.createElement('li');
-
-            const time = document.createElement('time');
-            time.dateTime = action.from;
-            time.textContent = action.to
-                ? `${formatDateTime(action.from)}–${formatDateTime(action.to)}`
-                : formatDateTime(action.from);
-            item.appendChild(time);
-
-            const summary = document.createElement('span');
-            summary.textContent = msg(action);
-            item.appendChild(summary);
-
-            actions.appendChild(item);
-        });
-
-        section.appendChild(actions);
-
-        const hidden = module.planned.length - PLANNED_IN_WIDGET;
-        if (hidden > 0) {
-            section.appendChild(emptyNote(t('modules.morePlanned', {count: hidden})));
-        }
-
-        return section;
-    }
-
-    /** A titled block inside a module card. */
-    function moduleSection(title) {
-        const section = document.createElement('section');
-        section.className = 'module-section';
-        section.appendChild(sectionTitle(title));
-        return section;
-    }
-
-    function emptyNote(text) {
-        const note = document.createElement('p');
-        note.className = 'module-empty';
-        note.textContent = text;
-        return note;
-    }
-
-    function sectionTitle(text) {
-        const node = document.createElement('h3');
-        node.className = 'module-section-title';
-        node.textContent = text;
-        return node;
+        table.replaceChildren(head, body, foot);
     }
 
     function textSpan(text) {
@@ -2137,7 +2300,7 @@
         renderTimeline();
         renderSelling();
         renderQuickActions();
-        renderModules();
+        renderStatistics();
     }
 
     /* ------------------------------------------------------------ skeletons */
@@ -2171,7 +2334,10 @@
         el('selling-facts').replaceChildren(...lines('is-medium', '', 'is-short'));
         el('timeline-planned').replaceChildren(...lines('', 'is-medium', 'is-short'));
         el('timeline-history').replaceChildren(...lines('', 'is-short'));
-        el('module-grid').replaceChildren(...block('skeleton-card', 4));
+        el('stats-tiles').replaceChildren(...block('skeleton-tile', 4));
+        el('stats-energy-chart').replaceChildren(...block('skeleton-chart'));
+        el('stats-money-chart').replaceChildren(...block('skeleton-chart'));
+        el('stats-battery-chart').replaceChildren(...block('skeleton-chart'));
     }
 
     /* -------------------------------------------------------------- actions */
@@ -2190,16 +2356,6 @@
     function writeMessage(node, text, ok) {
         node.textContent = text || '';
         node.className = 'form-message' + (ok === true ? ' is-ok' : ok === false ? ' is-error' : '');
-    }
-
-    async function toggleModule(id, enabled) {
-        try {
-            await Api.setModuleEnabled(id, enabled);
-            await refresh();
-        } catch (error) {
-            console.error('Failed to toggle module', id, error);
-            await refresh();
-        }
     }
 
     /* --------------------------------------------------------- arm dialog */
@@ -2431,11 +2587,17 @@
 
     async function refresh() {
         try {
-            const [overview, prices, weather, timeline, modules, selling] = await Promise.all([
-                Api.overview(), Api.prices(), Api.weather(), Api.timeline(), Api.modules(), Api.selling()
+            const [overview, prices, weather, timeline, selling, statistics] = await Promise.all([
+                Api.overview(), Api.prices(), Api.weather(), Api.timeline(), Api.selling(),
+                // The statistics are a section of the page, not the page: failing to load them
+                // keeps what was shown last rather than taking the whole refresh down.
+                Api.statistics(state.statsDays).catch(error => {
+                    console.warn('Statistics unavailable', error);
+                    return state.statistics;
+                })
             ]);
 
-            Object.assign(state, {overview, prices, weather, timeline, modules, selling});
+            Object.assign(state, {overview, prices, weather, timeline, selling, statistics});
 
             setConnection(overview.online ? 'status.online' : 'status.offline',
                 overview.online ? 'pill-ok' : 'pill-warn');
@@ -2512,6 +2674,20 @@
 
         el('timeline-chart-toggle').addEventListener('click', toggleTimelineChart);
         renderTimelineChartToggle();
+
+        state.statsDays = storedStatsDays();
+        markStatsRange();
+
+        document.querySelectorAll('#stats-range .segment').forEach(button =>
+            button.addEventListener('click', () => setStatsDays(Number(button.dataset.days))));
+
+        // The table is only built while it is open, so opening it has to build it.
+        el('stats-details').addEventListener('toggle', () => {
+            const hint = el('stats-details').querySelector('summary .card-hint');
+            hint.dataset.i18n = el('stats-details').open ? 'stats.tableHide' : 'stats.tableHint';
+            hint.textContent = t(hint.dataset.i18n);
+            renderStatsTable(state.statistics);
+        });
 
         renderLanguageControl();
 

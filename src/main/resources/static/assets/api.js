@@ -41,6 +41,7 @@ const Api = (() => {
         timeline: () => request('api/timeline'),
         modules:  () => request('api/modules'),
         selling:  () => request('api/selling'),
+        statistics: days => request(`api/statistics?days=${encodeURIComponent(days)}`),
 
         setModuleEnabled: (id, value) =>
             request(`api/modules/${encodeURIComponent(id)}/enabled?value=${value}`, {method: 'POST'}),

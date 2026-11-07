@@ -92,11 +92,12 @@ public class DischargeProperties implements ModuleProperties {
     // ------------------------------------------------------------------ execution
 
     /**
-     * Power the battery is discharged at during a sale, W. {@code 0} follows
-     * {@code automation.export.power.maximum}.
+     * Power a sale delivers, W. {@code 0} follows {@code automation.export.power.maximum}.
+     * With {@link #pvFirst} on, this is what the panels and the battery deliver together; off,
+     * it is what the battery alone is discharged at.
      * <p>
-     * This is <b>battery</b> power, not export power: the remote control session drives the
-     * battery, and whatever the house is using at that moment comes out of it first. Set to
+     * This is not export power: whatever the house is using at that moment comes out of it
+     * first. Set to
      * the export limit and the meter only ever sees the limit minus the house load - the
      * kitchen is being run off the sale instead of the grid, at a price nobody pays for it.
      * <p>
@@ -110,7 +111,36 @@ public class DischargeProperties implements ModuleProperties {
      */
     private int dischargePower = 0;
 
-    /** How often the battery level is checked while a discharge is running. */
+    /**
+     * Lets the panels carry as much of the sale as they can, and the battery only the rest.
+     * <p>
+     * The remote control session pins the <b>battery</b> at a fixed power. With the battery
+     * alone already filling the export limit plus the house, there is nowhere left for the
+     * panels' output to go - the meter is capped, the battery's setpoint cannot move - so the
+     * inverter curtails the panels down to nothing for the whole sale, and the evening sun is
+     * thrown away while the battery empties at full power.
+     * <p>
+     * On, the battery is asked for {@code discharge-power} minus what the panels deliver at
+     * that moment, so the two together still put out the same power and the meter still sees
+     * the full limit, but the panels' share stays in the battery. The guard re-reads the
+     * panels every {@link #guardInterval} and moves the battery's share with them. Off, the
+     * battery delivers the whole {@code discharge-power} and the panels are curtailed, which
+     * is how every sale behaved before this setting existed.
+     */
+    private boolean pvFirst = true;
+
+    /**
+     * How far the panels' output has to move before the battery's share is re-sent, W.
+     * <p>
+     * Every change is a cloud command, and the cloud is rate limited; following every few
+     * watts of a passing cloud would spend that budget on nothing the meter would notice.
+     */
+    private int pvFollowDeadband = 150;
+
+    /**
+     * How often the battery level is checked while a discharge is running - and, with
+     * {@link #pvFirst}, how often the battery's share is matched to the panels.
+     */
     private Duration guardInterval = Duration.ofMinutes(2);
 
     /**

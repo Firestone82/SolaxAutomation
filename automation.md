@@ -3,7 +3,8 @@
 Přehled toho, co jednotlivé moduly dělají a kdy. Všechny hodnoty pocházejí z výchozí konfigurace
 v `src/main/resources/application.yml` — pokud jste ji změnili, platí vaše hodnoty, ne ty zde.
 
-Každý modul lze vypnout jeho `enabled` přepínačem, nebo dočasně z nástěnky.
+Každý modul lze vypnout jeho `enabled` přepínačem (dočasně do restartu i přes
+`POST /api/modules/{id}/enabled?value=false`).
 
 ---
 
@@ -161,8 +162,8 @@ hodnotě:
 Okno naplánované ručně z nástěnky tuhle hranici ignoruje — je to rozhodnutí člověka —, rezervu
 ale nikdy.
 
-**Vybíjecí výkon `discharge-power` je výkon baterie, ne výkon do sítě.** Dálkové řízení řídí baterii
-a dům se z ní krmí dřív, než cokoli dorazí k elektroměru — při nastavení přesně na
+**Vybíjecí výkon `discharge-power` není výkon do sítě.** Dům se z prodeje krmí dřív, než cokoli
+dorazí k elektroměru — při nastavení přesně na
 `automation.export.power.maximum` (3 950 W) tedy do sítě odejde limit *mínus* aktuální spotřeba domu
 a zbytek se „prodá“ do vlastní rychlovarné konvice, a to zrovna v nejdražší hodinu dne.
 
@@ -182,6 +183,17 @@ elektroměrem — co sní dům, nikdo nekoupí.
 Prodej se provádí **dálkovým řízením**, ne změnou režimu střídače: relace má vlastní dobu trvání a
 střídač se po ní sám vrátí do svého režimu — i kdyby tahle aplikace mezitím spadla. Hlídač kontroluje
 baterii každé 2 minuty a ukončí relaci dřív, jakmile se dosáhne rezervy 40 %.
+
+**Nejdřív panely (`pv-first`, zapnuto).** Relace dálkového řízení drží **baterii** na pevném výkonu.
+Když baterie sama zaplní limit dodávky i spotřebu domu, výroba z panelů nemá kam odejít a střídač ji
+po celou dobu prodeje omezí na nulu — večerní slunce přijde nazmar a baterie se vybíjí naplno.
+Proto se baterie žádá jen o to, co panely nepokryjí: `discharge-power` minus aktuální výroba FVE.
+Dohromady dávají pořád `discharge-power`, takže elektroměr vidí celý limit, jen podíl panelů zůstane
+v baterii. Hlídač při každé kontrole výrobu znovu přečte a podíl baterie pošle znovu, jakmile se má
+změnit o víc než `pv-follow-deadband` (150 W) — jak slunce zapadá, přebírá prodej baterie.
+
+> **POKUD** se má prodávat jen z baterie jako dřív
+> **PROVEĎ:** nastav `automation.discharge.pv-first: false`.
 
 V grafu spotové ceny je ta část dne, do které se **smí** prodávat — uvnitř prohledávaných hodin
 (15:00–23:45) a na minimální ceně (8 CZK/kWh) nebo nad ní — podbarvená barvou prodeje a minimální
@@ -275,6 +287,7 @@ takže po restartu nástěnka nezačíná prázdná a grafy nemají díry, kter�
 okno se při čtení souboru zahodí — aplikace vypnutá týden se nesmí vrátit s týden starou „poslední
 aktivitou“. Je to pořád jen pohodlí pro zobrazení — trvalým záznamem zůstávají rotující logy v `logs/`.
 
+Seznam je na vlastní stránce **Historie**, aby přehled nekončil seznamem, který roste celý den.
 Každý řádek má nadpis a vysvětlení: co modul rozhodl a proč. Kolik řádků je vidět, se přepíná
 přímo v hlavičce karty _Poslední aktivita_ (5 až 100) a volba se pamatuje v prohlížeči.
 
@@ -290,3 +303,23 @@ hodiny, které už proběhly, se ukládají průběžně do `data/weather-histor
 sama dozadu nevidí. Restart je tedy nesmaže, ale co aplikace nikdy neviděla (třeba ráno před prvním
 spuštěním), v grafu chybí — osa i tak zůstane celý den a pod grafem se napíše, odkdy jsou hodiny
 zaznamenané.
+
+---
+
+## Statistiky — `statistics`
+
+Žádná historie, kterou by šlo stáhnout, neexistuje — střídač i cloud hlásí jen *dnešní* čítače a
+cenová služba jen *dnešní* ceny. Aplikace proto každých **5 minut** zaznamená denní čítače (výroba,
+dodávka, odběr, nabito, vybito), stav baterie, výkon, režim a cenu a drží jeden záznam na den v
+`data/statistics.json`. **Statistiky tedy začínají dnem prvního spuštění** a postupně se doplní;
+dny, kdy aplikace neběžela, zůstanou v grafu jako mezera.
+
+Peníze se počítají průběžně: každý přírůstek dodávky a odběru se ocení spotovou cenou čtvrthodiny, ve
+které ho střídač nahlásil, a co odešlo během prodeje, se počítá zvlášť jako výnos prodeje. Jde jen o
+spotovou cenu bez distribučních poplatků — odhad tržní hodnoty, ne vyúčtování. Den, jehož první
+měření přišlo dlouho po půlnoci (první den, restart), má peníze označené jako částečné.
+
+Na přehledu je za posledních 7, 30 nebo 90 dní: dlaždice se součty, energie po dnech, peníze po dnech
+(příjem nad osou, náklady pod ní, čárka = čistý výsledek), rozsah nabití baterie po dnech, čas v
+jednotlivých režimech a rozbalovací tabulka všech dní. Energie a peníze potřebují připojení k SolaX
+Cloudu; samotný Modbus je nehlásí.

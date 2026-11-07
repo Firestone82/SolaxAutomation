@@ -176,7 +176,7 @@ public final class DashboardDtos {
     public record Timeline(List<PlannedEntry> planned, List<HistoryEntry> history) {
     }
 
-    /** One module widget on the modules page. */
+    /** Everything about one module, as {@code GET /api/modules} reports it. */
     public record ModuleView(
             String id,
             String name,
@@ -209,6 +209,10 @@ public final class DashboardDtos {
             LocalDateTime from,
             LocalDateTime to,
             Integer watts,
+
+            /** Part of {@code watts} the battery is asked for right now; the panels carry the rest. */
+            Integer batteryWatts,
+
             Double expectedRevenue,
             String planReason,
             String planReasonKey,
@@ -264,6 +268,91 @@ public final class DashboardDtos {
         public static ActionResult failed(PlannedAction.Message message) {
             return new ActionResult(false, message.text(), message.key(), message.params());
         }
+    }
+
+    /**
+     * One calendar day of the statistics view. A day nothing was recorded on is still in the
+     * list, with {@code recorded} false, so a chart can leave its gap rather than close it up.
+     * <p>
+     * Energies are kWh, money is in the dashboard currency at the spot price, without any
+     * distribution fees. {@code partial} means the money covers only part of the day.
+     */
+    public record StatisticsDay(
+            java.time.LocalDate date,
+            boolean recorded,
+            boolean partial,
+            Double yieldKwh,
+            Double exportKwh,
+            Double importKwh,
+            Double chargedKwh,
+            Double dischargedKwh,
+            Double consumptionKwh,
+            Double selfSufficiency,
+            Double exportValue,
+            Double importCost,
+            Double soldKwh,
+            Double soldValue,
+            int sales,
+            Integer socMin,
+            Integer socMax,
+            Double pvPeak,
+            Double loadPeak,
+            Double priceAverage,
+            Double priceMin,
+            Double priceMax,
+            Map<String, Integer> modeMinutes,
+            int remoteControlMinutes
+    ) {
+    }
+
+    /**
+     * Totals over the days of a statistics view that have anything recorded.
+     *
+     * @param bestDay       the day the panels produced the most on
+     * @param net           what was exported minus what was imported, in money
+     */
+    public record StatisticsTotals(
+            int recordedDays,
+            int partialDays,
+            Double yieldKwh,
+            Double exportKwh,
+            Double importKwh,
+            Double chargedKwh,
+            Double dischargedKwh,
+            Double consumptionKwh,
+            Double selfSufficiency,
+            Double averageDailyYield,
+            Double averageDailyConsumption,
+            java.time.LocalDate bestDay,
+            Double bestDayYield,
+            Double exportValue,
+            Double importCost,
+            Double net,
+            Double soldKwh,
+            Double soldValue,
+            int sales,
+            Double priceAverage,
+            Double priceMin,
+            Double priceMax,
+            Double pvPeak,
+            Map<String, Integer> modeMinutes
+    ) {
+    }
+
+    /**
+     * Daily statistics for the last {@code days} days, today included.
+     *
+     * @param collectingSince first day anything was recorded on, {@code null} before the first sample
+     */
+    public record Statistics(
+            java.time.LocalDate from,
+            java.time.LocalDate to,
+            java.time.LocalDate collectingSince,
+            int retentionDays,
+            String currency,
+            List<StatisticsDay> days,
+            StatisticsTotals totals
+    ) {
     }
 
     /** Static facts the front end needs once, at start-up. */

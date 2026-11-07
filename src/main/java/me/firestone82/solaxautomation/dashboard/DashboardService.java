@@ -22,6 +22,7 @@ import me.firestone82.solaxautomation.module.discharge.DischargeModule;
 import me.firestone82.solaxautomation.module.discharge.DischargeProperties;
 import me.firestone82.solaxautomation.module.export.ExportProperties;
 import me.firestone82.solaxautomation.module.weather.WeatherProperties;
+import me.firestone82.solaxautomation.statistics.StatisticsService;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
@@ -52,7 +53,7 @@ public class DashboardService {
      * Both run on a fixed schedule and almost always decide the same thing - the export limit
      * is re-checked every quarter of an hour, the weather work mode every hour - so listing
      * every firing would bury the handful of entries that actually say something, like
-     * tonight's selling window. Their own widget on the modules page still shows the full
+     * tonight's selling window. {@code GET /api/modules} still reports each module's full
      * schedule; only this shared list is filtered.
      */
     private static final List<String> QUIET_MODULES = List.of("export", "weather");
@@ -67,6 +68,8 @@ public class DashboardService {
     private final ExportProperties exportProperties;
     private final DischargeProperties dischargeProperties;
     private final ObjectProvider<DischargeModule> dischargeModule;
+    private final StatisticsService statisticsService;
+    private final DashboardProperties dashboardProperties;
 
     // ------------------------------------------------------------------ overview
 
@@ -274,7 +277,7 @@ public class DashboardService {
         Optional<DischargeModule> moduleOpt = Optional.ofNullable(dischargeModule.getIfAvailable());
 
         if (moduleOpt.isEmpty()) {
-            return new SellingState(false, false, false, false, null, null, null, null,
+            return new SellingState(false, false, false, false, null, null, null, null, null,
                     "The selling module is not loaded", "plan.notLoaded", Map.of(),
                     inverter.isRemoteControlAvailable(), null,
                     dischargeProperties.resolveDischargePower(exportProperties.getPower().getMaximum()), List.of());
@@ -298,6 +301,7 @@ public class DashboardService {
                 armed.map(ArmedWindow::from).orElse(null),
                 armed.map(ArmedWindow::to).orElse(null),
                 armed.map(ArmedWindow::watts).orElse(null),
+                armed.map(ArmedWindow::batteryWatts).orElse(null),
                 armed.map(ArmedWindow::revenueCzk).orElse(null),
                 module.getLastPlan().reason(),
                 module.getLastPlan().reasonKey(),
@@ -311,6 +315,27 @@ public class DashboardService {
 
     private Optional<ArmedWindow> armedWindow() {
         return Optional.ofNullable(dischargeModule.getIfAvailable()).flatMap(DischargeModule::getArmedWindow);
+    }
+
+    // ------------------------------------------------------------------ statistics
+
+    /**
+     * The last {@code days} days, today included, as the statistics section draws them.
+     * Asking for more than is kept returns what is kept.
+     */
+    public Statistics getStatistics(int days) {
+        int span = Math.max(1, Math.min(days, statisticsService.getRetentionDays()));
+        LocalDate to = LocalDate.now();
+        LocalDate from = to.minusDays(span - 1L);
+
+        return StatisticsReport.build(
+                statisticsService.getDays(from, to),
+                from,
+                to,
+                statisticsService.getCollectingSince().orElse(null),
+                statisticsService.getRetentionDays(),
+                dashboardProperties.getCurrency()
+        );
     }
 
     // ------------------------------------------------------------------ helpers

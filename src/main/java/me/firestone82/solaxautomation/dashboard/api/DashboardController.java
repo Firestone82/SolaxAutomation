@@ -64,6 +64,15 @@ public class DashboardController {
         return dashboardService.getTimeline();
     }
 
+    /**
+     * Daily totals for the last {@code days} days, today included - energy, money at the spot
+     * price, the battery's range and the time spent in each work mode.
+     */
+    @GetMapping("/statistics")
+    public Statistics getStatistics(@RequestParam(defaultValue = "30") int days) {
+        return dashboardService.getStatistics(days);
+    }
+
     /** Everything about every module: configuration, health and what it plans to do. */
     @GetMapping("/modules")
     public List<ModuleView> getModules() {

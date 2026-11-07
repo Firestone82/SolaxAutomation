@@ -339,7 +339,7 @@ const Charts = (() => {
      * battery into, inside its search hours and at or above its own minimum price,
      * are washed in the selling colour instead, with that minimum drawn in as a
      * dashed line. Between them the chart answers "what will the automation make of
-     * this day" without opening the module page.
+     * this day" without looking up either module's configuration.
      *
      * Each bar carries a full-height transparent hit area, so hovering anywhere
      * in the interval's column works rather than only over the bar itself.
@@ -1050,5 +1050,295 @@ const Charts = (() => {
     }
 
     /* A re-render throws away the marks, so anything a touch is holding open goes with them. */
-    return {priceChart, weatherChart, timelineChart, workModeChart, hideTooltip: Tooltip.release, COMPACT_WIDTH};
+    /* --------------------------------------------------------- daily chart */
+
+    /** A round step for an axis spanning {@code raw} per tick: 1, 2 or 5 times a power of ten. */
+    function niceStep(raw) {
+        if (!(raw > 0)) {
+            return 1;
+        }
+
+        const power = Math.pow(10, Math.floor(Math.log10(raw)));
+        const fraction = raw / power;
+        return (fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10) * power;
+    }
+
+    /** Ticks covering [min, max] at a round step, always including zero when the range spans it. */
+    function niceTicks(min, max, count) {
+        if (max <= min) {
+            max = min + 1;
+        }
+
+        const step = niceStep((max - min) / count);
+        const start = Math.floor(min / step) * step;
+        const end = Math.ceil(max / step) * step;
+        const ticks = [];
+
+        for (let value = start; value <= end + step / 2; value += step) {
+            // Rounded back onto the step, or 0.1 + 0.2 shows up on the axis.
+            ticks.push(Number((Math.round(value / step) * step).toPrecision(12)));
+        }
+
+        return ticks;
+    }
+
+    /**
+     * One column per calendar day, for the statistics section. Three shapes:
+     * <ul>
+     *   <li>{@code grouped} - every series its own bar from zero, side by side;</li>
+     *   <li>{@code stacked} - positive values stacked upwards from zero and negative ones
+     *       downwards, so income and cost read as one column split by the axis;</li>
+     *   <li>{@code range} - one floating bar from a low to a high value.</li>
+     * </ul>
+     * A day nothing was recorded on keeps its column, empty, so a gap in the record shows as a
+     * gap rather than being closed up; weekends get a faint wash and today, which is still
+     * running, a faint outline. Each column is one hover target.
+     *
+     * options: series [{value: day => number, colour}], mode, range {low, high, colour},
+     * marker (day => number, drawn as a tick), min/max to pin the axis, axisFormat,
+     * xLabel (day => text), tooltip (day => content), emptyMessage.
+     */
+    function dailyChart(container, days, options = {}) {
+        if (!days || days.length === 0 || !days.some(day => day.recorded)) {
+            empty(container, options.emptyMessage || 'No data');
+            return;
+        }
+
+        const {width, compact} = measure(container);
+        const height = options.height || (compact ? 170 : 210);
+        const padding = compact
+            ? {top: 10, right: 6, bottom: 20, left: 36}
+            : {top: 12, right: 12, bottom: 22, left: 48};
+
+        const plotWidth = width - padding.left - padding.right;
+        const plotHeight = height - padding.top - padding.bottom;
+        const mode = options.mode || 'grouped';
+        const series = options.series || [];
+        const present = value => value !== null && value !== undefined && !Number.isNaN(value);
+
+        let maxValue = 0;
+        let minValue = 0;
+
+        days.forEach(day => {
+            if (!day.recorded) {
+                return;
+            }
+
+            const values = [];
+
+            if (mode === 'range') {
+                values.push(options.range.low(day), options.range.high(day));
+            } else if (mode === 'stacked') {
+                let up = 0;
+                let down = 0;
+
+                series.forEach(item => {
+                    const value = item.value(day);
+
+                    if (present(value)) {
+                        if (value > 0) {
+                            up += value;
+                        } else {
+                            down += value;
+                        }
+                    }
+                });
+
+                values.push(up, down);
+            } else {
+                series.forEach(item => values.push(item.value(day)));
+            }
+
+            if (options.marker) {
+                values.push(options.marker(day));
+            }
+
+            values.filter(present).forEach(value => {
+                maxValue = Math.max(maxValue, value);
+                minValue = Math.min(minValue, value);
+            });
+        });
+
+        if (options.min !== undefined) {
+            minValue = options.min;
+        }
+
+        if (options.max !== undefined) {
+            maxValue = options.max;
+        }
+
+        const ticks = niceTicks(minValue, maxValue, compact ? 3 : 4);
+        const low = ticks[0];
+        const high = ticks[ticks.length - 1];
+        const span = (high - low) || 1;
+        const scaleY = value => padding.top + plotHeight - ((value - low) / span) * plotHeight;
+        const zeroY = scaleY(Math.max(low, Math.min(high, 0)));
+
+        const band = plotWidth / days.length;
+        const gap = Math.max(1, Math.min(6, band * 0.22));
+        const inner = Math.max(1, band - gap);
+        const columnX = index => padding.left + index * band;
+        const today = new Date().toDateString();
+
+        const svg = createSvg(width, height);
+
+        // Column washes first, so everything else sits on top of them.
+        days.forEach((day, index) => {
+            const date = new Date(day.date + 'T00:00:00');
+            const weekday = date.getDay();
+            const classes = [];
+
+            if (weekday === 0 || weekday === 6) {
+                classes.push('day-weekend');
+            }
+
+            if (date.toDateString() === today) {
+                classes.push('day-today');
+            }
+
+            if (classes.length) {
+                svg.appendChild(element('rect', {
+                    class: classes.join(' '),
+                    x: columnX(index), y: padding.top, width: band, height: plotHeight
+                }));
+            }
+        });
+
+        const format = options.axisFormat || (value => String(value));
+
+        ticks.forEach(value => {
+            const y = scaleY(value);
+
+            svg.appendChild(element('line', {
+                class: value === 0 ? 'axis-line' : 'grid-line',
+                x1: padding.left, x2: width - padding.right, y1: y, y2: y
+            }));
+
+            const text = element('text', {class: 'axis-text', x: padding.left - 6, y: y + 3, 'text-anchor': 'end'});
+            text.textContent = format(value);
+            svg.appendChild(text);
+        });
+
+        const bar = (x, from, to, colour, barWidth) => {
+            const top = Math.min(scaleY(from), scaleY(to));
+            const size = Math.max(1, Math.abs(scaleY(from) - scaleY(to)));
+
+            svg.appendChild(element('rect', {
+                class: 'day-bar',
+                x: x, y: top, width: barWidth, height: size,
+                rx: Math.min(2, barWidth / 3),
+                fill: colour
+            }));
+        };
+
+        days.forEach((day, index) => {
+            if (!day.recorded) {
+                return;
+            }
+
+            const x = columnX(index) + gap / 2;
+
+            if (mode === 'range') {
+                const from = options.range.low(day);
+                const to = options.range.high(day);
+
+                if (present(from) && present(to)) {
+                    bar(x, from, to, options.range.colour, inner);
+                }
+            } else if (mode === 'stacked') {
+                let up = 0;
+                let down = 0;
+
+                series.forEach(item => {
+                    const value = item.value(day);
+
+                    if (!present(value) || value === 0) {
+                        return;
+                    }
+
+                    if (value > 0) {
+                        bar(x, up, up + value, item.colour, inner);
+                        up += value;
+                    } else {
+                        bar(x, down, down + value, item.colour, inner);
+                        down += value;
+                    }
+                });
+            } else {
+                const each = inner / Math.max(1, series.length);
+
+                series.forEach((item, position) => {
+                    const value = item.value(day);
+
+                    if (present(value)) {
+                        bar(x + position * each, 0, value, item.colour, Math.max(1, each - (each > 4 ? 1 : 0)));
+                    }
+                });
+            }
+
+            if (options.marker) {
+                const value = options.marker(day);
+
+                if (present(value)) {
+                    const y = scaleY(value);
+                    svg.appendChild(element('line', {
+                        class: 'day-marker', x1: x - 1, x2: x + inner + 1, y1: y, y2: y
+                    }));
+                }
+            }
+        });
+
+        // Day labels, anchored on today at the right edge and thinned to what fits.
+        const labelStep = Math.max(1, Math.ceil((compact ? 30 : 38) / band));
+
+        days.forEach((day, index) => {
+            if ((days.length - 1 - index) % labelStep !== 0) {
+                return;
+            }
+
+            const text = element('text', {
+                class: 'axis-text',
+                x: columnX(index) + band / 2,
+                y: height - 6,
+                'text-anchor': 'middle'
+            });
+            text.textContent = options.xLabel ? options.xLabel(day) : day.date.slice(8);
+            svg.appendChild(text);
+        });
+
+        // Hover layer, last so it sits above the bars.
+        days.forEach((day, index) => {
+            const highlight = element('rect', {
+                class: 'bar-hover', x: columnX(index), y: padding.top, width: band, height: plotHeight, opacity: 0
+            });
+            svg.appendChild(highlight);
+
+            const hit = element('rect', {
+                class: 'hit-area', x: columnX(index), y: padding.top, width: band, height: plotHeight
+            });
+
+            hoverable(
+                hit,
+                () => options.tooltip ? options.tooltip(day) : null,
+                () => highlight.setAttribute('opacity', '1'),
+                () => highlight.setAttribute('opacity', '0')
+            );
+
+            svg.appendChild(hit);
+        });
+
+        // Keeps the zero line visible above the bars it separates.
+        if (low < 0 && high > 0) {
+            svg.appendChild(element('line', {
+                class: 'axis-line day-zero', x1: padding.left, x2: width - padding.right, y1: zeroY, y2: zeroY
+            }));
+        }
+
+        container.replaceChildren(svg);
+    }
+
+    return {
+        priceChart, weatherChart, timelineChart, workModeChart, dailyChart,
+        hideTooltip: Tooltip.release, COMPACT_WIDTH
+    };
 })();

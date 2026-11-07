@@ -34,7 +34,7 @@
 
     <nav class="tabs" role="tablist">
         <button class="tab" data-page="overview" role="tab" data-i18n="nav.overview">Overview</button>
-        <button class="tab" data-page="modules" role="tab" data-i18n="nav.modules">Modules</button>
+        <button class="tab" data-page="history" role="tab" data-i18n="nav.history">History</button>
     </nav>
 
     <div class="topbar-actions">
@@ -74,7 +74,154 @@
     <!-- ============================================================ OVERVIEW -->
     <section id="page-overview" class="page">
 
+        <!-- The controls lead: they are what the page is opened for. -->
+        <div class="grid grid-selling">
+            <article class="card">
+                <header class="card-head">
+                    <h2 data-i18n="selling.title">Selling</h2>
+                    <span id="selling-badge" class="pill pill-muted"></span>
+                </header>
+
+                <div class="selling-hero" id="selling-hero"></div>
+
+                <dl class="facts" id="selling-facts"></dl>
+
+                <div class="button-row" id="selling-actions"></div>
+                <p class="form-message" id="arm-message" role="status"></p>
+            </article>
+
+            <!--
+                Manual overrides. Everything here talks to the inverter directly, without
+                going through a module, for the situations the automation cannot know
+                about - a car to charge tonight, a storm the forecast missed.
+            -->
+            <article class="card">
+                <!--
+                    No card heading and no mode badge: the work mode buttons below already
+                    say which mode the inverter is in by marking it, and a title over two
+                    labelled groups was naming the obvious twice.
+                -->
+                <section class="quick-group">
+                    <h3 class="quick-group-title" data-i18n="quick.workMode">Work mode</h3>
+                    <p class="quick-hint" data-i18n="quick.workModeHint">
+                        Persistent. It survives a restart, and a module may move it again at its next run.
+                    </p>
+                    <div class="button-row" id="quick-modes"></div>
+                </section>
+
+                <section class="quick-group">
+                    <h3 class="quick-group-title" data-i18n="quick.remoteControl">Remote control</h3>
+                    <p class="quick-hint" data-i18n="quick.remoteControlHint">
+                        Runs for a set time and hands the inverter back on its own, even if this
+                        application stops. The work mode is left alone.
+                    </p>
+                    <div class="field-row quick-duration-row">
+                        <label class="field field-narrow">
+                            <span data-i18n="quick.duration">For</span>
+                            <select id="quick-duration" class="control">
+                                <option value="30">30 min</option>
+                                <option value="60" selected>1 h</option>
+                                <option value="120">2 h</option>
+                                <option value="180">3 h</option>
+                                <option value="240">4 h</option>
+                            </select>
+                        </label>
+                        <label class="field field-narrow">
+                            <span data-i18n="quick.power">Power (W)</span>
+                            <input type="number" id="quick-watts" class="control" min="100" step="50" value="3000">
+                        </label>
+                        <label class="field field-narrow">
+                            <span data-i18n="quick.targetSoc">To SOC (%)</span>
+                            <input type="number" id="quick-target-soc" class="control"
+                                   min="1" max="100" step="5" placeholder="—">
+                        </label>
+                    </div>
+                    <p class="quick-hint" id="quick-charge-preview"></p>
+                    <div class="button-row" id="quick-actions"></div>
+                </section>
+
+                <p class="quick-note" id="quick-note"></p>
+                <p class="form-message" id="quick-message" role="status"></p>
+            </article>
+        </div>
+
         <div class="grid grid-stats" id="stat-tiles"></div>
+
+        <!--
+            Statistics, a day per column. Nothing upstream keeps a history, so these are the
+            days this application recorded as they went by - it starts on the day it was
+            first run and fills in from there.
+        -->
+        <article class="card">
+            <header class="card-head">
+                <h2 data-i18n="stats.title">Statistics</h2>
+                <div class="segmented" id="stats-range">
+                    <button class="segment" data-days="7" data-i18n="stats.range7">7 days</button>
+                    <button class="segment is-active" data-days="30" data-i18n="stats.range30">30 days</button>
+                    <button class="segment" data-days="90" data-i18n="stats.range90">90 days</button>
+                </div>
+            </header>
+            <p class="card-sub" id="stats-sub"></p>
+            <div class="grid grid-stats" id="stats-tiles"></div>
+        </article>
+
+        <div class="grid grid-two">
+            <article class="card">
+                <header class="card-head">
+                    <h2 data-i18n="stats.energyTitle">Energy per day</h2>
+                    <span class="card-hint">kWh</span>
+                </header>
+                <div class="chart" id="stats-energy-chart"></div>
+                <ul class="legend" id="stats-energy-legend"></ul>
+            </article>
+
+            <article class="card">
+                <header class="card-head">
+                    <h2 data-i18n="stats.moneyTitle">Money per day</h2>
+                    <span class="card-hint" id="stats-money-unit"></span>
+                </header>
+                <p class="card-sub" data-i18n="stats.moneyExplain">
+                    Income above the line, cost below it; the tick is the day’s net.
+                </p>
+                <div class="chart" id="stats-money-chart"></div>
+                <ul class="legend" id="stats-money-legend"></ul>
+            </article>
+        </div>
+
+        <div class="grid grid-two">
+            <article class="card">
+                <header class="card-head">
+                    <h2 data-i18n="stats.batteryTitle">Battery per day</h2>
+                    <span class="card-hint">%</span>
+                </header>
+                <p class="card-sub" data-i18n="stats.batteryExplain">
+                    From the lowest to the highest state of charge each day.
+                </p>
+                <div class="chart" id="stats-battery-chart"></div>
+            </article>
+
+            <article class="card">
+                <header class="card-head">
+                    <h2 data-i18n="stats.modesTitle">Time in each work mode</h2>
+                </header>
+                <p class="card-sub" id="stats-modes-sub"></p>
+                <div class="mode-share" id="stats-modes"></div>
+                <ul class="legend" id="stats-modes-legend"></ul>
+            </article>
+        </div>
+
+        <article class="card">
+            <details class="stats-details" id="stats-details">
+                <summary class="card-head">
+                    <h2 data-i18n="stats.tableTitle">Daily breakdown</h2>
+                    <span class="card-hint" data-i18n="stats.tableHint">Show</span>
+                </summary>
+                <div class="table-scroll">
+                    <table class="stats-table" id="stats-table"></table>
+                </div>
+            </details>
+        </article>
+
 
         <div class="grid grid-two">
             <article class="card">
@@ -156,76 +303,6 @@
             <ul class="legend" id="workmode-legend"></ul>
         </article>
 
-        <div class="grid grid-selling">
-            <article class="card">
-                <header class="card-head">
-                    <h2 data-i18n="selling.title">Selling</h2>
-                    <span id="selling-badge" class="pill pill-muted"></span>
-                </header>
-
-                <div class="selling-hero" id="selling-hero"></div>
-
-                <dl class="facts" id="selling-facts"></dl>
-
-                <div class="button-row" id="selling-actions"></div>
-                <p class="form-message" id="arm-message" role="status"></p>
-            </article>
-
-            <!--
-                Manual overrides. Everything here talks to the inverter directly, without
-                going through a module, for the situations the automation cannot know
-                about - a car to charge tonight, a storm the forecast missed.
-            -->
-            <article class="card">
-                <!--
-                    No card heading and no mode badge: the work mode buttons below already
-                    say which mode the inverter is in by marking it, and a title over two
-                    labelled groups was naming the obvious twice.
-                -->
-                <section class="quick-group">
-                    <h3 class="quick-group-title" data-i18n="quick.workMode">Work mode</h3>
-                    <p class="quick-hint" data-i18n="quick.workModeHint">
-                        Persistent. It survives a restart, and a module may move it again at its next run.
-                    </p>
-                    <div class="button-row" id="quick-modes"></div>
-                </section>
-
-                <section class="quick-group">
-                    <h3 class="quick-group-title" data-i18n="quick.remoteControl">Remote control</h3>
-                    <p class="quick-hint" data-i18n="quick.remoteControlHint">
-                        Runs for a set time and hands the inverter back on its own, even if this
-                        application stops. The work mode is left alone.
-                    </p>
-                    <div class="field-row quick-duration-row">
-                        <label class="field field-narrow">
-                            <span data-i18n="quick.duration">For</span>
-                            <select id="quick-duration" class="control">
-                                <option value="30">30 min</option>
-                                <option value="60" selected>1 h</option>
-                                <option value="120">2 h</option>
-                                <option value="180">3 h</option>
-                                <option value="240">4 h</option>
-                            </select>
-                        </label>
-                        <label class="field field-narrow">
-                            <span data-i18n="quick.power">Power (W)</span>
-                            <input type="number" id="quick-watts" class="control" min="100" step="50" value="3000">
-                        </label>
-                        <label class="field field-narrow">
-                            <span data-i18n="quick.targetSoc">To SOC (%)</span>
-                            <input type="number" id="quick-target-soc" class="control"
-                                   min="1" max="100" step="5" placeholder="—">
-                        </label>
-                    </div>
-                    <p class="quick-hint" id="quick-charge-preview"></p>
-                    <div class="button-row" id="quick-actions"></div>
-                </section>
-
-                <p class="quick-note" id="quick-note"></p>
-                <p class="form-message" id="quick-message" role="status"></p>
-            </article>
-        </div>
-
         <article class="card">
             <header class="card-head">
                 <h2 data-i18n="timeline.title">Planned actions</h2>
@@ -245,7 +322,10 @@
             <ol class="timeline-list" id="timeline-planned"></ol>
             <div class="pager" id="timeline-planned-pager" hidden></div>
         </article>
+    </section>
 
+    <!-- ============================================================ HISTORY -->
+    <section id="page-history" class="page" hidden>
         <article class="card">
             <header class="card-head">
                 <h2 data-i18n="history.title">Recent activity</h2>
@@ -271,15 +351,6 @@
             <ol class="timeline-list" id="timeline-history"></ol>
             <div class="pager" id="timeline-history-pager" hidden></div>
         </article>
-    </section>
-
-    <!-- ============================================================ MODULES -->
-    <section id="page-modules" class="page" hidden>
-        <p class="page-intro" data-i18n="modules.intro">
-            Every automation is an independent module. Switch one off here to stop it acting until the
-            application restarts; change its configuration section to make that permanent.
-        </p>
-        <div class="grid grid-modules" id="module-grid"></div>
     </section>
 </main>
 

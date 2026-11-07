@@ -213,6 +213,27 @@ timeline:
   # How many are held in memory for the current run.
   memory-events: 1000
 
+# -----------------------------------------------------------------------------
+#  Daily statistics shown on the dashboard
+#  Nothing upstream keeps a history this application can ask for, so the day is
+#  sampled as it goes and kept per calendar day: the inverter's day counters, the
+#  battery's range, the time in each work mode, and the money - each sample's
+#  export and import valued at that quarter-hour's spot price. The statistics
+#  therefore start on the day this runs for the first time and fill in from there.
+#  Energy and money need the SolaX Cloud connection; Modbus alone reports neither.
+# -----------------------------------------------------------------------------
+statistics:
+  enabled: true
+  # The cloud refreshes its counters every few minutes; faster reads the same numbers.
+  sample-interval: 5m
+  persist: true
+  file: data/statistics.json
+  # The Pi runs off an SD card, so the file is rewritten at most this often (and
+  # at every day change and shutdown).
+  persist-interval: 15m
+  # The dashboard offers up to 90 days; a year is kept for the asking.
+  retention: 400d
+
 # =============================================================================
 #  Automation modules
 # =============================================================================
@@ -365,8 +386,9 @@ automation:
     # Round-trip conversion loss applied when sizing the window, so the plan does not
     # promise more energy than the inverter actually delivers.
     efficiency: 0.92
-    # Battery power a sale runs at. This is what the battery gives up, not what
-    # reaches the meter: the house is fed from it first, so at exactly the export
+    # Power a sale runs at - the panels and the battery together with pv-first on,
+    # the battery alone with it off. This is not what reaches the meter: the house
+    # is fed from it first, so at exactly the export
     # limit the meter only ever carries the limit minus whatever is running in the
     # house. Set it above automation.export.power.maximum and the difference covers
     # the house instead, leaving the full limit to be sold - 4600 here is the 3950
@@ -374,8 +396,21 @@ automation:
     # is what keeps the extra off the meter, and the battery and inverter cap what
     # can be asked for at all. 0 follows automation.export.power.maximum.
     discharge-power: 4600
-    # How often the battery is checked while a discharge runs.
-    guard-interval: 5m
+    # The panels cover what they can of a sale and the battery only the rest.
+    # The remote control session pins the battery at a fixed power, so with the
+    # battery alone already filling the export limit plus the house the inverter
+    # has nowhere to put the panels' output and curtails them to nothing. On, the
+    # battery is asked for discharge-power minus what the panels deliver, and the
+    # guard moves that share with the sun as it sets. Off restores the old
+    # battery-only sale.
+    pv-first: true
+    # How far the panels have to move before the battery's share is re-sent, W.
+    # Each change is a cloud command, and the cloud is rate limited.
+    pv-follow-deadband: 150
+    # How often the battery is checked while a discharge runs, and with pv-first
+    # how often the battery's share is matched to the panels. Short enough to
+    # follow an evening's falling production without the sale sagging between checks.
+    guard-interval: 2m
     # Falls back to the persistent MANUAL work mode when remote control is
     # unavailable. Off by default: a crash mid-sale would then leave the
     # inverter discharging until someone notices.

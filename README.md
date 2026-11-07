@@ -67,10 +67,10 @@ before.
 
 ## Modules
 
-Every automation is an independent module: its own package, its own configuration section, its own
-widget on the dashboard, and its own `enabled` flag. Nothing enumerates them by name — dropping a new
-`AutomationModule` bean on the classpath is enough for the registry, the dashboard and the timeline to
-pick it up. Deleting a module means deleting its package.
+Every automation is an independent module: its own package, its own configuration section, and its
+own `enabled` flag. Nothing enumerates them by name — dropping a new `AutomationModule` bean on the
+classpath is enough for the registry, the API and the timeline to pick it up (give it a
+`module.<id>.name` in `i18n.js` and the dashboard names it in the history too). Deleting a module means deleting its package.
 
 | Module | Config prefix | What it does |
 |---|---|---|
@@ -146,9 +146,8 @@ dashboard skips that check — it is the person's call — but never the reserve
 Over-estimating is safe either way: the guard ends the sale as soon as the reserve is reached.
 Under-estimating is not, because it arms a window too short to use the peak.
 
-**`discharge-power` is battery power, not export power**, and the difference is money. The remote
-control session drives the battery, and the house is fed from it before anything reaches the meter —
-so a sale at exactly `automation.export.power.maximum` exports the limit *minus* whatever is running
+**`discharge-power` is not export power**, and the difference is money. The house is fed from the
+sale before anything reaches the meter — so a sale at exactly `automation.export.power.maximum` exports the limit *minus* whatever is running
 in the house, and the kettle spends the evening being run off energy that was meant to be sold at the
 day's highest price. Setting it **above** the export limit fixes that: the extra covers the house,
 the inverter's export limit holds the meter at the limit, and the whole limit is sold. The default
@@ -165,6 +164,31 @@ The two numbers are used for different things, and the log says both: the window
 revenue is on the **exported** part alone — what the house eats during the sale is not bought by
 anybody.
 
+### Panels first
+
+A sale used to stop the panels. The remote control session (`push_power/positive_or_negative_mode`)
+pins the **battery** at a fixed power, and with the battery alone already filling the export limit
+plus the house — 4600 W against a 3950 W limit — there is nowhere left for the panels' output to go:
+the meter is capped, the battery's setpoint cannot move, so the inverter curtails the panels to
+nothing for the length of the sale. On an evening with sun left, that sun was thrown away while the
+battery emptied at full power.
+
+With `automation.discharge.pv-first` (on by default) the battery is only asked for what the panels do
+not cover: `discharge-power` minus the live PV reading, in tens of watts, never below zero. The two
+together still put out `discharge-power`, so the meter still sees the full limit — the panels' share
+simply stays in the battery. The guard re-reads the panels every `guard-interval` (now 2 min) and
+re-sends the battery's share whenever it should move by more than `pv-follow-deadband` (150 W), so the
+battery takes over as the sun sets; each re-send carries the time left in the window, so the session
+still expires on its own. Following is synchronised with cancelling, and checks the window is still
+the armed one before sending anything, so a cancelled sale is never restarted behind the dashboard's
+back. Without a PV reading the battery takes the whole sale, as before. The start of the sale logs the
+split, and the selling card shows it while it runs.
+
+One limit is worth knowing: the PV reading is what the panels deliver, not what they could. If the sun
+comes out *during* a sale, the extra still has nowhere to go and stays curtailed until production
+falls below where it was at the last re-send. In the evening, when sales happen, production only
+falls, so this rarely matters. `pv-first: false` restores the battery-only sale.
+
 At the window's start a remote control session is opened for exactly the window's length. A guard
 checks the battery every `guard-interval` and ends the session early once the reserve is reached. If
 the export limit happens to be closed below what the sale means to export — the export module holding
@@ -180,12 +204,56 @@ battery earns, so they are pinned down rather than only observed in production l
 
 `http://<host>:8080/` — no build step, no CDN, works offline on the Pi.
 
-**Overview** — live battery/PV/grid/load, work mode, current price, and the Raspberry Pi's
-connection switch (HIGH is the metered grid, LOW the second supply — the tile says which, and says
-plainly when it is the off-Pi stub rather than a pin); the day's 96 quarter-hour prices
-with the armed selling window highlighted; the weather quality curve with the thresholds the modules
-compare against; the day's work mode as one band; a timeline of what every module intends to do and
-what it already did; and recent activity.
+Two pages: **Overview**, which is the dashboard, and **History**, which is the activity list.
+
+**Overview** — the controls first: the selling card and the quick actions, because they are what the
+page is opened for. Then the live tiles — battery/PV/grid/load, work mode, current price, and the
+Raspberry Pi's connection switch (HIGH is the metered grid, LOW the second supply — the tile says
+which, and says plainly when it is the off-Pi stub rather than a pin). Then the **statistics** for the
+last 7, 30 or 90 days (below). Then the day's 96 quarter-hour prices with the armed selling window
+highlighted; the weather quality curve with the thresholds the modules compare against; the day's work
+mode as one band; and a timeline of what every module intends to do and what it already did.
+
+**History** — the activity list, with its day filter, _Changes only_ and row count, on a page of its
+own so the overview does not end in a list that grows all day.
+
+### Statistics
+
+Nothing upstream keeps a history this application can ask for — the inverter and the cloud report
+*today's* counters, the price service *today's* prices — so the application records each day as it
+goes. Every `statistics.sample-interval` (5 min) it reads the inverter's day counters (yield, export,
+import, battery charged and discharged), the battery level, the production and load, the work mode
+and the price, and keeps one record per calendar day in `statistics.file` (`data/statistics.json`).
+**The statistics therefore start on the day this version first runs and fill in from there**; days
+the application was down are drawn as gaps rather than closed up.
+
+Money cannot be read off the counters at the end of the day, because the price moves every quarter of
+an hour. Each sample's growth in the export and import counters is valued at the spot price of the
+interval the inverter reported it in, and whatever was exported while a sale was running is kept apart
+as the sale's own takings. That is the spot price alone, without distribution fees or your tariff's
+margins — an estimate of what the energy was worth on the market, not a bill. A day first seen long
+after midnight (the first day, a restart) keeps its energy but marks its money as partial.
+
+The section shows:
+
+- **Tiles** — production (and the average and best day), consumption and self-sufficiency, export and
+  what it was worth, import and what it cost, the net of the two, battery sales (money, kWh, how many),
+  battery throughput, the average spot price with its range, and the peak production seen.
+- **Energy per day** — production, consumption, export and import side by side.
+- **Money per day** — income stacked above the axis (sales, then other export), import cost below it,
+  and a tick for the day's net.
+- **Battery per day** — a bar from the lowest to the highest state of charge.
+- **Time in each work mode** — the watched time split between the modes.
+- **Daily breakdown** — every recorded day in a table, newest first, with totals; built only while
+  it is open.
+
+Weekends get a faint wash and today, still running, a faint outline; hovering any day gives every
+number recorded for it. The range is remembered per browser. Consumption is the energy balance
+(production + import + battery out − export − battery in), and the energies and money need the SolaX
+Cloud connection — Modbus alone reports neither, so without the cloud only the battery, production
+peak and work mode time are recorded. The file is rewritten at most every `persist-interval` (15 min),
+at a day change and at shutdown, so the SD card on the Pi is not worn every five minutes; days older
+than `retention` (400 days) are dropped.
 
 **Every tile keeps one fact per line**, and the ones with a known ceiling draw it. The battery has its
 level as a bar, coloured as a warning when it runs low. Solar production is drawn against
@@ -256,7 +324,7 @@ is the one that knows when it intends to run.
 The timeline shows every run each module has coming up, not just the next one. Two modules are left
 out of it: the export limit is re-checked every quarter of an hour and the weather work mode every
 hour, nearly always with the same outcome, and 92 identical rows bury the handful that say something.
-Their own widget on the modules page always shows the full schedule.
+`GET /api/modules` still reports every module's full schedule.
 
 **Both time charts switch between looking forward and showing the whole day.** _From now_ is the
 default — the next 24 hours of the timeline, the forecast from this hour on. _Whole day_ starts at
@@ -288,8 +356,7 @@ find. Hovering the switch says how many of the retained entries are currently on
 
 Every activity row is a headline and a sentence: what the module decided ("Export limit stays at
 3950 W") and why it decided it ("the spot price 2.15 CZK/kWh is at or above the 0.50 CZK/kWh
-exporting is worth it at, so the limit is fully open"). The module cards read the same way, so the
-two never have to be pieced together.
+exporting is worth it at, so the limit is fully open").
 
 Recent activity survives a restart, and enough of it to be worth having: everything inside
 `timeline.retention` (**48 h**) is kept in a small JSON file (`data/timeline.json` by default), capped
@@ -312,14 +379,10 @@ whether the inverter took it. The weather quality formula sits behind the ⓘ bu
 header rather than taking up space on every visit, and the two thresholds are named in the legend
 instead of being written across the plot.
 
-**Modules** — two columns of widgets, each split into three panels: status (what the module is and how
-its last run went), configuration (every documented value it reads) and plan (what it will do next).
-A switch disables a module until the next restart. Every card is exactly as tall as its own content:
-the page lays them out in **columns** rather than grid rows, so a module with fifteen configuration
-values does not set the height of a row and leave the card beside it half empty, and nothing is
-clipped or scrolled. The status line appears once the module has something to report — a module that
-has not run yet says nothing rather than "Idle · not run yet", and a module mid-run says what it is
-doing rather than leaving the previous line up.
+There is no modules page any more. A module is switched off with its `enabled` flag; the API behind
+the old page is still there for a script that wants it — `GET /api/modules` reports every module's
+status, configuration and plan, and `POST /api/modules/{id}/enabled?value=false` disables one until
+the next restart.
 
 The page re-fetches every `dashboard.refresh-seconds` (a minute by default, which is about as fast as
 the underlying values actually move), and shows skeleton placeholders until the first fetch lands.
@@ -577,6 +640,7 @@ integration/
   raspberry/     GPIO supply switch
 module/
   battery/ export/ weather/ discharge/     one package per automation
+statistics/      the daily record behind the dashboard's statistics section
 dashboard/       REST API + DTOs; the SPA lives in resources/static
                  (index.html, assets/, plus manifest.webmanifest, sw.js and icons/ for the installable app)
 ```

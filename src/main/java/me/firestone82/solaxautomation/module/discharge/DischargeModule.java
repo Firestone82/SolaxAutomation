@@ -9,6 +9,7 @@ import me.firestone82.solaxautomation.integration.ote.model.PriceForecast;
 import me.firestone82.solaxautomation.integration.ote.model.PriceSlot;
 import me.firestone82.solaxautomation.integration.solax.InverterGateway;
 import me.firestone82.solaxautomation.integration.solax.model.InverterMode;
+import me.firestone82.solaxautomation.integration.solax.model.InverterSnapshot;
 import me.firestone82.solaxautomation.integration.solax.model.ManualMode;
 import me.firestone82.solaxautomation.module.export.ExportProperties;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -122,7 +123,9 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
                 ConfigEntry.of("automation.discharge.target-battery", "Reserve", properties.getTargetBattery(), "%",
                         "State of charge the discharge stops at"),
                 ConfigEntry.of("automation.discharge.discharge-power", "Discharge power", dischargePower(), "W",
-                        "Battery power during a sale. Above the export limit the extra covers the house, so the full limit reaches the meter"),
+                        "Power during a sale. Above the export limit the extra covers the house, so the full limit reaches the meter"),
+                ConfigEntry.of("automation.discharge.pv-first", "Panels first", properties.isPvFirst(),
+                        "The panels cover what they can of a sale and the battery only the rest, instead of the inverter curtailing them"),
                 ConfigEntry.of("automation.discharge.battery-capacity", "Battery capacity", properties.getBatteryCapacity(), "kWh",
                         "Usable capacity, used to work out how long the battery lasts"),
                 ConfigEntry.of("automation.discharge.max-slots", "Maximum length", properties.getMaxSlots() * PriceSlot.SLOT_MINUTES, "min",
@@ -486,7 +489,28 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
             log.detail("Duration", "{} (until {})", humanize(duration), window.to().toLocalTime());
             warnIfExportLimitTooLow(window.watts());
 
-            Message detail = Message
+            // The panels go first: the battery is only asked for what they do not cover, so
+            // the sale delivers the same power without the inverter curtailing the sun.
+            int batteryWatts = batteryShareNow(window.watts());
+            int pvWatts = window.watts() - batteryWatts;
+
+            if (pvWatts > 0) {
+                log.detail("Split", "{} W from the panels, {} W from the battery", pvWatts, batteryWatts);
+            }
+
+            Message detail = pvWatts > 0
+                    ? Message
+                    .key("outcome.discharge.started.pvDetail", String.format(Locale.ROOT,
+                            "Selling %d W until %s: %d W from the panels and %d W from the battery, which is at %d %% with a %d %% reserve.",
+                            window.watts(), window.to().toLocalTime(), pvWatts, batteryWatts, soc, properties.getTargetBattery()))
+                    .with("watts", window.watts())
+                    .with("until", window.to().toLocalTime().toString())
+                    .with("pv", pvWatts)
+                    .with("batteryWatts", batteryWatts)
+                    .with("battery", soc)
+                    .with("reserve", properties.getTargetBattery())
+                    .build()
+                    : Message
                     .key("outcome.discharge.started.detail", String.format(Locale.ROOT,
                             "Discharging %d W into the grid until %s, battery at %d %% with a %d %% reserve.",
                             window.watts(), window.to().toLocalTime(), soc, properties.getTargetBattery()))
@@ -496,7 +520,7 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
                     .with("reserve", properties.getTargetBattery())
                     .build();
 
-            boolean started = startSelling(window.watts(), duration);
+            boolean started = startSelling(batteryWatts, duration);
             if (!started) {
                 armedWindow = null;
 
@@ -506,8 +530,9 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
                                 "The inverter did not accept the discharge command, so nothing is being sold.").build());
             }
 
-            armedWindow = window.started();
-            log.success("Discharging {} W until {}", window.watts(), window.to().toLocalTime());
+            armedWindow = window.started(batteryWatts);
+            log.success("Selling {} W until {} ({} W from the battery)",
+                    window.watts(), window.to().toLocalTime(), batteryWatts);
             // "sale" brackets the stretch the battery was actually being sold in. The armed
             // window is forgotten the moment it ends, so a sale that already ran is only in
             // the activity history - and the dashboard's work mode band draws it from these
@@ -570,6 +595,8 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
                 soc, properties.getTargetBattery(), humanize(window.remaining()));
 
         if (soc > properties.getTargetBattery()) {
+            window = followPanels(window);
+
             publishStatus(ModuleState.ACTIVE,
                     Message.key("summary.discharge.selling", String.format(Locale.ROOT,
                                     "Selling %d W into the grid", window.watts()))
@@ -639,10 +666,85 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
         });
     }
 
+    // ------------------------------------------------------------------ panels first
+
+    /**
+     * Moves the battery's share of a running sale to match what the panels deliver now.
+     * <p>
+     * Synchronized with arming and cancelling, and re-checked against the window that is
+     * actually armed before anything is sent: a cancel that lands between reading the panels
+     * and sending the new share must not have a fresh discharge session started behind it.
+     *
+     * @return the window as it now stands
+     */
+    synchronized ArmedWindow followPanels(ArmedWindow window) {
+        if (!properties.isPvFirst() || !inverter.isRemoteControlAvailable() || armedWindow != window) {
+            return window;
+        }
+
+        Optional<Integer> pvOpt = livePvPower();
+        if (pvOpt.isEmpty()) {
+            return window;
+        }
+
+        int wanted = batteryShare(window.watts(), pvOpt.get());
+        int current = window.batteryWatts();
+
+        if (Math.abs(wanted - current) < properties.getPvFollowDeadband()) {
+            return window;
+        }
+
+        // A session with under a minute left ends before a queued cloud command would land.
+        Duration remaining = window.remaining();
+        if (remaining.toSeconds() < 60) {
+            return window;
+        }
+
+        log.action("Panels now deliver {} W - battery share {} W -> {} W for the remaining {}",
+                pvOpt.get(), current, wanted, humanize(remaining));
+
+        if (!inverter.startRemoteDischarge(wanted, remaining)) {
+            log.warn("The inverter did not accept the new battery share; the sale keeps running at {} W", current);
+            return window;
+        }
+
+        ArmedWindow updated = window.withBatteryWatts(wanted);
+        armedWindow = updated;
+        return updated;
+    }
+
+    /** Battery power a sale of {@code watts} needs right now, with the panels covering what they can. */
+    private int batteryShareNow(int watts) {
+        if (!properties.isPvFirst() || !inverter.isRemoteControlAvailable()) {
+            // The MANUAL fallback has no power setpoint to share out.
+            return watts;
+        }
+
+        return livePvPower().map(pv -> batteryShare(watts, pv)).orElse(watts);
+    }
+
+    /** What the panels deliver right now, W, when the inverter says. */
+    private Optional<Integer> livePvPower() {
+        return inverter.snapshot()
+                .map(InverterSnapshot::getPvPower)
+                .map(pv -> (int) Math.max(0, Math.round(pv)));
+    }
+
+    /**
+     * The battery's part of a sale of {@code watts} with the panels giving {@code pv}: the
+     * rest, never below nothing and never above the sale itself, in whole tens of watts so a
+     * jittery reading does not look like a change.
+     */
+    static int batteryShare(int watts, int pv) {
+        int share = watts - Math.max(0, pv);
+        int rounded = Math.round(share / 10f) * 10;
+        return Math.max(0, Math.min(watts, rounded));
+    }
+
     /** Starts the sale, preferring remote control and falling back only if configured to. */
     private boolean startSelling(int watts, Duration duration) {
         if (inverter.isRemoteControlAvailable()) {
-            log.action("Starting a remote control session ({} W, {}) - work mode untouched", watts, humanize(duration));
+            log.action("Starting a remote control session ({} W from the battery, {}) - work mode untouched", watts, humanize(duration));
             return inverter.startRemoteDischarge(watts, duration);
         }
 

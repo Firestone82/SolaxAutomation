@@ -38,6 +38,14 @@
     --price-medium: #eab308;
     --price-high: #ef4444;
 
+    /* The statistics, one hue per quantity: the sun's yellow for production, the house's
+       slate for consumption, the accent blue export is drawn in on the live tiles, and a
+       rose for import that reads as the other direction without reading as an error. */
+    --stat-production: #ca8a04;
+    --stat-consumption: #64748b;
+    --stat-export: #2563eb;
+    --stat-import: #e11d48;
+
     --shadow: 0 1px 2px rgba(15, 23, 42, .06), 0 4px 12px rgba(15, 23, 42, .04);
     --radius: 14px;
     --radius-sm: 8px;
@@ -74,6 +82,11 @@
     --price-low: #4ade80;
     --price-medium: #fbbf24;
     --price-high: #f87171;
+
+    --stat-production: #facc15;
+    --stat-consumption: #94a3b8;
+    --stat-export: #60a5fa;
+    --stat-import: #fb7185;
 
     --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 4px 16px rgba(0, 0, 0, .3);
 }
@@ -238,22 +251,6 @@ h3 { font-size: .95rem; }
 .pill-active  { background: var(--accent-soft); color: var(--accent); }
 .pill-sell    { background: var(--sell-soft); color: var(--sell); }
 
-/*
-   A coloured dot in front of the label. The state pills sit on the module cards'
-   tinted panels, where a pale fill alone barely registered.
-*/
-.pill-state::before {
-    content: "";
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: currentColor;
-    flex: none;
-}
-
-.pill-state { border: 1px solid currentColor; }
-.pill-state.pill-muted { color: var(--text-muted); border-color: var(--border-strong); }
-
 /* ------------------------------------------------------------------ layout */
 
 main {
@@ -288,20 +285,6 @@ main {
    the normal case and the buttons are the exception.
 */
 .grid-selling{ grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-items: stretch; }
-
-/*
-   Columns rather than grid rows. Module cards differ a lot in height - one has three
-   configuration values, another has fifteen - and in a grid the row is as tall as the
-   taller card, leaving the shorter one with a pool of blank space beside it. Columns
-   pack each card against the one above, so every card is exactly as tall as its own
-   content and nothing is cut off or scrolled. Reading order runs down the first column
-   and then down the second; the modules are independent, so nothing is lost.
-*/
-.grid-modules {
-    display: block;
-    column-count: 2;
-    column-gap: 20px;
-}
 
 /* ------------------------------------------------------------------- cards */
 
@@ -548,6 +531,100 @@ main {
     text-align: center;
     color: var(--text-faint);
     font-size: .875rem;
+}
+
+/* -------------------------------------------------------------- statistics */
+
+/* Saturday and Sunday, so the rhythm of a week reads at a glance. */
+.day-weekend { fill: var(--text-faint); opacity: .07; pointer-events: none; }
+
+/* Today is still running, and its column says so. */
+.day-today { fill: var(--accent); opacity: .08; pointer-events: none; }
+
+.day-bar,
+.day-zero { pointer-events: none; }
+
+/* The day's net on the money chart: a tick across the column, above income and cost alike. */
+.day-marker {
+    stroke: var(--text);
+    stroke-width: 2;
+    stroke-linecap: round;
+    pointer-events: none;
+}
+
+/* A legend entry for that tick rather than for a filled bar. */
+.swatch-tick { height: 3px; border-radius: 2px; }
+
+/* The watched time, split between the work modes as one bar. */
+.mode-share-bar {
+    display: flex;
+    height: 16px;
+    margin: 6px 0 4px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: var(--surface-alt);
+}
+
+.mode-share-bar > span { height: 100%; min-width: 2px; }
+
+/* The breakdown opens on demand; its header is the card's own heading. */
+.stats-details > summary {
+    cursor: pointer;
+    list-style: none;
+    margin-bottom: 0;
+}
+
+.stats-details > summary::-webkit-details-marker { display: none; }
+.stats-details[open] > summary { margin-bottom: 12px; }
+.stats-details > summary .card-hint { text-decoration: underline; text-underline-offset: 3px; }
+
+/* The table scrolls inside its card, so the page itself never scrolls sideways. */
+.table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.stats-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .82rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.stats-table th,
+.stats-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    white-space: nowrap;
+}
+
+.stats-table th:first-child,
+.stats-table td:first-child { padding-left: 0; }
+
+.stats-table th {
+    color: var(--text-muted);
+    font-size: .74rem;
+    font-weight: 600;
+}
+
+.stats-table .num { text-align: right; }
+.stats-table tbody tr:hover td { background: var(--surface-alt); }
+
+/* Today, or a day whose money is only partly known: readable, but not on a par with the rest. */
+.stats-table tr.is-partial td { color: var(--text-muted); font-style: italic; }
+
+.stats-table tfoot td {
+    font-weight: 650;
+    border-bottom: 0;
+    border-top: 2px solid var(--border-strong);
+}
+
+.stats-table caption {
+    caption-side: top;
+    padding: 6px 0;
+    text-align: left;
+    color: var(--text-faint);
 }
 
 /* ----------------------------------------------------------------- tooltip */
@@ -1010,205 +1087,6 @@ main {
     line-height: 1.45;
 }
 
-/* ----------------------------------------------------------------- modules */
-
-.module-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    padding: 18px 20px 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    /* A card is never split across the column break. */
-    break-inside: avoid;
-    margin-bottom: 20px;
-}
-
-.module-body {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-}
-
-.module-card.is-disabled { opacity: .62; }
-
-.module-head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--border);
-}
-
-.module-title { display: flex; flex-direction: column; gap: 3px; }
-.module-title code { font-family: var(--mono); font-size: .74rem; color: var(--text-faint); }
-
-/*
-   Status, configuration and plan each get their own panel, so a widget can be
-   read section by section instead of as one run of text.
-*/
-.module-section {
-    padding: 12px 14px;
-    background: var(--surface-alt);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-}
-
-.module-section-title {
-    margin: 0 0 10px;
-    font-size: .72rem;
-    font-weight: 700;
-    letter-spacing: .08em;
-    text-transform: uppercase;
-    color: var(--text-faint);
-}
-
-.module-desc {
-    margin: 0 0 10px;
-    color: var(--text-muted);
-    font-size: .84rem;
-}
-
-/* The state and what it means, on one clearly readable line. */
-.module-status {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 10px;
-    padding: 9px 11px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    font-size: .84rem;
-}
-
-.module-status .module-summary {
-    color: var(--text);
-    font-weight: 500;
-}
-
-/* Why the last run decided what it did. Sits under the status line, not inside it,
-   so a long sentence never pushes the state pill around. */
-.module-status-detail {
-    margin: 8px 0 0;
-    color: var(--text-muted);
-    font-size: .8rem;
-    line-height: 1.5;
-}
-
-.module-facts {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
-    gap: 10px 16px;
-    margin: 12px 0 0;
-    padding-top: 10px;
-    border-top: 1px solid var(--border);
-}
-
-.module-facts dt {
-    color: var(--text-faint);
-    font-size: .7rem;
-    text-transform: uppercase;
-    letter-spacing: .05em;
-    font-weight: 600;
-}
-
-.module-facts dd {
-    margin: 2px 0 0;
-    font-size: .84rem;
-    font-weight: 550;
-    font-variant-numeric: tabular-nums;
-}
-
-.module-error {
-    margin: 10px 0 0;
-    padding: 7px 9px;
-    border-radius: var(--radius-sm);
-    background: var(--danger-soft);
-    color: var(--danger);
-    font-size: .78rem;
-}
-
-.module-empty {
-    margin: 0;
-    color: var(--text-faint);
-    font-size: .82rem;
-}
-
-.config-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: .82rem;
-}
-
-.config-table td {
-    padding: 6px 0;
-    border-bottom: 1px solid var(--border);
-    vertical-align: top;
-}
-
-.config-table tr:last-child td { border-bottom: 0; }
-
-.config-label { color: var(--text-muted); }
-.config-label small { display: block; color: var(--text-faint); font-size: .72rem; line-height: 1.35; }
-
-.config-value {
-    text-align: right;
-    font-weight: 550;
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-    color: var(--text);
-}
-
-.module-actions {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    font-size: .82rem;
-}
-
-.module-actions li {
-    display: flex;
-    gap: 10px;
-    padding: 5px 0;
-    border-bottom: 1px solid var(--border);
-    color: var(--text-muted);
-}
-
-.module-actions li:last-child { border-bottom: 0; }
-
-.module-actions time { color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
-
-/* ------------------------------------------------------------------ switch */
-
-.switch { display: inline-flex; align-items: center; cursor: pointer; }
-.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
-
-.switch-track {
-    width: 40px; height: 22px;
-    border-radius: 999px;
-    background: var(--border-strong);
-    position: relative;
-    transition: background .18s;
-}
-
-.switch-track::after {
-    content: "";
-    position: absolute;
-    top: 3px; left: 3px;
-    width: 16px; height: 16px;
-    border-radius: 50%;
-    background: #fff;
-    transition: transform .18s;
-}
-
-.switch input:checked + .switch-track { background: var(--success); }
-.switch input:checked + .switch-track::after { transform: translateX(18px); }
-.switch input:focus-visible + .switch-track { outline: 2px solid var(--accent); outline-offset: 2px; }
-
 /* ------------------------------------------------------------------- modal */
 
 .modal {
@@ -1403,9 +1281,8 @@ main {
 
 /* ================================================================ responsive */
 
-/* Two module widgets per row, one once there is no room for two. */
+/* Selling and the quick actions stack once there is no room for both side by side. */
 @media (max-width: 1000px) {
-    .grid-modules { column-count: 1; }
     .grid-selling { grid-template-columns: minmax(0, 1fr); }
     .page-intro { max-width: none; }
 }
@@ -1425,8 +1302,12 @@ main {
     .grid { gap: 12px; }
     .page { gap: 12px; }
 
+    /* The statistics tiles sit inside a card, so on a phone they are narrower still than the
+       live ones; two to a row keeps nine of them from turning into a scroll of their own. */
+    #stats-tiles { grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr)); gap: 10px; }
+    #stats-tiles .stat { padding: 12px; }
+
     .card,
-    .module-card,
     .stat { padding: 14px; }
 
     .card { border-radius: 12px; }
@@ -1529,13 +1410,6 @@ main {
     .timeline-list li > .timeline-time { grid-area: time; }
     .timeline-list li > .pill { grid-area: badge; justify-self: end; }
     .timeline-list li > .timeline-summary { grid-area: text; }
-
-    /* The label and its value stack, so a long value is never squeezed into a thin column. */
-    .config-table td { padding: 7px 0; }
-    .config-value { white-space: normal; }
-
-    .module-actions li { flex-wrap: wrap; gap: 2px 10px; }
-    .module-facts { grid-template-columns: repeat(auto-fit, minmax(min(110px, 45%), 1fr)); }
 
     /* Anchored to the bottom edge, where a dialog is reachable one-handed. */
     .modal {
