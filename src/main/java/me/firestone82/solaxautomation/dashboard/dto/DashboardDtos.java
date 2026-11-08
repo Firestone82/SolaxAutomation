@@ -206,6 +206,10 @@ public final class DashboardDtos {
             boolean armed,
             boolean running,
             boolean manual,
+
+            /** Who armed the window: {@code planner}, {@code dashboard} or another module's id. */
+            String armedBy,
+
             LocalDateTime from,
             LocalDateTime to,
             Integer watts,

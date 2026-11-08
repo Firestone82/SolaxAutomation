@@ -78,6 +78,7 @@ classpath is enough for the registry, the API and the timeline to pick it up (gi
 | Export limit | `automation.export` | Closes the export limit while the spot price is too low to be worth selling, and throttles it around midday on dull days. Runs every quarter of an hour, matching how often the price changes. |
 | Weather work mode | `automation.weather` | Chooses between feed-in priority and self use from the forecast, and moves to backup ahead of a thunderstorm. |
 | Grid selling | `automation.discharge` | Finds the most valuable quarter-hour window of the day and sells the battery into it through remote control. |
+| Morning buy and sell | `automation.morning` | Off by default. Fills the battery from the night tariff of the second supply when the day looks bad or the morning price is worth selling into, and sells the morning peak. |
 
 ### Writing a new module
 
@@ -197,6 +198,44 @@ at the limit.
 
 The placement rules are covered by `DischargeWindowPlannerTest` — they decide how much money the
 battery earns, so they are pinned down rather than only observed in production logs.
+
+---
+
+## Morning buy and sell
+
+The house has a second supply with a cheap night tariff, from midnight to 06:00. With
+`automation.morning.enabled` on, the module decides at the start of the night charge window
+(02:00) whether filling the battery from that tariff is worth it. There are two reasons it can be:
+
+- **A bad day.** The mean forecast quality over the day's productive hours (`bad-weather`, 08:00 to
+  16:00) is at or above `min-quality` (3.0, about mostly cloudy). The panels will not fill the battery
+  today, so the night tariff does it, and the house runs on that rather than on daytime grid power.
+- **A good morning price.** Some interval of the morning sale window (06:15 to 09:00) reaches
+  `sell.min-price`, the price X. Energy bought at night is then sold at a profit after it.
+  The day's prices are published the afternoon before, so they are known at 02:00.
+
+Either reason is enough. Nothing is bought when the battery is already at `target-battery` (100 %),
+or when the house is on the metered grid, where the night tariff does not apply
+(`require-second-supply`, read from the connection switch). The charge is a remote control session
+sent for exactly the rest of the window, so it ends at 06:00 on its own even if this application does
+not. A check every minute ends it earlier once the battery is full, or if the house moves to the
+metered grid. The decision runs on a minute tick rather than a single cron firing, so a restart at
+03:30 still charges the rest of the night instead of losing it.
+
+From 06:15 the morning is sold into, wherever the price is at or above X: the first unbroken run of
+such intervals up to 09:00. Only on the metered grid (`require-metered-grid`), because export from
+the second supply never reaches the meter. The sale is handed to the grid selling module
+(`DischargeModule.armFor`), so it runs exactly like an evening sale. The panels go first, the guard
+stops it at the reserve, the selling card shows it as armed by the morning automation, and the
+statistics count it as a sale. That module therefore has to be enabled. The reserve is
+`sell.reserve-battery` (40 %) on an ordinary day and `sell.bad-weather-reserve` (80 %) on a bad one,
+because that charge was bought to carry the house. A window already armed is never replaced.
+
+Set X above what the night tariff costs plus the losses of charging and discharging, or the round
+trip loses money. The planned actions on the History page preview tonight's decision as soon as the
+forecast and the prices allow, and every decision is in the activity list with its reason.
+
+The rules are covered by `MorningModuleTest` and `DischargeArmForTest`.
 
 ---
 

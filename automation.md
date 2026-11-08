@@ -206,6 +206,36 @@ na zvolenou dobu. Varianta „začít hned“ se řídí hodinami aplikace, ne p
 
 ---
 
+## Ranní nákup a prodej — `automation.morning`
+
+Ve výchozím stavu **vypnuto** (`enabled: false`), protože nakupuje ze sítě. Před zapnutím nastavte
+cenu X (`sell.min-price`) podle svého nočního proudu.
+
+Dům má druhou přípojku s levným nočním proudem od půlnoci do 6:00. Ve **2:00** se modul rozhodne,
+jestli se vyplatí baterii z nočního proudu nabít. Stačí jeden ze dvou důvodů:
+
+> **POKUD** má předpověď na 8:00–16:00 průměrnou kvalitu **3,0 nebo horší** (zhruba skoro zataženo)
+> **PROVEĎ:** nabij baterii z nočního proudu, aby dům přes den utáhla.
+
+> **POKUD** ranní cena mezi 6:15 a 9:00 někdy dosáhne **X CZK/kWh**
+> **PROVEĎ:** nabij baterii z nočního proudu, aby se od 6:15 mohla prodat.
+
+Nenabíjí se, když je baterie už na 100 % nebo když je dům na měřené síti, kde noční proud neplatí.
+Nabíjí se 3 000 W dálkovým řízením, které samo skončí v 6:00. Každou minutu se kontroluje, a když je
+baterie plná nebo dům přejde na měřenou síť, nabíjení skončí dřív. Restart ve 3:30 noc neztratí,
+rozhodne se hned a nabíjí se zbytek okna.
+
+Od **6:15** se prodává tam, kde je cena aspoň X: první souvislý úsek takových čtvrthodin do 9:00.
+Prodává se jen na měřené síti, protože dodávka z druhé přípojky k elektroměru nedojde. Prodej provádí
+modul _Prodej do sítě_ (musí být zapnutý), takže běží stejně jako večerní prodej: nejdřív panely,
+zastavení na rezervě, zobrazení v kartě Prodej a započtení do statistik. Prodává se do **40 %**, ve
+špatný den jen do **80 %**, protože nabití bylo koupené na pokrytí dne.
+
+Náhled nočního rozhodnutí je v _Plánovaných akcích_ na stránce Historie, jakmile jsou známé
+předpověď a ceny. Každé rozhodnutí i s důvodem je v _Poslední aktivitě_.
+
+---
+
 ## Rychlé akce z nástěnky
 
 Vedle karty prodeje sedí **Rychlé akce** — ruční zásahy pro to, o čem automatika vědět nemůže.

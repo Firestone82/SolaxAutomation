@@ -876,7 +876,7 @@
      * than fetched - the dashboard no longer has a modules page to fetch them for - and an id
      * that turns up in the history without a translation is shown as it is.
      */
-    const KNOWN_MODULES = ['battery', 'export', 'weather', 'discharge'];
+    const KNOWN_MODULES = ['battery', 'export', 'weather', 'discharge', 'morning'];
 
     function moduleNames() {
         const ids = new Set([...KNOWN_MODULES, ...NON_MODULE_SOURCES]);
@@ -1421,13 +1421,25 @@
         const notes = [
             selling.running ? t('selling.endsIn', {duration: relativeTo(selling.to)}) : relativeToStart(selling.from),
             pvShare,
-            selling.manual ? t('selling.manual') : t('selling.automatic')
+            armedByLabel(selling)
         ].filter(Boolean);
 
         const footer = document.createElement('p');
         footer.className = 'selling-hero-note';
         footer.textContent = notes.join(' · ');
         hero.appendChild(footer);
+    }
+
+    /**
+     * Who armed the window. Another module - the morning sale - has a sentence of its own,
+     * looked up by its id, and one the dictionary does not know falls back to "manually".
+     */
+    function armedByLabel(selling) {
+        if (selling.armedBy && selling.armedBy !== 'planner' && selling.armedBy !== 'dashboard') {
+            return I18N.message('selling.armedBy.' + selling.armedBy, null, t('selling.manual'));
+        }
+
+        return selling.manual ? t('selling.manual') : t('selling.automatic');
     }
 
     function renderSellingFacts(selling) {

@@ -417,6 +417,51 @@ automation:
     fallback-to-manual-mode: false
     mode-after-fallback: SELF_USE
 
+  # ---------------------------------------------------------------------------
+  #  Morning buy and sell
+  #  Fills the battery from the cheap night tariff of the second supply when
+  #  the day looks bad, or when the morning price is worth selling into, and
+  #  sells the morning peak once the house is back on the metered grid.
+  #  Off by default, because it buys from the grid. Set sell.min-price for your
+  #  night tariff before turning it on. The sale itself is run by the grid
+  #  selling module above, so that one has to be enabled too.
+  # ---------------------------------------------------------------------------
+  morning:
+    enabled: false
+    charge:
+      # Tonight's decision is made at the start of this window, and the remote
+      # control session is sent to end with it, so it stops on its own.
+      from: "02:00"
+      to: "06:00"
+      target-battery: 100
+      power: 3000
+      # The night tariff only applies on the second supply (connection switch
+      # LOW). The charge stops if the house moves to the metered grid.
+      require-second-supply: true
+    bad-weather:
+      enabled: true
+      # Mean forecast quality over the hours below at or above which the day is
+      # bad enough to charge for. About 3 is mostly cloudy, 4 overcast, 4.5 rain.
+      min-quality: 3.0
+      from-hour: 8
+      to-hour: 16
+    sell:
+      enabled: true
+      from: "06:15"
+      to: "09:00"
+      # The price X in CZK/kWh. The morning has to reach it for the night charge
+      # to be bought for the price alone, and only intervals at or above it are
+      # sold into. Set it above what the night tariff costs plus the losses of
+      # charging and discharging.
+      min-price: 5.0
+      # 0 follows automation.discharge.discharge-power.
+      power: 0
+      reserve-battery: 40
+      # On a bad day the charge was bought to carry the house, so less is sold.
+      bad-weather-reserve: 80
+      # The export only reaches the meter on the metered grid (switch HIGH).
+      require-metered-grid: true
+
 # -----------------------------------------------------------------------------
 #  Logging
 #  Appenders are in log4j2.xml. Despite the name that file is logback configuration

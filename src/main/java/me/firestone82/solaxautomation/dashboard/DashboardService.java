@@ -277,7 +277,7 @@ public class DashboardService {
         Optional<DischargeModule> moduleOpt = Optional.ofNullable(dischargeModule.getIfAvailable());
 
         if (moduleOpt.isEmpty()) {
-            return new SellingState(false, false, false, false, null, null, null, null, null,
+            return new SellingState(false, false, false, false, null, null, null, null, null, null,
                     "The selling module is not loaded", "plan.notLoaded", Map.of(),
                     inverter.isRemoteControlAvailable(), null,
                     dischargeProperties.resolveDischargePower(exportProperties.getPower().getMaximum()), List.of());
@@ -298,6 +298,7 @@ public class DashboardService {
                 armed.isPresent(),
                 module.isDischarging(),
                 armed.map(ArmedWindow::manual).orElse(false),
+                armed.map(ArmedWindow::source).orElse(null),
                 armed.map(ArmedWindow::from).orElse(null),
                 armed.map(ArmedWindow::to).orElse(null),
                 armed.map(ArmedWindow::watts).orElse(null),
