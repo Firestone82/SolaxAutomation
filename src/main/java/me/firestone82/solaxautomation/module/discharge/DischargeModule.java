@@ -119,7 +119,7 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
                 ConfigEntry.of("automation.discharge.price-tolerance", "Peak tolerance", properties.getPriceTolerance(), "CZK/kWh",
                         "How far below the peak an interval may be and still be sold into"),
                 ConfigEntry.of("automation.discharge.min-battery", "Minimum battery", properties.getMinBattery(), "%",
-                        "State of charge required for the sale to happen; sizes the window and gates its start"),
+                        "State of charge required for the sale to happen. It sizes the window and gates its start"),
                 ConfigEntry.of("automation.discharge.target-battery", "Reserve", properties.getTargetBattery(), "%",
                         "State of charge the discharge stops at"),
                 ConfigEntry.of("automation.discharge.discharge-power", "Discharge power", dischargePower(), "W",
@@ -209,7 +209,7 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
     public synchronized DischargePlan planAndArm() {
         ArmedWindow current = armedWindow;
         if (current != null && current.manual()) {
-            log.info("Keeping the manually armed window {}-{}; automatic planning skipped", current.from(), current.to());
+            log.info("Keeping the manually armed window {}-{}, so automatic planning is skipped", current.from(), current.to());
             return lastPlan;
         }
 
@@ -586,7 +586,7 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
 
         Optional<Integer> socOpt = inverter.getBatterySoc();
         if (socOpt.isEmpty()) {
-            log.warn("Battery level unavailable while selling; letting the remote control session run to its end");
+            log.warn("Battery level unavailable while selling, letting the remote control session run to its end");
             return;
         }
 
@@ -704,7 +704,7 @@ public class DischargeModule extends AbstractAutomationModule<DischargePropertie
                 pvOpt.get(), current, wanted, humanize(remaining));
 
         if (!inverter.startRemoteDischarge(wanted, remaining)) {
-            log.warn("The inverter did not accept the new battery share; the sale keeps running at {} W", current);
+            log.warn("The inverter did not accept the new battery share, so the sale keeps running at {} W", current);
             return window;
         }
 

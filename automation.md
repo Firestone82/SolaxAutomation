@@ -308,8 +308,8 @@ zaznamenané.
 Žádná historie, kterou by šlo stáhnout, neexistuje — střídač i cloud hlásí jen *dnešní* čítače a
 cenová služba jen *dnešní* ceny. Aplikace proto každých **5 minut** zaznamená denní čítače (výroba,
 dodávka, odběr, nabito, vybito), stav baterie, výkon, režim a cenu a drží jeden záznam na den v
-`data/statistics.json`. **Statistiky tedy začínají dnem prvního spuštění** a postupně se doplní;
-dny, kdy aplikace neběžela, zůstanou v grafu jako mezera.
+`data/statistics.json`. **Statistiky tedy začínají dnem prvního spuštění** a postupně se doplní.
+Dny, kdy aplikace neběžela, zůstanou v grafu jako mezera.
 
 Peníze se počítají průběžně: každý přírůstek dodávky a odběru se ocení spotovou cenou čtvrthodiny, ve
 které ho střídač nahlásil, a co odešlo během prodeje, se počítá zvlášť jako výnos prodeje. Jde jen o
@@ -321,4 +321,4 @@ zpět (z klouzavého pohledu rovnou na minulý měsíc), › zase dopředu a ze 
 měsíc, za který něco zaznamenáno je. Aktuální měsíc běží od 1. do dneška. Zobrazuje se: dlaždice se součty, energie po dnech, peníze po dnech
 (příjem nad osou, náklady pod ní, čárka = čistý výsledek), rozsah nabití baterie po dnech, čas v
 jednotlivých režimech a rozbalovací tabulka všech dní. Energie a peníze potřebují připojení k SolaX
-Cloudu; samotný Modbus je nehlásí.
+Cloudu, samotný Modbus je nehlásí.

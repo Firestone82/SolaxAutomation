@@ -24,7 +24,7 @@ public class StatisticsProperties {
      * How often the inverter's day counters and the spot price are sampled.
      * <p>
      * The cloud refreshes its counters every few minutes, so sampling much faster only reads
-     * the same numbers again; much slower and the exported energy is valued at the price of
+     * the same numbers again. Much slower, and the exported energy is valued at the price of
      * an interval it mostly did not flow in.
      */
     private Duration sampleInterval = Duration.ofMinutes(5);
@@ -38,11 +38,11 @@ public class StatisticsProperties {
     /**
      * How often the file is rewritten at most, besides at a day change and at shutdown.
      * <p>
-     * The application runs off an SD card on a Raspberry Pi; a sample every few minutes does
+     * The application runs off an SD card on a Raspberry Pi, and a sample every few minutes does
      * not need to wear it every few minutes.
      */
     private Duration persistInterval = Duration.ofMinutes(15);
 
-    /** How far back days are kept. The dashboard offers up to a quarter of a year. */
+    /** How far back days are kept, and so how far back the dashboard can browse. */
     private Duration retention = Duration.ofDays(400);
 }

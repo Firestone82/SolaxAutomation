@@ -220,18 +220,18 @@ timeline:
 #  battery's range, the time in each work mode, and the money - each sample's
 #  export and import valued at that quarter-hour's spot price. The statistics
 #  therefore start on the day this runs for the first time and fill in from there.
-#  Energy and money need the SolaX Cloud connection; Modbus alone reports neither.
+#  Energy and money need the SolaX Cloud connection. Modbus alone reports neither.
 # -----------------------------------------------------------------------------
 statistics:
   enabled: true
-  # The cloud refreshes its counters every few minutes; faster reads the same numbers.
+  # The cloud refreshes its counters every few minutes, so faster reads the same numbers.
   sample-interval: 5m
   persist: true
   file: data/statistics.json
   # The Pi runs off an SD card, so the file is rewritten at most this often (and
   # at every day change and shutdown).
   persist-interval: 15m
-  # The dashboard offers up to 90 days; a year is kept for the asking.
+  # How far back days are kept, and so how far back the month browser reaches.
   retention: 400d
 
 # =============================================================================

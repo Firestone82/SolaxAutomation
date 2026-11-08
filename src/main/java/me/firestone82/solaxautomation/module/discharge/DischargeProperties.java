@@ -93,8 +93,8 @@ public class DischargeProperties implements ModuleProperties {
 
     /**
      * Power a sale delivers, W. {@code 0} follows {@code automation.export.power.maximum}.
-     * With {@link #pvFirst} on, this is what the panels and the battery deliver together; off,
-     * it is what the battery alone is discharged at.
+     * With {@link #pvFirst} on, this is what the panels and the battery deliver together. With
+     * it off, it is what the battery alone is discharged at.
      * <p>
      * This is not export power: whatever the house is using at that moment comes out of it
      * first. Set to
@@ -132,7 +132,7 @@ public class DischargeProperties implements ModuleProperties {
     /**
      * How far the panels' output has to move before the battery's share is re-sent, W.
      * <p>
-     * Every change is a cloud command, and the cloud is rate limited; following every few
+     * Every change is a cloud command, and the cloud is rate limited. Following every few
      * watts of a passing cloud would spend that budget on nothing the meter would notice.
      */
     private int pvFollowDeadband = 150;

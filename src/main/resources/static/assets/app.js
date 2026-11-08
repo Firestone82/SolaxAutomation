@@ -540,7 +540,7 @@
 
             const fill = document.createElement('i');
             fill.style.width = Math.max(0, Math.min(100, tile.bar)) + '%';
-            // A tile that names its own colour means the bar is a proportion; without
+            // A tile that names its own colour means the bar is a proportion. Without
             // one it is a level, and a level low enough is worth a warning.
             fill.style.background = tile.barColour
                 || (tile.bar < 25 ? 'var(--danger)' : (tile.bar < 50 ? 'var(--warning)' : 'var(--success)'));
@@ -1613,7 +1613,7 @@
 
     /**
      * The range switch and the month browser beside it. The browser is always there, so going
-     * back a month is one press from any view; while a rolling range is shown it steps back
+     * back a month is one press from any view. While a rolling range is shown it steps back
      * to its quieter look, because the month in it is not what is on screen.
      */
     function markStatsRange() {
@@ -1642,7 +1642,7 @@
         select.value = months.includes(shown) ? shown : months[0];
         el('stats-month-nav').classList.toggle('is-idle', !browsing);
 
-        // From a rolling view the arrow goes to last month; inside a month, to the one before.
+        // From a rolling view the arrow goes to last month, inside a month to the one before.
         const back = browsing ? shiftMonth(state.statsMonth, -1) : shiftMonth(monthKey(new Date()), -1);
         el('stats-month-prev').disabled = !months.includes(back);
         el('stats-month-next').disabled = !browsing || state.statsMonth >= months[0];
@@ -2464,7 +2464,7 @@
 
         document.querySelectorAll('#stats-range .segment').forEach(button =>
             button.addEventListener('click', () => {
-                // A rolling range always ends today; the month browser starts over from this month.
+                // A rolling range always ends today, and the month browser starts over from this month.
                 state.statsMonth = monthKey(new Date());
                 setStatsRange(button.dataset.days);
             }));

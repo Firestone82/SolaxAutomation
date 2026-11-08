@@ -268,7 +268,7 @@ public class StatisticsService {
     /**
      * Puts {@code kwh} against {@code price}. {@code null} energy is a stretch of the day that
      * could not be valued - the first reading came hours after midnight - and an unknown
-     * price leaves energy that was there unvalued; either way the day's money is only partial.
+     * price leaves energy that was there unvalued. Either way the day's money is only partial.
      */
     private static void value(DayStatistics day, Double kwh, Double price, boolean selling, boolean export) {
         if (kwh == null || (price == null && kwh > 0)) {

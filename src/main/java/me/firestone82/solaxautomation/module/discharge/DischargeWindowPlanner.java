@@ -248,9 +248,9 @@ public class DischargeWindowPlanner {
         boolean wholeRun = plateau.getSlotCount() <= maxSlots;
 
         String text = wholeRun
-                ? base + String.format(Locale.ROOT, "; %.1f kWh covers the whole run", energyKwh)
+                ? base + String.format(Locale.ROOT, ", and %.1f kWh covers the whole run", energyKwh)
                 : base + String.format(Locale.ROOT,
-                "; %.1f kWh only covers %d of them, placed latest at the highest total (%s-%s)",
+                ", but %.1f kWh only covers %d of them, placed latest at the highest total (%s-%s)",
                 energyKwh, maxSlots, window.getStart(), window.getEnd());
 
         return Message

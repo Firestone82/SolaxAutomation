@@ -138,7 +138,7 @@ class DischargePanelsFirstTest {
         panelsDeliver(1700);
         module.guardRunningDischarge();
 
-        // Only the start; 100 W is under the 150 W deadband.
+        // Only the start, because 100 W is under the 150 W deadband.
         verify(inverter, times(1)).startRemoteDischarge(anyInt(), any());
         assertEquals(2800, module.getArmedWindow().orElseThrow().batteryWatts());
     }

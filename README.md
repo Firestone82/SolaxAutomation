@@ -178,7 +178,7 @@ not cover: `discharge-power` minus the live PV reading, in tens of watts, never 
 together still put out `discharge-power`, so the meter still sees the full limit — the panels' share
 simply stays in the battery. The guard re-reads the panels every `guard-interval` (now 2 min) and
 re-sends the battery's share whenever it should move by more than `pv-follow-deadband` (150 W), so the
-battery takes over as the sun sets; each re-send carries the time left in the window, so the session
+battery takes over as the sun sets. Each re-send carries the time left in the window, so the session
 still expires on its own. Following is synchronised with cancelling, and checks the window is still
 the armed one before sending anything, so a cancelled sale is never restarted behind the dashboard's
 back. Without a PV reading the battery takes the whole sale, as before. The start of the sale logs the
@@ -227,7 +227,7 @@ Nothing upstream keeps a history this application can ask for — the inverter a
 goes. Every `statistics.sample-interval` (5 min) it reads the inverter's day counters (yield, export,
 import, battery charged and discharged), the battery level, the production and load, the work mode
 and the price, and keeps one record per calendar day in `statistics.file` (`data/statistics.json`).
-**The statistics therefore start on the day this version first runs and fill in from there**; days
+**The statistics therefore start on the day this version first runs and fill in from there**. Days
 the application was down are drawn as gaps rather than closed up.
 
 Money cannot be read off the counters at the end of the day, because the price moves every quarter of
@@ -247,24 +247,24 @@ The section shows:
   and a tick for the day's net.
 - **Battery per day** — a bar from the lowest to the highest state of charge.
 - **Time in each work mode** — the watched time split between the modes.
-- **Daily breakdown** — every recorded day in a table, newest first, with totals; built only while
+- **Daily breakdown** — every recorded day in a table, newest first, with totals, built only while
   it is open.
 
 **Which days.** The switch picks the last 7, 30 or 90 days, ending today. Beside it is a **month
 browser**: ‹ goes back a calendar month (from a rolling view, to last month), › forward again, and the
 list jumps straight to any month there is something recorded for — back to the month recording began,
 or the oldest month still within `retention`. The current month runs from the 1st to today. Which
-kind of view is remembered per browser; the month browsed to is not, so the page always opens on the
+kind of view is remembered per browser, but the month browsed to is not, so the page always opens on the
 present. The line under the heading names the period on screen and how many of its days have data.
 The API takes either shape: `GET /api/statistics?days=30` or
 `GET /api/statistics?from=2026-10-01&to=2026-10-31`, clipped to what is kept and never past today.
 
-Weekends get a faint wash and today, still running, a faint outline; hovering any day gives every
+Weekends get a faint wash and today, still running, a faint outline. Hovering any day gives every
 number recorded for it. Consumption is the energy balance
 (production + import + battery out − export − battery in), and the energies and money need the SolaX
 Cloud connection — Modbus alone reports neither, so without the cloud only the battery, production
 peak and work mode time are recorded. The file is rewritten at most every `persist-interval` (15 min),
-at a day change and at shutdown, so the SD card on the Pi is not worn every five minutes; days older
+at a day change and at shutdown, so the SD card on the Pi is not worn every five minutes. Days older
 than `retention` (400 days) are dropped.
 
 **Every tile keeps one fact per line**, and the ones with a known ceiling draw it. The battery has its
@@ -347,7 +347,7 @@ whether the inverter took it. The weather quality formula sits behind the ⓘ bu
 header rather than taking up space on every visit, and the two thresholds are named in the legend
 instead of being written across the plot.
 
-There is no modules page any more. A module is switched off with its `enabled` flag; the API behind
+There is no modules page any more. A module is switched off with its `enabled` flag. The API behind
 the old page is still there for a script that wants it — `GET /api/modules` reports every module's
 status, configuration and plan, and `POST /api/modules/{id}/enabled?value=false` disables one until
 the next restart.

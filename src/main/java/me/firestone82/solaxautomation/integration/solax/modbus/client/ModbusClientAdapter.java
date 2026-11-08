@@ -143,7 +143,7 @@ public class ModbusClientAdapter {
         // and stopping the client underneath it cancels the very future that request is blocked
         // on. There is another sweep along in fifteen seconds.
         if (!connectionLock.tryLock()) {
-            log.trace("A Modbus request is in flight; leaving the connection alone");
+            log.trace("A Modbus request is in flight, leaving the connection alone");
             return;
         }
 
@@ -182,7 +182,7 @@ public class ModbusClientAdapter {
             }
 
             if (modbusClient.isStarted()) {
-                log.debug("Client is started but the connection is gone; stopping it before reconnecting");
+                log.debug("Client is started but the connection is gone, stopping it before reconnecting");
                 disconnect();
             }
 

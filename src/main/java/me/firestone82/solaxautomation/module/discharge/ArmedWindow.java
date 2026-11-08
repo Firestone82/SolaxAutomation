@@ -14,7 +14,7 @@ import java.time.LocalDateTime;
  * @param armedAt      when the window was armed
  * @param running      {@code true} once the remote control session has actually started
  * @param batteryWatts the part of {@code watts} the battery is currently asked for. Equal to
- *                     {@code watts} until the sale starts; lower while the panels are covering
+ *                     {@code watts} until the sale starts, lower while the panels are covering
  *                     the rest of it
  */
 public record ArmedWindow(

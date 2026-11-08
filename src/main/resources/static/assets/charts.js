@@ -863,13 +863,13 @@ const Charts = (() => {
     /**
      * One column per calendar day, for the statistics section. Three shapes:
      * <ul>
-     *   <li>{@code grouped} - every series its own bar from zero, side by side;</li>
+     *   <li>{@code grouped} - every series its own bar from zero, side by side,</li>
      *   <li>{@code stacked} - positive values stacked upwards from zero and negative ones
-     *       downwards, so income and cost read as one column split by the axis;</li>
+     *       downwards, so income and cost read as one column split by the axis,</li>
      *   <li>{@code range} - one floating bar from a low to a high value.</li>
      * </ul>
      * A day nothing was recorded on keeps its column, empty, so a gap in the record shows as a
-     * gap rather than being closed up; weekends get a faint wash and today, which is still
+     * gap rather than being closed up. Weekends get a faint wash and today, which is still
      * running, a faint outline. Each column is one hover target.
      *
      * options: series [{value: day => number, colour}], mode, range {low, high, colour},

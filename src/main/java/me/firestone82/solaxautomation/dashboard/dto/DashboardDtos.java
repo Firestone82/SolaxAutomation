@@ -210,7 +210,7 @@ public final class DashboardDtos {
             LocalDateTime to,
             Integer watts,
 
-            /** Part of {@code watts} the battery is asked for right now; the panels carry the rest. */
+            /** Part of {@code watts} the battery is asked for right now. The panels carry the rest. */
             Integer batteryWatts,
 
             Double expectedRevenue,

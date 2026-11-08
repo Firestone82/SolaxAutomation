@@ -154,7 +154,7 @@ class StatisticsServiceTest {
 
         DayStatistics day = only(DAY);
         assertEquals(1, day.getSales().size());
-        // The 1.0 before 18:00 is ordinary export; the two 0.3 kWh steps after it are the sale.
+        // The 1.0 before 18:00 is ordinary export, the two 0.3 kWh steps after it are the sale.
         assertEquals(0.6, day.getSoldKwh(), 1e-9);
         assertEquals(4.8, day.getSoldValue(), 1e-9);
     }
