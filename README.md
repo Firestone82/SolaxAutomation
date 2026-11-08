@@ -204,21 +204,24 @@ battery earns, so they are pinned down rather than only observed in production l
 
 `http://<host>:8080/` — no build step, no CDN, works offline on the Pi.
 
-Two pages: **Overview**, which is the dashboard, and **History**, which is what the modules will do
-and what they did.
+Three pages: **Control**, which is the dashboard proper, **Statistics**, which is the days behind
+us, and **History**, which is what the modules will do and what they did. The page you were on is
+remembered per browser.
 
-**Overview** — first the day's 96 quarter-hour prices with the armed selling window highlighted, and
+**Control** — first the day's 96 quarter-hour prices with the armed selling window highlighted, and
 the weather quality curve with the thresholds the modules compare against: every decision the
 controls make is read off those two. Then the controls — the selling card and the quick actions.
 Then the live tiles — battery/PV/grid/load, work mode, current price, and the Raspberry Pi's
 connection switch (HIGH is the metered grid, LOW the second supply — the tile says which, and says
-plainly when it is the off-Pi stub rather than a pin). Then the **statistics** for the last 7, 30 or
-90 days (below).
+plainly when it is the off-Pi stub rather than a pin).
+
+**Statistics** — the summary tiles, energy and money per day, the battery's daily range, the time in
+each work mode and the daily breakdown, for the last 7, 30 or 90 days or a calendar month (below).
 
 **History** — the planned actions (a timeline of what every module intends to do and what it already
 did, with the list of what is coming) and the activity list, with its day filter, _Changes only_ and
-row count. Neither grows the overview: the plan is long on a busy day and the activity list grows all
-day.
+row count. Neither grows the control page: the plan is long on a busy day and the activity list grows
+all day.
 
 ### Statistics
 

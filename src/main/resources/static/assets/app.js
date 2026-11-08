@@ -242,8 +242,12 @@
 
     /* --------------------------------------------------------------- routing */
 
-    /** The pages there are. A stored page that no longer exists - the old modules page - opens the overview. */
-    const PAGES = ['overview', 'history'];
+    /**
+     * The pages there are: control (kept as 'overview' so a stored choice still opens it),
+     * statistics and history. A stored page that no longer exists - the old modules page -
+     * opens the control page.
+     */
+    const PAGES = ['overview', 'statistics', 'history'];
 
     function showPage(requested) {
         const page = PAGES.includes(requested) ? requested : 'overview';
@@ -259,8 +263,8 @@
         });
 
         // A chart drawn while its page was hidden had no width to measure, so it was drawn
-        // at the fallback size. Coming back to the page is when its real width exists - and
-        // both pages have charts now, the timeline having moved to the history page.
+        // at the fallback size. Coming back to the page is when its real width exists, and
+        // every page has charts of its own.
         if (state.overview) {
             renderCharts();
         }

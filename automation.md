@@ -240,7 +240,7 @@ nastavte `solax.cloud.exit-with-push-power: false`.
 
 ## Přepínač přípojky
 
-Stav GPIO vstupu (BCM 17) je vidět v dlaždicích na přehledu: _Měřená síť_ při HIGH, _Druhá přípojka_
+Stav GPIO vstupu (BCM 17) je vidět v dlaždicích na stránce _Ovládání_: _Měřená síť_ při HIGH, _Druhá přípojka_
 při LOW. Mimo Raspberry Pi, nebo s `raspberry.enabled: false`, se čte záskok hlásící trvale HIGH —
 dlaždice to napíše, aby se náhražka nepletla s měřením.
 
@@ -283,7 +283,7 @@ takže po restartu nástěnka nezačíná prázdná a grafy nemají díry, kter�
 okno se při čtení souboru zahodí — aplikace vypnutá týden se nesmí vrátit s týden starou „poslední
 aktivitou“. Je to pořád jen pohodlí pro zobrazení — trvalým záznamem zůstávají rotující logy v `logs/`.
 
-Seznam je na vlastní stránce **Historie**, aby přehled nekončil seznamem, který roste celý den.
+Seznam je na vlastní stránce **Historie**, aby stránka _Ovládání_ nekončila seznamem, který roste celý den.
 Každý řádek má nadpis a vysvětlení: co modul rozhodl a proč. Kolik řádků je vidět, se přepíná
 přímo v hlavičce karty _Poslední aktivita_ (5 až 100) a volba se pamatuje v prohlížeči.
 
@@ -316,7 +316,7 @@ které ho střídač nahlásil, a co odešlo během prodeje, se počítá zvlá�
 spotovou cenu bez distribučních poplatků — odhad tržní hodnoty, ne vyúčtování. Den, jehož první
 měření přišlo dlouho po půlnoci (první den, restart), má peníze označené jako částečné.
 
-Na přehledu se volí posledních 7, 30 nebo 90 dní, nebo **kalendářní měsíc**: šipka ‹ vrátí o měsíc
+Statistiky mají vlastní stránku **Statistika**. Volí se na ní posledních 7, 30 nebo 90 dní, nebo **kalendářní měsíc**: šipka ‹ vrátí o měsíc
 zpět (z klouzavého pohledu rovnou na minulý měsíc), › zase dopředu a ze seznamu jde vybrat kterýkoli
 měsíc, za který něco zaznamenáno je. Aktuální měsíc běží od 1. do dneška. Zobrazuje se: dlaždice se součty, energie po dnech, peníze po dnech
 (příjem nad osou, náklady pod ní, čárka = čistý výsledek), rozsah nabití baterie po dnech, čas v

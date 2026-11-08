@@ -7,7 +7,8 @@ const I18N = (() => {
 
     const dictionaries = {
         en: {
-            'nav.overview': 'Overview',
+            'nav.overview': 'Control',
+            'nav.statistics': 'Statistics',
             'nav.history': 'History',
             'a11y.language': 'Language',
 
@@ -39,14 +40,14 @@ const I18N = (() => {
             'stat.supplyPin': 'GPIO {state}',
             'stat.supplySimulated': 'Simulated — no GPIO on this machine',
 
-            'stats.title': 'Statistics',
+            'stats.title': 'Summary',
             'stats.range7': '7 days',
             'stats.range30': '30 days',
             'stats.range90': '90 days',
             'stats.notYet': 'Nothing recorded yet. There is no history to fetch, so each day is recorded as it goes by: the statistics start today and fill in from here.',
             'stats.notYetShort': 'Nothing recorded yet.',
             'stats.noneInRange': 'Nothing was recorded in this period.',
-            'stats.periodSummary': '{period}: {recorded} of {days} days have data. Recorded since {date}. Money is at the spot price, without distribution fees.',
+            'stats.periodSummary': '{period}: {recorded} of {days} days have data. Money is at the spot price, without distribution fees. Recorded since {date}.',
             'stats.month': 'Month',
             'stats.prevMonth': 'Previous month',
             'stats.nextMonth': 'Next month',
@@ -540,7 +541,8 @@ const I18N = (() => {
         },
 
         cs: {
-            'nav.overview': 'Přehled',
+            'nav.overview': 'Ovládání',
+            'nav.statistics': 'Statistika',
             'nav.history': 'Historie',
             'a11y.language': 'Jazyk',
 
@@ -571,14 +573,14 @@ const I18N = (() => {
             'stat.supplyPin': 'GPIO {state}',
             'stat.supplySimulated': 'Simulováno — na tomhle stroji není GPIO',
 
-            'stats.title': 'Statistiky',
+            'stats.title': 'Souhrn',
             'stats.range7': '7 dní',
             'stats.range30': '30 dní',
             'stats.range90': '90 dní',
             'stats.notYet': 'Zatím nic nezaznamenáno. Žádná historie, kterou by šlo stáhnout, neexistuje, takže se každý den zaznamenává průběžně: statistiky začínají dnes a postupně se doplní.',
             'stats.notYetShort': 'Zatím nic nezaznamenáno.',
             'stats.noneInRange': 'V tomto období se nic nezaznamenalo.',
-            'stats.periodSummary': '{period}: data za {recorded} z {days} dní. Zaznamenáváno od {date}. Peníze podle spotové ceny, bez distribučních poplatků.',
+            'stats.periodSummary': '{period}: data za {recorded} z {days} dní. Peníze podle spotové ceny, bez distribučních poplatků. Zaznamenáváno od {date}',
             'stats.month': 'Měsíc',
             'stats.prevMonth': 'Předchozí měsíc',
             'stats.nextMonth': 'Další měsíc',

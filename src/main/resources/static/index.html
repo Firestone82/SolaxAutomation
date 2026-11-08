@@ -33,7 +33,8 @@
     </div>
 
     <nav class="tabs" role="tablist">
-        <button class="tab" data-page="overview" role="tab" data-i18n="nav.overview">Overview</button>
+        <button class="tab" data-page="overview" role="tab" data-i18n="nav.overview">Control</button>
+        <button class="tab" data-page="statistics" role="tab" data-i18n="nav.statistics">Statistics</button>
         <button class="tab" data-page="history" role="tab" data-i18n="nav.history">History</button>
     </nav>
 
@@ -210,15 +211,18 @@
         </div>
 
         <div class="grid grid-stats" id="stat-tiles"></div>
+    </section>
 
+    <!-- ========================================================= STATISTICS -->
+    <section id="page-statistics" class="page" hidden>
         <!--
-            Statistics, a day per column. Nothing upstream keeps a history, so these are the
-            days this application recorded as they went by - it starts on the day it was
-            first run and fills in from there.
+            A day per column. Nothing upstream keeps a history, so these are the days this
+            application recorded as they went by - it starts on the day it was first run and
+            fills in from there.
         -->
         <article class="card">
             <header class="card-head">
-                <h2 data-i18n="stats.title">Statistics</h2>
+                <h2 data-i18n="stats.title">Summary</h2>
                 <div class="card-head-actions">
                     <div class="segmented" id="stats-range">
                         <button class="segment" data-days="7" data-i18n="stats.range7">7 days</button>
