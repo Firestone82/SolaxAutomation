@@ -434,6 +434,7 @@ main {
 .bar-medium  { fill: var(--price-medium); }
 .bar-high    { fill: var(--price-high); }
 .bar-selling { fill: var(--sell); }
+.bar-charging { fill: var(--charge); }
 .bar-current { stroke: var(--text); stroke-width: 1.5; }
 
 /* Intervals the export limit module closes the export in: the bar keeps its price
@@ -494,6 +495,12 @@ main {
 .mode-overlay.is-pending {
     fill: var(--sell);
     fill-opacity: .2;
+}
+
+/* A charge from the grid rides the same lane in the charge colour. */
+.mode-overlay.is-charge {
+    fill: var(--charge);
+    stroke: var(--charge);
 }
 
 .mode-overlay.is-hovered { opacity: 1; stroke-width: 2; }
@@ -795,6 +802,7 @@ main {
 .swatch-medium  { background: var(--price-medium); }
 .swatch-high    { background: var(--price-high); }
 .swatch-selling { background: var(--sell); }
+.swatch-charging { background: var(--charge); }
 .swatch-quality { background: var(--accent); }
 
 .swatch-sellable {

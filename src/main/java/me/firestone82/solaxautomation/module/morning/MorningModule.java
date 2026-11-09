@@ -252,8 +252,15 @@ public class MorningModule extends AbstractAutomationModule<MorningProperties> {
         chargingUntil = until;
         Message why = reason(evaluation);
 
+        // "charge" and "until" are what the dashboard draws the charge's stretch from; the
+        // entries that end it early are the remote control exits recorded below.
         timeline.record(ID, ActionType.GRID_CHARGE,
-                Message.key("history.morning.chargeStarted", "Night charge started").build(), true, why);
+                Message.key("history.morning.chargeStarted", "Night charge started")
+                        .with("charge", "start")
+                        .with("watts", charge.getPower())
+                        .with("targetSoc", charge.getTargetBattery())
+                        .with("until", until.withNano(0).toString())
+                        .build(), true, why);
         log.success("Night charge running until {}", charge.getTo());
 
         return RunOutcome.changed(Message

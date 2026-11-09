@@ -1,6 +1,7 @@
 package me.firestone82.solaxautomation.integration.solax;
 
 import me.firestone82.solaxautomation.core.module.ActionType;
+import me.firestone82.solaxautomation.core.module.PlannedAction.Message;
 import me.firestone82.solaxautomation.core.timeline.TimelineEvent;
 import me.firestone82.solaxautomation.core.timeline.TimelineProperties;
 import me.firestone82.solaxautomation.core.timeline.TimelineService;
@@ -17,6 +18,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -176,5 +178,73 @@ class WorkModeWatcherTest {
         watcher.check();
 
         assertTrue(recorded().isEmpty());
+    }
+
+    // ------------------------------------------------------------------ remote control
+
+    private void charged(Map<String, Object> params) {
+        Message.Builder message = Message.key("history.quick.chargeToSoc", "Charging");
+        params.forEach(message::with);
+        timeline.record("dashboard", ActionType.GRID_CHARGE, message.build(), true);
+    }
+
+    private List<TimelineEvent> exits() {
+        return timeline.getEvents(10).stream()
+                .filter(event -> event.type() == ActionType.REMOTE_CONTROL_EXIT)
+                .toList();
+    }
+
+    @Test
+    @DisplayName("records the end of a charge to a target when the inverter ends the session")
+    void recordsChargeToTargetEnding() {
+        charged(Map.of("charge", "start", "targetSoc", 90));
+
+        reports(InverterMode.SELF_USE, true);
+        watcher.check();
+        reports(InverterMode.SELF_USE, false);
+        watcher.check();
+
+        List<TimelineEvent> exits = exits();
+        assertEquals(1, exits.size());
+        assertEquals(WorkModeWatcher.ID, exits.getFirst().moduleId());
+        assertEquals("end", exits.getFirst().params().get("charge"));
+    }
+
+    @Test
+    @DisplayName("a charge that carries its own end is not ended a second time")
+    void leavesTimedChargeAlone() {
+        charged(Map.of("charge", "start", "until", LocalDateTime.now().toString()));
+
+        reports(InverterMode.SELF_USE, true);
+        watcher.check();
+        reports(InverterMode.SELF_USE, false);
+        watcher.check();
+
+        assertTrue(exits().isEmpty());
+    }
+
+    @Test
+    @DisplayName("a session already ended by whoever ran it is not recorded again")
+    void leavesRecordedExitAlone() {
+        charged(Map.of("charge", "start", "targetSoc", 90));
+        timeline.record("dashboard", ActionType.REMOTE_CONTROL_EXIT, Message.key("history.quick.exit", "Exited").build(), true);
+
+        reports(InverterMode.SELF_USE, true);
+        watcher.check();
+        reports(InverterMode.SELF_USE, false);
+        watcher.check();
+
+        assertEquals(1, exits().size(), "only the dashboard's own exit");
+    }
+
+    @Test
+    @DisplayName("a session already over at the first reading is not an end anybody saw")
+    void firstReadingIsNotAnEnd() {
+        charged(Map.of("charge", "start", "targetSoc", 90));
+
+        reports(InverterMode.SELF_USE, false);
+        watcher.check();
+
+        assertTrue(exits().isEmpty());
     }
 }

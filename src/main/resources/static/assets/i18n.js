@@ -158,7 +158,7 @@ const I18N = (() => {
 
             'workMode.title': 'Work mode today',
             'workMode.hint': 'Since midnight',
-            'workMode.explain': 'Built from the recorded changes \u2014 the automation\u2019s own and the ones made from the SolaX app or the inverter\u2019s panel alike, which are noticed when the mode is read back, so their time is right to about a minute. The thin band underneath is which supply the house was on.',
+            'workMode.explain': 'Built from the recorded changes \u2014 the automation\u2019s own and the ones made from the SolaX app or the inverter\u2019s panel alike, which are noticed when the mode is read back, so their time is right to about a minute. The ribbon along its bottom is selling to the grid (purple) or charging from it (cyan), and the thin band underneath is which supply the house was on.',
             'workMode.none': 'No work mode recorded for today yet.',
             'workMode.unknown': 'Unknown',
             'workMode.unknownNote': 'The change that ended this stretch did not record which mode it moved away from, so what the inverter was in before it is not known.',
@@ -173,6 +173,10 @@ const I18N = (() => {
             'workMode.sellingArmed': 'Armed, not started yet',
             'workMode.sellingRunning': 'Running now',
             'workMode.sellingDone': 'Finished',
+            'workMode.charging': 'Charging from the grid',
+            'workMode.chargeTarget': 'Target',
+            'workMode.chargePlanned': 'Planned, not started yet',
+            'workMode.chargeEndUnknown': 'The end of this charge was not recorded, so it is drawn up to the next thing on record.',
 
 
             'selling.title': 'Selling',
@@ -384,6 +388,8 @@ const I18N = (() => {
             'history.raspberry.switch': 'Connection switch {from} \u2192 {to}',
             'history.inverter.workModeExternal': '{from} \u2192 {to}, set outside the automation',
             'history.inverter.workModeExternal.detail': 'The inverter reports {mode}, which no module and no dashboard command set \u2014 it was changed from the SolaX app, the inverter\u2019s own panel or a schedule stored on it. A module may move it back at its next run.',
+            'history.inverter.chargeEnded': 'Charging from the grid ended',
+            'history.inverter.chargeEnded.detail': 'The inverter ended the session on its own \u2014 the battery reached its target, or the session was ended from the SolaX app.',
             'history.weather.modeChange': '{from} → {to}',
             'history.discharge.armed': 'Selling window armed',
             'history.discharge.armedManual': 'Selling window armed manually',
@@ -764,7 +770,7 @@ const I18N = (() => {
 
             'workMode.title': 'Režim střídače dnes',
             'workMode.hint': 'Od půlnoci',
-            'workMode.explain': 'Sestaveno ze zaznamenaných změn — jak těch od automatizace, tak těch z aplikace SolaX nebo přímo ze střídače, které se poznají při zpětném čtení režimu, takže jejich čas sedí přibližně na minutu. Tenký pruh pod ním ukazuje, na které přípojce dům byl.',
+            'workMode.explain': 'Sestaveno ze zaznamenaných změn — jak těch od automatizace, tak těch z aplikace SolaX nebo přímo ze střídače, které se poznají při zpětném čtení režimu, takže jejich čas sedí přibližně na minutu. Stužka u spodního okraje je prodej do sítě (fialová) nebo nabíjení ze sítě (tyrkysová), tenký pruh pod ním ukazuje, na které přípojce dům byl.',
             'workMode.none': 'Z dnešního dne zatím není zaznamenaný žádný režim.',
             'workMode.unknown': 'Neznámý',
             'workMode.unknownNote': 'Změna, která tento úsek ukončila, si nezapsala, z jakého režimu se přepínalo. Co bylo na střídači předtím, se tak neví.',
@@ -779,6 +785,10 @@ const I18N = (() => {
             'workMode.sellingArmed': 'Naplánováno, zatím neběží',
             'workMode.sellingRunning': 'Právě běží',
             'workMode.sellingDone': 'Doběhlo',
+            'workMode.charging': 'Nabíjení ze sítě',
+            'workMode.chargeTarget': 'Cíl',
+            'workMode.chargePlanned': 'Naplánováno, zatím neběží',
+            'workMode.chargeEndUnknown': 'Konec tohoto nabíjení se nezaznamenal, proto je nakreslené až k dalšímu zaznamenanému záznamu.',
 
 
             'selling.title': 'Prodej do sítě',
@@ -990,6 +1000,8 @@ const I18N = (() => {
             'history.raspberry.switch': 'Přepínač přípojky {from} → {to}',
             'history.inverter.workModeExternal': '{from} → {to}, nastaveno mimo automatizaci',
             'history.inverter.workModeExternal.detail': 'Střídač hlásí režim {mode}, který nenastavil žádný modul ani příkaz z nástěnky — změna přišla z aplikace SolaX, přímo ze střídače nebo z plánu uloženého v něm. Některý modul ho může při dalším běhu přepnout zpět.',
+            'history.inverter.chargeEnded': 'Nabíjení ze sítě skončilo',
+            'history.inverter.chargeEnded.detail': 'Střídač relaci ukončil sám — baterie dosáhla cíle, nebo relaci někdo ukončil z aplikace SolaX.',
             'history.weather.modeChange': '{from} → {to}',
             'history.discharge.armed': 'Okno prodeje naplánováno',
             'history.discharge.armedManual': 'Okno prodeje naplánováno ručně',

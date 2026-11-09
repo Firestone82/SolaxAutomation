@@ -18,6 +18,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.Locale;
 import java.util.Optional;
 
@@ -145,10 +146,14 @@ public class InverterControlController {
 
             boolean reaching = inverter.startRemoteSocTarget(targetSoc, watts, true);
 
+            // "charge" marks where a charge from the grid began, which is what the dashboard
+            // draws its stretch from. A charge to a target has no end anybody can name in
+            // advance: the inverter ends it on its own, and the inverter watcher records that.
             timeline.record("dashboard", ActionType.GRID_CHARGE, Message
                             .key("history.quick.chargeToSoc", "Charging " + watts + " W from the grid to " + targetSoc + " %")
                             .with("watts", watts)
                             .with("targetSoc", targetSoc)
+                            .with("charge", "start")
                             .build(),
                     reaching, "from the dashboard");
 
@@ -176,10 +181,15 @@ public class InverterControlController {
         log.info("Dashboard is charging the battery from the grid: {} W for {} min", watts, minutes);
 
         boolean started = inverter.startRemoteCharge(watts, Duration.ofMinutes(minutes));
+
+        // The session expires on the inverter at "until" without anything here noticing, so
+        // the end the dashboard draws the charge to is the one it was sent with.
         Message done = Message
                 .key("history.quick.charge", "Charging " + watts + " W from the grid for " + minutes + " min")
                 .with("watts", watts)
                 .with("minutes", minutes)
+                .with("charge", "start")
+                .with("until", LocalDateTime.now().plusMinutes(minutes).withNano(0).toString())
                 .build();
 
         timeline.record("dashboard", ActionType.GRID_CHARGE, done, started, "from the dashboard");

@@ -253,6 +253,17 @@ controls make is read off those two. Both cards browse a day at a time (below). 
 the selling card and the quick actions. Then **Work mode today**: the day's work mode as a band,
 rebuilt from the recorded changes, with the thinner band underneath saying which supply the house
 was on — the connection switch's throws drawn in time, read against what the inverter was doing.
+A ribbon along the bottom of the mode band marks the remote control sessions that ran on top of it:
+selling to the grid in purple, charging from the grid in cyan, each hollow while it is still only
+planned. The intervals a charge covered are painted cyan on the price chart too, so what the energy
+was bought at reads off it the way the selling window does.
+
+A charge's stretch is drawn from its start to the earliest known end: the end it was sent with (a
+timed charge from the dashboard, the night charge), or the first exit, sale or new charge after it.
+A charge to a target state of charge has no end anybody can name in advance — the inverter stops it
+when the battery gets there — so the inverter watcher (`solax.control.work-mode-watch`) records the
+moment the remote control session is seen to end, as _Charging from the grid ended_ in the activity
+list. A charge whose end was never seen is drawn to the next thing on record and its tooltip says so.
 Then the live tiles — battery/PV/grid/load, work mode, current price, and the Raspberry Pi's
 connection switch (HIGH is the metered grid, LOW the second supply — the tile says which, and says
 plainly when it is the off-Pi stub rather than a pin).

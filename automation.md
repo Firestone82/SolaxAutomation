@@ -281,6 +281,15 @@ síť, růžová druhá přípojka), oba na jedné časové ose, takže je vidě
 hodinu dodávalo. Mimo Pi se pruh přípojky nekreslí — celý den „měřené sítě“, který nikdo neměřil, by
 byl výmysl.
 
+Podél spodního okraje pásu režimu běží stužka relací dálkového řízení: **prodej do sítě** fialově,
+**nabíjení ze sítě** tyrkysově, dokud je jen naplánované, je dutá. Intervaly, ve kterých se nabíjelo,
+jsou stejnou barvou obarvené i v grafu spotové ceny, takže je vidět, za kolik se nakupovalo.
+Nabíjení se kreslí od začátku do nejbližšího známého konce: do konce, se kterým bylo odeslané
+(časované nabíjení z nástěnky, noční nabíjení), nebo do prvního ukončení, prodeje či dalšího
+nabíjení po něm. Nabíjení do cílového SOC konec předem nemá — střídač ho ukončí sám, až baterie
+cíle dosáhne — proto hlídač střídače zapíše chvíli, kdy relace dálkového řízení skončila, jako
+_Nabíjení ze sítě skončilo_.
+
 ---
 
 ## Změny režimu mimo aplikaci — `solax.control.work-mode-watch`

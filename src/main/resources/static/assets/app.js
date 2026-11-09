@@ -715,20 +715,25 @@
             const message = state.priceDay === 1 ? t('prices.noTomorrow')
                 : state.priceDay < 0 ? t('prices.noneDay') : t('prices.none');
             Charts.priceChart(container, [], {emptyMessage: message});
+            renderChargeLegend(false);
             summaryLine.textContent = '';
             return;
         }
 
         const prices = state.prices;
         const summary = priceSummary(points);
+        const charged = withCharging(points, dayAt(state.priceDay));
 
-        Charts.priceChart(container, points, {
+        renderChargeLegend(charged.some(point => point.charging));
+
+        Charts.priceChart(container, charged, {
             emptyMessage: t('prices.none'),
             sellThreshold: prices.sellMinPrice,
             tooltip: point => ({
                 title: `${point.time} – ${endOfSlot(point)}`,
                 subtitle: automationLabel(point),
-                accent: point.selling ? 'var(--sell)'
+                accent: point.charging ? 'var(--charge)'
+                    : point.selling ? 'var(--sell)'
                     : point.sellable ? 'var(--sell)'
                         : point.exportable === false ? 'var(--text-faint)' : `var(--price-${point.level || 'medium'})`,
                 rows: [
@@ -748,8 +753,47 @@
         }) : '';
     }
 
+    /**
+     * The day's intervals with the ones the battery was charged from the grid in marked, so
+     * what the charge was bought at reads off the chart the way the selling window does. The
+     * stretches come from the activity history, which reaches two days back, and from the plan.
+     */
+    function withCharging(points, day) {
+        const stretches = chargeStretches();
+
+        if (!stretches.length) {
+            return points;
+        }
+
+        return points.map(point => {
+            const from = new Date(day.getTime());
+            from.setHours(point.hour, point.minute, 0, 0);
+            const to = new Date(from.getTime() + 15 * 60000);
+
+            // An interval counts once a charge covers part of it: a charge started from the
+            // dashboard at 14:07 bought the 14:00 interval too.
+            const charging = stretches.some(stretch => stretch.from < to && stretch.to > from);
+            return charging ? {...point, charging: true} : point;
+        });
+    }
+
+    /** The charge swatch is only in the price legend while the day shown has a charge on it. */
+    function renderChargeLegend(shown) {
+        const item = el('legend-charging');
+
+        item.hidden = !shown;
+
+        if (shown) {
+            el('legend-charging-text').textContent = t('workMode.charging');
+        }
+    }
+
     /** What the automation makes of this interval, in three words, for the tooltip. */
     function automationLabel(point) {
+        if (point.charging) {
+            return t('workMode.charging');
+        }
+
         if (point.selling) {
             return t('prices.sellingWindow');
         }
@@ -1240,6 +1284,131 @@
             .filter(overlay => overlay.to > overlay.from);
     }
 
+    /**
+     * Every stretch the battery was charged from the grid in, as far back as the history goes,
+     * and the ones still planned.
+     * <p>
+     * A charge is recorded where it starts. Where it stops is the earliest of what is known
+     * about it: the end it was sent with ({@code until} - a timed charge, the night charge),
+     * and the first entry after it that ends or replaces the session - an exit from the
+     * dashboard or a module, the inverter watcher noticing that a charge to a target stopped,
+     * a sale or another charge taking over. A charge with neither is still running while the
+     * inverter says a session is; otherwise its end was never seen, and it is drawn up to the
+     * next thing on record with a note saying so.
+     */
+    function chargeStretches() {
+        const now = new Date();
+        const history = [...(state.timeline?.history || [])]
+            .sort((first, second) => new Date(first.at) - new Date(second.at));
+
+        const endsSession = entry => entry.success && (entry.type === 'REMOTE_CONTROL_EXIT'
+            || entry.type === 'GRID_CHARGE' || entry.params?.sale === 'start');
+
+        const stretches = [];
+
+        history.forEach((entry, index) => {
+            if (entry.type !== 'GRID_CHARGE' || !entry.success) {
+                return;
+            }
+
+            const from = new Date(entry.at);
+            const params = entry.params || {};
+
+            // Entries from before the end was recorded with the start still say how long a
+            // timed charge was sent for.
+            const planned = params.until ? new Date(params.until)
+                : params.minutes ? new Date(from.getTime() + params.minutes * 60000) : null;
+
+            const later = history.slice(index + 1);
+            const closer = later.find(endsSession) || null;
+
+            let to = planned;
+            let endedBy = null;
+            let endUnknown = false;
+
+            if (closer && (!planned || new Date(closer.at) < planned)) {
+                to = new Date(closer.at);
+                endedBy = closer;
+            }
+
+            const open = !endedBy && (!planned || planned > now);
+            const running = open && state.overview?.remoteControlActive !== false;
+
+            if (!to) {
+                if (running) {
+                    to = now;
+                } else {
+                    endUnknown = true;
+                    to = later.length ? new Date(later[0].at) : now;
+                }
+            }
+
+            stretches.push({
+                kind: 'charge', from, to, entry, endedBy, endUnknown,
+                pending: false, running,
+                watts: params.watts, targetSoc: params.targetSoc
+            });
+        });
+
+        // A charge the night module intends to start. The one already running is on record
+        // above, so only what is still ahead is taken from the plan.
+        (state.timeline?.planned || [])
+            .filter(entry => entry.type === 'GRID_CHARGE' && entry.to && new Date(entry.from) > now)
+            .forEach(entry => stretches.push({
+                kind: 'charge', from: new Date(entry.from), to: new Date(entry.to), entry: null, plannedEntry: entry,
+                endedBy: null, endUnknown: false, pending: true, running: false,
+                watts: entry.params?.watts, targetSoc: entry.params?.target, certain: entry.certain
+            }));
+
+        return stretches.filter(stretch => stretch.to > stretch.from);
+    }
+
+    /** The charges that fall on today, clipped to it, for the work mode band. */
+    function chargeOverlays() {
+        const start = startOfDay(new Date());
+        const end = new Date(start.getTime() + DAY_MS);
+
+        return chargeStretches()
+            .map(stretch => ({
+                ...stretch,
+                from: new Date(Math.max(stretch.from, start)),
+                to: new Date(Math.min(stretch.to, end))
+            }))
+            .filter(stretch => stretch.to > stretch.from);
+    }
+
+    function chargeTooltip(overlay) {
+        const source = overlay.entry || overlay.plannedEntry;
+
+        const status = overlay.pending ? t('workMode.chargePlanned')
+            : overlay.running ? t('workMode.sellingRunning')
+                : t('workMode.sellingDone');
+
+        const note = overlay.endedBy ? msg(overlay.endedBy)
+            : overlay.endUnknown ? t('workMode.chargeEndUnknown')
+                : overlay.plannedEntry ? msg(overlay.plannedEntry)
+                    : (overlay.entry ? detailOf(overlay.entry) : null);
+
+        return {
+            title: t('workMode.charging'),
+            subtitle: source ? moduleText(source.moduleId, 'name', source.moduleId) : null,
+            accent: 'var(--charge)',
+            rows: [
+                [t('tooltip.when'), `${formatTimeOnly(overlay.from.toISOString())} – ${formatTimeOnly(overlay.to.toISOString())}`],
+                [t('tooltip.duration'), durationBetween(overlay.from.toISOString(), overlay.to.toISOString())],
+                [t('selling.power'), hasValue(overlay.watts) ? formatNumber(overlay.watts, 0) : null],
+                [t('workMode.chargeTarget'), hasValue(overlay.targetSoc) ? `${overlay.targetSoc} %` : null],
+                [t('workMode.sellingState'), status]
+            ],
+            note: note
+        };
+    }
+
+    /** The ribbon's tooltip, by what the ribbon is. */
+    function overlayTooltip(overlay) {
+        return overlay.kind === 'charge' ? chargeTooltip(overlay) : sellingTooltip(overlay);
+    }
+
     function sellingTooltip(overlay) {
         const state_ = overlay.pending ? t('workMode.sellingArmed')
             : overlay.running ? t('workMode.sellingRunning')
@@ -1300,7 +1469,11 @@
     function renderWorkMode() {
         const segments = workModeSegments();
         const supply = supplySegments();
-        const overlays = sellingOverlays();
+
+        // Selling and charging both run through a remote control session on top of the work
+        // mode, so both are ribbons along the bottom of its band - one session at a time, so
+        // they never overlap.
+        const overlays = [...sellingOverlays(), ...chargeOverlays()];
         const now = new Date();
         const start = startOfDay(now);
 
@@ -1316,7 +1489,7 @@
                 labels: labels,
                 tooltip: segment => segmentTooltip(segment, labels, MODE_COLOURS),
                 overlays: overlays,
-                overlayTooltip: sellingTooltip
+                overlayTooltip: overlayTooltip
             },
             {
                 segments: supply,
@@ -1401,10 +1574,14 @@
         present(supply).forEach(state_ =>
             items.push(item(SUPPLY_COLOURS[state_] || 'var(--text-faint)', supplyNames[state_] || state_)));
 
-        // The ribbon is the one mark on this chart that is not a band, so it is the one the
+        // The ribbons are the marks on this chart that are not a band, so they are the ones the
         // legend has to explain rather than merely name.
-        if ((overlays || []).length > 0) {
+        if ((overlays || []).some(overlay => overlay.kind !== 'charge')) {
             items.push(item('var(--sell)', t('prices.selling')));
+        }
+
+        if ((overlays || []).some(overlay => overlay.kind === 'charge')) {
+            items.push(item('var(--charge)', t('workMode.charging')));
         }
 
         legend.replaceChildren(...items);

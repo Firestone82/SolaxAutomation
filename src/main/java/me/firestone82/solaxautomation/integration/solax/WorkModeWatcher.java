@@ -3,6 +3,7 @@ package me.firestone82.solaxautomation.integration.solax;
 import lombok.extern.slf4j.Slf4j;
 import me.firestone82.solaxautomation.core.module.ActionType;
 import me.firestone82.solaxautomation.core.module.PlannedAction.Message;
+import me.firestone82.solaxautomation.core.timeline.TimelineEvent;
 import me.firestone82.solaxautomation.core.timeline.TimelineService;
 import me.firestone82.solaxautomation.integration.solax.event.WorkModeWritten;
 import me.firestone82.solaxautomation.integration.solax.model.InverterMode;
@@ -35,6 +36,12 @@ import java.util.Optional;
  * Attribution is by the {@link WorkModeWritten} event the gateway publishes on every
  * successful write. A change that matches a mode we wrote inside
  * {@code attribution-window} is ours; anything else was made elsewhere.
+ * <p>
+ * The same reading also answers when a charge to a target state of charge ended. That kind of
+ * charge is handed to the inverter with no end time at all - it stops once the battery gets
+ * there - so nothing here would otherwise ever know, and the dashboard could not say where the
+ * charge's stretch stops. When the remote control session is seen to end with such a charge
+ * the last thing on record, its end is recorded under the inverter.
  */
 @Slf4j
 @Service
@@ -50,6 +57,9 @@ public class WorkModeWatcher {
 
     /** Last mode seen on the inverter, {@code null} until the first successful reading. */
     private volatile InverterMode lastSeen;
+
+    /** Whether a remote control session was running at the last reading, {@code null} before one. */
+    private volatile Boolean lastRemoteControl;
 
     /**
      * The most recent work mode this application wrote, and when. Held as the one object the
@@ -86,6 +96,8 @@ public class WorkModeWatcher {
         }
 
         InverterSnapshot snapshot = snapshotOpt.get();
+        checkRemoteControl(snapshot.getRemoteControlActive());
+
         InverterMode mode = snapshot.getWorkMode();
 
         if (mode == null) {
@@ -136,6 +148,60 @@ public class WorkModeWatcher {
                                         + "stored on it. A module may move it back at its next run.", mode))
                         .with("mode", mode.name())
                         .build());
+    }
+
+    /**
+     * Records the end of a charge to a target once the remote control session running it is
+     * seen to stop.
+     * <p>
+     * Only that one kind of charge, and only when it is the last thing on record that starts or
+     * ends a session: a sale and the night charge record their own ends, a timed charge carries
+     * its end from the start, and an exit sent from here is already its own entry - recording any
+     * of those again would put two ends on one stretch.
+     */
+    private void checkRemoteControl(Boolean active) {
+        if (active == null) {
+            return;
+        }
+
+        Boolean previous = lastRemoteControl;
+        lastRemoteControl = active;
+
+        if (!Boolean.TRUE.equals(previous) || active) {
+            return;
+        }
+
+        lastSessionEntry()
+                .filter(event -> event.type() == ActionType.GRID_CHARGE && event.success())
+                .filter(event -> event.params() != null && event.params().get("until") == null)
+                .ifPresent(this::recordChargeEnded);
+    }
+
+    /** The newest entry that starts or ends a remote control session. */
+    private Optional<TimelineEvent> lastSessionEntry() {
+        return timeline.getEvents().stream()
+                .filter(event -> event.type() == ActionType.GRID_CHARGE
+                        || event.type() == ActionType.REMOTE_CONTROL_EXIT
+                        || (event.params() != null && event.params().get("sale") != null))
+                .findFirst();
+    }
+
+    private void recordChargeEnded(TimelineEvent charge) {
+        Object target = charge.params().get("targetSoc");
+
+        log.info("The remote control session charging the battery{} has ended",
+                target == null ? "" : " to " + target + " %");
+
+        Message.Builder detail = Message.key("history.inverter.chargeEnded.detail",
+                "The inverter ended the session on its own - the battery reached its target, or the "
+                        + "session was ended from the SolaX app.");
+
+        timeline.record(ID, ActionType.REMOTE_CONTROL_EXIT, Message
+                        .key("history.inverter.chargeEnded", "Charging from the grid ended")
+                        .with("charge", "end")
+                        .build(),
+                true,
+                detail.build());
     }
 
     /** True when {@code mode} is one this application wrote recently enough to still own. */

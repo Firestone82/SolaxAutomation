@@ -440,6 +440,11 @@ const Charts = (() => {
                 classes.length = 0;
                 classes.push('bar-selling');
             }
+            // Bought from the grid: the charge's colour, as on the work mode band's ribbon.
+            if (point.charging) {
+                classes.length = 0;
+                classes.push('bar-charging');
+            }
             if (point.exportable === false) {
                 classes.push('bar-blocked');
             }
@@ -1033,7 +1038,8 @@ const Charts = (() => {
             }
 
             const bar = element('rect', {
-                class: 'mode-overlay' + (overlay.pending ? ' is-pending' : ''),
+                class: 'mode-overlay' + (overlay.kind === 'charge' ? ' is-charge' : '')
+                    + (overlay.pending ? ' is-pending' : ''),
                 x: x, y: ribbonY, width: overlayWidth, height: ribbonHeight, rx: ribbonHeight / 2
             });
             svg.appendChild(bar);
