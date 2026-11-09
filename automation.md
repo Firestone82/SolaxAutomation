@@ -275,7 +275,11 @@ při LOW. Mimo Raspberry Pi, nebo s `raspberry.enabled: false`, se čte záskok 
 dlaždice to napíše, aby se náhražka nepletla s měřením.
 
 Každé přehození přepínače se navíc zapisuje do historie (stránka _Historie_), takže je dohledatelné,
-kdy se přípojka měnila.
+kdy se přípojka měnila. Na stránce _Ovládání_ je z těchto záznamů sestavená karta **Režim střídače
+dnes**: široký pruh je pracovní režim střídače od půlnoci, tenký pruh pod ním přípojka (šedá měřená
+síť, růžová druhá přípojka), oba na jedné časové ose, takže je vidět, do které přípojky se v kterou
+hodinu dodávalo. Mimo Pi se pruh přípojky nekreslí — celý den „měřené sítě“, který nikdo neměřil, by
+byl výmysl.
 
 ---
 
@@ -330,6 +334,20 @@ hodiny, které už proběhly, se ukládají průběžně do `data/weather-histor
 sama dozadu nevidí. Restart je tedy nesmaže, ale co aplikace nikdy neviděla (třeba ráno před prvním
 spuštěním), v grafu chybí — osa i tak zůstane celý den a pod grafem se napíše, odkdy jsou hodiny
 zaznamenané.
+
+**Ceny i počasí jdou listovat po dnech.** V hlavičce obou karet na stránce _Ovládání_ je ‹ den zpět,
+› den dopředu a mezi nimi jméno dne (_Dnes_, _Včera_, datum), které je samo tlačítkem zpět na dnešek.
+Počasí si drží `meteosource.history.retention` (**7 dní**) proběhlých hodin, takže se dá křivka
+kteréhokoli dne z minulého týdne postavit vedle dnešní; jiný den než dnešek se kreslí vždy celý a
+jako už proběhlý, přepínač _Od teď / Celý den_ zatím odpočívá. Dopředu karta sahá tak daleko do
+zítřka, jak daleko sahá předpověď.
+
+Ceny mají stejné omezení u zdroje: cenová služba vrací jen dnešek a zítřek, takže se 96 intervalů
+každého dne ukládá, jakmile jsou poprvé zveřejněné — do `ote.history.file`
+(`data/price-history.json`), na `ote.history.retention` (**7 dní**), vypíná se to
+`ote.history.persist: false`. Den zpět ukazuje ceny tak, jak byly, se stejným šrafováním a podbarvením
+toho, co by z nich limit dodávky a prodej udělaly, a řádek nad grafem to říká. _Zítra_ je vždycky
+jedno stisknutí daleko a dokud ceny nevyjdou, napíše, kdy vyjdou.
 
 ---
 

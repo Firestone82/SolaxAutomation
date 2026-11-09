@@ -90,9 +90,16 @@ public final class DashboardDtos {
     ) {
     }
 
+    /** One past day's prices, as recorded when that day was the forecast's. */
+    public record PriceDay(java.time.LocalDate date, List<PricePoint> points) {
+    }
+
     /**
-     * Today's and tomorrow's prices plus the headline numbers above the chart.
+     * Today's and tomorrow's prices plus the headline numbers above the chart, and the days
+     * before today that are on record.
      *
+     * @param history        the recorded days before today, oldest first
+     * @param historyDays    how many days back the record reaches at most
      * @param exportMinPrice price under which the export limit module closes the export
      * @param sellMinPrice   price a peak has to reach before the battery is sold at all
      * @param sellFrom       earliest interval the planner searches in, {@code HH:mm}
@@ -101,6 +108,8 @@ public final class DashboardDtos {
     public record Prices(
             List<PricePoint> today,
             List<PricePoint> tomorrow,
+            List<PriceDay> history,
+            int historyDays,
             Double average,
             Double minimum,
             Double maximum,
@@ -124,9 +133,17 @@ public final class DashboardDtos {
     ) {
     }
 
-    /** The forecast, plus the thresholds the quality is compared against. */
+    /**
+     * The forecast and the recorded days before it, plus the thresholds the quality is
+     * compared against.
+     *
+     * @param hours       every hour on record, oldest first: the retained days behind us, today
+     *                    and the forecast ahead
+     * @param historyDays how many days back the recorded hours reach at most
+     */
     public record Weather(
             List<WeatherPoint> hours,
+            int historyDays,
             Double currentQuality,
             double cloudyThreshold,
             double stormThreshold,

@@ -249,13 +249,17 @@ remembered per browser.
 
 **Control** — first the day's 96 quarter-hour prices with the armed selling window highlighted, and
 the weather quality curve with the thresholds the modules compare against: every decision the
-controls make is read off those two. Then the controls — the selling card and the quick actions.
+controls make is read off those two. Both cards browse a day at a time (below). Then the controls —
+the selling card and the quick actions. Then **Work mode today**: the day's work mode as a band,
+rebuilt from the recorded changes, with the thinner band underneath saying which supply the house
+was on — the connection switch's throws drawn in time, read against what the inverter was doing.
 Then the live tiles — battery/PV/grid/load, work mode, current price, and the Raspberry Pi's
 connection switch (HIGH is the metered grid, LOW the second supply — the tile says which, and says
 plainly when it is the off-Pi stub rather than a pin).
 
-**Statistics** — the summary tiles, energy and money per day, the battery's daily range, the time in
-each work mode and the daily breakdown, for the last 7, 30 or 90 days or a calendar month (below).
+**Statistics** — the summary as a row of tiles under a plain heading, with the period controls beside
+it; then energy and money per day, the battery's daily range, the time in each work mode and the
+daily breakdown, for the last 7, 30 or 90 days or a calendar month (below).
 
 **History** — the planned actions (a timeline of what every module intends to do and what it already
 did, with the list of what is coming) and the activity list, with its day filter, _Changes only_ and
@@ -351,6 +355,22 @@ does not start the day over — and where the window still reaches back further 
 the axis keeps the missing hours rather than stretching the readings across them, with a line under
 the chart saying from when it has been watching. Turn the file off with
 `meteosource.history.persist: false` and the record lives for as long as the process does.
+
+**Both the price and the weather card browse a day at a time.** In each header ‹ goes back a day,
+› forward, and the day's name between them — _Today_, _Yesterday_, a date — is a button that comes
+straight back to today. The weather keeps `meteosource.history.retention` (**7 days**) of passed
+hours, so the quality curve of any day in the past week can be put next to today's; a day other than
+today is always shown whole, washed over as already happened, and the _From now / Whole day_ switch
+rests until the browser is back on today. Forward, the card reaches as far into tomorrow as the
+forecast does.
+
+The prices work the same way, with the same limit upstream: the price service serves today and
+tomorrow and nothing before, so each day's 96 intervals are kept as they are first published —
+written to `ote.history.file` (`data/price-history.json` by default), kept for
+`ote.history.retention` (**7 days**), turned off with `ote.history.persist: false`. A day back shows
+the prices as they were, with the same hatch and wash for what the export limit and the selling
+module would have made of them, and the line above the chart says so. _Tomorrow_ is always one
+press away, and says when it will be published until it is.
 
 The list beneath the chart pages in tens, so a long plan stays one screen tall. The page you are on
 survives a refresh. Recent activity pages the same way, but how many rows fit on a screen is a matter

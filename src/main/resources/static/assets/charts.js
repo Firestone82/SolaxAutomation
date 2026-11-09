@@ -575,23 +575,28 @@ const Charts = (() => {
 
         // The hours that already happened are washed over: the curve left of the marker is
         // what the weather did, right of it what it is expected to do. Whole hours only -
-        // the hour running now is still a forecast.
+        // the hour running now is still a forecast. A day browsed back to is washed whole,
+        // and has no marker: "now" is not on it.
         const now = options.now || new Date();
         const currentHour = new Date(now.getTime());
         currentHour.setMinutes(0, 0, 0);
 
-        if (currentHour > start && currentHour <= end) {
+        if (currentHour > start) {
+            const pastEdge = currentHour <= end ? scaleX(currentHour) : padding.left + plotWidth;
+
             svg.appendChild(element('rect', {
                 class: 'quality-past',
                 x: padding.left, y: padding.top,
-                width: Math.max(0, scaleX(currentHour) - padding.left), height: plotHeight
+                width: Math.max(0, pastEdge - padding.left), height: plotHeight
             }));
 
-            svg.appendChild(element('line', {
-                class: 'quality-now',
-                x1: scaleX(currentHour), x2: scaleX(currentHour),
-                y1: padding.top - 4, y2: baseline
-            }));
+            if (currentHour <= end) {
+                svg.appendChild(element('line', {
+                    class: 'quality-now',
+                    x1: pastEdge, x2: pastEdge,
+                    y1: padding.top - 4, y2: baseline
+                }));
+            }
         }
 
         svg.appendChild(element('polygon', {
@@ -826,6 +831,227 @@ const Charts = (() => {
         }
 
         container.replaceChildren(svg);
+    }
+
+    /* ----------------------------------------------------- work mode chart */
+
+    /**
+     * The day as one or more stacked bands sharing a single time axis.
+     *
+     * Segments come in already resolved - {from, to, mode, ...} - because deciding
+     * what the inverter was in between two recorded changes is a question about the
+     * activity history, not about drawing. Here they are only laid out: one colour
+     * per value, a tick where it changed, and the dashed "now" marker the other
+     * charts use.
+     *
+     * More than one band because more than one thing holds a state all day and moves
+     * a handful of times: the work mode, and which supply the house is on. They are
+     * the same shape and the same question - what was it at this hour - so they share
+     * the axis rather than each getting a chart, and reading one against the other is
+     * the point: what the export limit was doing all afternoon only means something
+     * next to which supply it was exporting into.
+     *
+     * The axis always spans the whole window even though a band stops at its last
+     * segment. An empty right-hand end is the point: it says the day is not over,
+     * where a band stretched to the full width would read as a mode that is somehow
+     * already known for the evening.
+     *
+     * A band's {@code overlays} are stretches where something was happening on top of
+     * its value rather than instead of it - a sale into the grid, which runs through a
+     * remote control session and leaves the mode where it was. They are drawn as a
+     * ribbon along the bottom of that band so both stay readable, and one still ahead
+     * of us is drawn hollow.
+     *
+     * @param bands [{segments, colours, labels, tooltip, overlays, overlayTooltip, secondary}]
+     *              in the order they are stacked; a band with no segments is skipped
+     */
+    function workModeChart(container, bands, options = {}) {
+        const rows = (bands || []).filter(band => band.segments && band.segments.length > 0);
+
+        if (rows.length === 0) {
+            empty(container, options.emptyMessage || 'No work mode recorded');
+            return;
+        }
+
+        const {width, compact} = measure(container);
+
+        const padding = compact
+            ? {top: 20, right: 6, bottom: 18, left: 6}
+            : {top: 22, right: 12, bottom: 20, left: 12};
+
+        // A secondary band is drawn thinner: it is the context the first one is read
+        // against, and two bands of equal weight would argue over which is the subject.
+        const bandHeight = band => band.secondary ? (compact ? 12 : 16) : (compact ? 26 : 34);
+        const gap = compact ? 4 : 6;
+
+        const bandsHeight = rows.reduce((total, band) => total + bandHeight(band), 0) + gap * (rows.length - 1);
+        const height = padding.top + bandsHeight + padding.bottom;
+
+        const start = new Date(options.start);
+        const end = new Date(options.end);
+        const now = options.now || new Date();
+
+        const plotWidth = width - padding.left - padding.right;
+        const scaleX = date => padding.left + ((date - start) / (end - start)) * plotWidth;
+
+        const svg = createSvg(width, height);
+
+        // Where each band sits, worked out once: the tracks are drawn under the grid
+        // lines and the bands themselves over them.
+        let y = padding.top;
+
+        const placed = rows.map(band => {
+            const at = {band: band, top: y, height: bandHeight(band)};
+            y += at.height + gap;
+            return at;
+        });
+
+        // The track shows through wherever a band has nothing to say - the evening
+        // ahead of us, and any gap the history cannot account for.
+        placed.forEach(at => svg.appendChild(element('rect', {
+            class: 'timeline-track',
+            x: padding.left, y: at.top, width: plotWidth, height: at.height, rx: 6
+        })));
+
+        const windowHours = Math.round((end - start) / 3600000);
+        const hourStep = compact ? 6 : 3;
+
+        for (let hour = 0; hour <= windowHours; hour += hourStep) {
+            const at = new Date(start.getTime() + hour * 3600 * 1000);
+            const x = scaleX(at);
+
+            svg.appendChild(element('line', {
+                class: 'grid-line', x1: x, x2: x, y1: padding.top - 6, y2: height - padding.bottom
+            }));
+
+            const anchor = x < padding.left + 16 ? 'start'
+                : x > width - padding.right - 16 ? 'end' : 'middle';
+
+            const text = element('text', {class: 'axis-text', x: x, y: 11, 'text-anchor': anchor});
+            text.textContent = String(at.getHours()).padStart(2, '0') + ':00';
+            svg.appendChild(text);
+        }
+
+        placed.forEach(at => drawBand(svg, at.band, {
+            top: at.top,
+            height: at.height,
+            scaleX: scaleX,
+            width: width,
+            padding: padding,
+            compact: compact
+        }));
+
+        if (now >= start && now <= end) {
+            const nowX = scaleX(now);
+            svg.appendChild(element('line', {
+                class: 'timeline-now', x1: nowX, x2: nowX, y1: padding.top - 6, y2: height - padding.bottom
+            }));
+        }
+
+        container.replaceChildren(svg);
+    }
+
+    /** One band of {@link workModeChart}: its segments, their labels and its ribbon. */
+    function drawBand(svg, band, layout) {
+        const {top, height, scaleX, width, padding, compact} = layout;
+
+        // The ribbon lane along the bottom of the band. Reserved before the segments are
+        // drawn so a label can sit clear of it rather than on top of it.
+        const overlays = band.overlays || [];
+        const ribbonHeight = compact ? 6 : 8;
+        const ribbonY = top + height - ribbonHeight - 3;
+
+        band.segments.forEach(segment => {
+            const from = new Date(segment.from);
+            const to = new Date(segment.to);
+
+            const x = scaleX(from);
+            // A change and the value it produced can be minutes apart; a segment that
+            // rounds to nothing would leave a hole in an otherwise continuous band.
+            const segmentWidth = Math.max(2, scaleX(to) - x);
+
+            const colour = band.colours?.[segment.mode] || 'var(--text-faint)';
+
+            const bar = element('rect', {
+                class: 'mode-bar' + (segment.mode ? '' : ' is-unknown'),
+                x: x, y: top, width: segmentWidth, height: height,
+                fill: colour, opacity: segment.mode ? 0.85 : 0.25
+            });
+            svg.appendChild(bar);
+
+            // The label only goes in where it fits; the tooltip always says it. A thin
+            // band has no room for one at all, and says what it is through its colour.
+            const label = band.labels?.[segment.mode];
+
+            if (label && !compact && height >= 24 && segmentWidth > label.length * 6.5 + 14) {
+                const text = element('text', {
+                    class: 'mode-label',
+                    x: x + segmentWidth / 2,
+                    y: top + height / 2 + 4 - (overlays.length ? 4 : 0),
+                    'text-anchor': 'middle'
+                });
+                text.textContent = label;
+                svg.appendChild(text);
+            }
+
+            const hit = element('rect', {
+                class: 'hit-area',
+                x: x, y: top, width: segmentWidth, height: height
+            });
+
+            hoverable(
+                hit,
+                () => band.tooltip ? band.tooltip(segment) : null,
+                () => bar.setAttribute('opacity', '1'),
+                () => bar.setAttribute('opacity', String(segment.mode ? 0.85 : 0.25))
+            );
+
+            svg.appendChild(hit);
+
+            // Where the segment began because something changed the value, rather than
+            // because the window did. Drawn over the band so the change is findable.
+            if (segment.changedBy) {
+                svg.appendChild(element('line', {
+                    class: 'mode-change',
+                    x1: x, x2: x, y1: top - 3, y2: top + height + 3
+                }));
+            }
+        });
+
+        // Drawn after the band, and hit-tested after it too, so hovering the ribbon
+        // reports the sale rather than the mode underneath it.
+        overlays.forEach(overlay => {
+            const from = new Date(overlay.from);
+            const to = new Date(overlay.to);
+
+            // A window can start before the window we draw, or run past its end.
+            const x = Math.max(padding.left, scaleX(from));
+            const overlayWidth = Math.max(2, Math.min(width - padding.right, scaleX(to)) - x);
+
+            if (overlayWidth <= 0) {
+                return;
+            }
+
+            const bar = element('rect', {
+                class: 'mode-overlay' + (overlay.pending ? ' is-pending' : ''),
+                x: x, y: ribbonY, width: overlayWidth, height: ribbonHeight, rx: ribbonHeight / 2
+            });
+            svg.appendChild(bar);
+
+            // The ribbon is a few pixels tall; the whole band height is the hit area.
+            const hit = element('rect', {
+                class: 'hit-area', x: x, y: top, width: overlayWidth, height: height
+            });
+
+            hoverable(
+                hit,
+                () => band.overlayTooltip ? band.overlayTooltip(overlay) : null,
+                () => bar.classList.add('is-hovered'),
+                () => bar.classList.remove('is-hovered')
+            );
+
+            svg.appendChild(hit);
+        });
     }
 
     /* --------------------------------------------------------- daily chart */
@@ -1117,7 +1343,7 @@ const Charts = (() => {
 
     /* A re-render throws away the marks, so anything a touch is holding open goes with them. */
     return {
-        priceChart, weatherChart, timelineChart, dailyChart,
+        priceChart, weatherChart, timelineChart, workModeChart, dailyChart,
         hideTooltip: Tooltip.release, COMPACT_WIDTH
     };
 })();

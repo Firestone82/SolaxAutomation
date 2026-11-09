@@ -12,6 +12,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -93,14 +94,27 @@ class WeatherHistoryTest {
     }
 
     @Test
-    @DisplayName("forgets hours older than the two days anything asks for")
+    @DisplayName("forgets hours older than the retention")
     void forgetsAncientHours() {
+        properties.getHistory().setRetention(Duration.ofDays(2));
+
         service.recordPassedHours(forecast(-60, 0, 20));
 
         List<Integer> kept = recordedHourOffsets(-72, 0);
 
-        assertFalse(kept.contains(-60), "an hour from two and a half days ago is of no use to anyone");
+        assertFalse(kept.contains(-60), "an hour from beyond the two days kept is of no use to anyone");
         assertEquals(-48, kept.getFirst());
+        assertEquals(0, kept.getLast());
+    }
+
+    @Test
+    @DisplayName("keeps a week of hours by default, so the dashboard can browse back by day")
+    void keepsAWeekByDefault() {
+        service.recordPassedHours(forecast(-7 * 24 - 2, 0, 20));
+
+        List<Integer> kept = recordedHourOffsets(-8 * 24, 0);
+
+        assertEquals(-7 * 24, kept.getFirst());
         assertEquals(0, kept.getLast());
     }
 

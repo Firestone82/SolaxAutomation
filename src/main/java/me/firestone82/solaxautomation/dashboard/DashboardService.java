@@ -135,8 +135,16 @@ public class DashboardService {
     public Prices getPrices() {
         Optional<PriceForecast> forecastOpt = oteService.getForecast();
 
+        // The days behind us are on record whether or not today's prices could be fetched.
+        List<PriceDay> history = oteService.getRecordedDays().stream()
+                .map(date -> new PriceDay(date, oteService.getPrices(date).orElse(List.of()).stream()
+                        .map(slot -> toPricePoint(slot, false, false))
+                        .toList()))
+                .toList();
+
         if (forecastOpt.isEmpty()) {
-            return new Prices(List.of(), List.of(), null, null, null, null, false,
+            return new Prices(List.of(), List.of(), history, oteService.getHistoryDays(),
+                    null, null, null, null, false,
                     exportProperties.getMinPrice(), dischargeProperties.getMinPrice(),
                     format(dischargeProperties.getSearchFrom()), format(dischargeProperties.getSearchTo()));
         }
@@ -156,6 +164,8 @@ public class DashboardService {
         return new Prices(
                 today,
                 tomorrow,
+                history,
+                oteService.getHistoryDays(),
                 forecast.averagePriceToday(),
                 forecast.cheapestToday().map(PriceSlot::getPriceCzkPerKwh).orElse(null),
                 forecast.mostExpensiveToday().map(PriceSlot::getPriceCzkPerKwh).orElse(null),
@@ -171,20 +181,24 @@ public class DashboardService {
     // ------------------------------------------------------------------ weather
 
     /**
-     * The forecast curve, from the start of today through the next day and a half.
+     * The quality curve, from the oldest recorded day through the end of tomorrow.
      * <p>
-     * It reaches back to midnight rather than starting at the current hour so the dashboard
-     * can show the day as a whole - how the morning actually turned out is what makes the
-     * afternoon's forecast worth reading. The hours before now come from what the weather
-     * service recorded as they passed, so early in a run there are simply fewer of them.
+     * It reaches back past midnight rather than starting at the current hour so the dashboard
+     * can show a day as a whole - how the morning actually turned out is what makes the
+     * afternoon's forecast worth reading - and back over the days before so they can be
+     * browsed. The hours before now come from what the weather service recorded as they
+     * passed, so early in a run there are simply fewer of them.
      */
     public Weather getWeather() {
         LocalDateTime currentHour = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS);
+        int historyDays = (int) Math.max(1, weatherService.getRecordedHistory().toDays());
+
         List<MeteoDayHourly> hours = weatherService.getHoursBetween(
-                LocalDate.now().atStartOfDay(), currentHour.plusHours(36));
+                LocalDate.now().minusDays(historyDays).atStartOfDay(),
+                LocalDate.now().plusDays(1).atTime(23, 0));
 
         if (hours.isEmpty()) {
-            return new Weather(List.of(), null, weatherProperties.getCloudyThreshold(),
+            return new Weather(List.of(), historyDays, null, weatherProperties.getCloudyThreshold(),
                     weatherProperties.getStormThreshold(), qualityFormula());
         }
 
@@ -201,7 +215,8 @@ public class DashboardService {
 
         return new Weather(
                 points,
-                // The hour running now, not the first one drawn - the curve starts at midnight.
+                historyDays,
+                // The hour running now, not the first one drawn - the curve starts days back.
                 points.stream()
                         .filter(point -> point.dateTime().truncatedTo(ChronoUnit.HOURS).isEqual(currentHour))
                         .map(WeatherPoint::quality)

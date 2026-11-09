@@ -32,7 +32,12 @@
         // The month browsed to, 'YYYY-MM', while statsRange is 'month'.
         statsMonth: null,
 
-        priceDay: 'today',
+        // Which day the price and the weather cards show, as days from today: 0 is today,
+        // 1 tomorrow, -1 yesterday. Days back are what the application recorded as they
+        // went by, so how far back either can go is a question for the data.
+        priceDay: 0,
+        weatherDay: 0,
+
         page: 'overview',
         theme: 'system',
         historyRows: 10,
@@ -330,6 +335,7 @@
         Charts.hideTooltip();
         renderPrices();
         renderWeather();
+        renderWorkMode();
         renderTimeline();
         renderStatisticsCharts();
     }
@@ -565,7 +571,87 @@
         return I18N.message('device.' + overview.deviceStatusCode, null, overview.deviceStatus);
     }
 
-    /** Points for the day the switch is on, or null when tomorrow is not published. */
+    /* ------------------------------------------------------------ day browser */
+
+    /** Midnight at the start of the day {@code offset} days from today, in local time. */
+    function dayAt(offset) {
+        const day = startOfDay(new Date());
+        // By the calendar rather than by milliseconds, so a clock change does not shift it.
+        day.setDate(day.getDate() + offset);
+        return day;
+    }
+
+    /** 'YYYY-MM-DD' of a date, in local time - the shape the backend names a day by. */
+    function dateKey(date) {
+        return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+    }
+
+    /** How many days from today an ISO date is: 0 today, -1 yesterday. */
+    function dayOffsetOf(isoDate) {
+        return Math.round((new Date(isoDate + 'T00:00:00') - startOfDay(new Date())) / DAY_MS);
+    }
+
+    /** "Today", "Yesterday", or the date with its weekday once it is further away than that. */
+    function dayOffsetLabel(offset) {
+        if (offset === 0) {
+            return t('day.today');
+        }
+
+        if (offset === 1) {
+            return t('day.tomorrow');
+        }
+
+        if (offset === -1) {
+            return t('day.yesterday');
+        }
+
+        return dayAt(offset).toLocaleDateString(locale(), {weekday: 'short', day: 'numeric', month: 'short'});
+    }
+
+    const clampDay = (offset, bounds) => Math.min(bounds.max, Math.max(bounds.min, offset));
+
+    /**
+     * The day browser in a card header: back a day, the day's name, forward a day. The name
+     * is itself a button that comes back to today, and rests while today is what is shown.
+     * The arrows stop at the edges of what there is to show.
+     */
+    function renderDayNav(id, offset, bounds) {
+        const nav = el(id);
+
+        nav.querySelector('[data-step="-1"]').disabled = offset <= bounds.min;
+        nav.querySelector('[data-step="1"]').disabled = offset >= bounds.max;
+
+        const label = nav.querySelector('.day-nav-label');
+        label.textContent = dayOffsetLabel(offset);
+        label.disabled = offset === 0;
+
+        // The arrows carry no words of their own, so a screen reader gets them in the page's language.
+        nav.querySelector('[data-step="-1"]').setAttribute('aria-label', t('day.previous'));
+        nav.querySelector('[data-step="1"]').setAttribute('aria-label', t('day.next'));
+    }
+
+    /** Wires a day browser: the arrows step, the name in the middle comes back to today. */
+    function bindDayNav(id, onChange) {
+        el(id).querySelectorAll('[data-step]').forEach(button =>
+            button.addEventListener('click', () => onChange(Number(button.dataset.step))));
+    }
+
+    /** How far the price card can browse: back over the days on record, and on to tomorrow. */
+    function priceDayBounds() {
+        const history = state.prices?.history || [];
+        const oldest = history.length ? dayOffsetOf(history[0].date) : 0;
+
+        // Tomorrow is always reachable, so the card can say when it will be published.
+        return {min: Math.min(0, oldest), max: 1};
+    }
+
+    function setPriceDay(step) {
+        const bounds = priceDayBounds();
+        state.priceDay = step === 0 ? 0 : clampDay(state.priceDay + step, bounds);
+        renderPrices();
+    }
+
+    /** Points for the day the browser is on, or null when there are none for it. */
     function selectedPricePoints() {
         const prices = state.prices;
 
@@ -573,8 +659,13 @@
             return null;
         }
 
-        if (state.priceDay === 'tomorrow') {
+        if (state.priceDay === 1) {
             return prices.tomorrowPublished ? prices.tomorrow : null;
+        }
+
+        if (state.priceDay < 0) {
+            const key = dateKey(dayAt(state.priceDay));
+            return (prices.history || []).find(day => day.date === key)?.points || null;
         }
 
         return prices.today;
@@ -605,12 +696,24 @@
     function renderPrices() {
         const container = el('price-chart');
         const summaryLine = el('price-summary');
+        const note = el('price-note');
+
+        // The days on record change at midnight and after a restart, so the day shown may no
+        // longer be one there is anything for.
+        const bounds = priceDayBounds();
+        state.priceDay = clampDay(state.priceDay, bounds);
+        renderDayNav('price-day-nav', state.priceDay, bounds);
+
         const points = selectedPricePoints();
 
         renderPriceLegend();
 
-        if (!points) {
-            const message = state.priceDay === 'tomorrow' ? t('prices.noTomorrow') : t('prices.none');
+        note.hidden = state.priceDay >= 0;
+        note.textContent = state.priceDay < 0 ? t('prices.historyNote') : '';
+
+        if (!points || points.length === 0) {
+            const message = state.priceDay === 1 ? t('prices.noTomorrow')
+                : state.priceDay < 0 ? t('prices.noneDay') : t('prices.none');
             Charts.priceChart(container, [], {emptyMessage: message});
             summaryLine.textContent = '';
             return;
@@ -709,7 +812,31 @@
     }
 
     /**
-     * The window the forecast curve covers: the day ahead, or today from midnight.
+     * How far the weather card can browse: back to the oldest recorded hour, and forward to
+     * tomorrow where the forecast already reaches into it.
+     */
+    function weatherDayBounds() {
+        const hours = state.weather?.hours || [];
+
+        if (!hours.length) {
+            return {min: 0, max: 0};
+        }
+
+        const first = dayOffsetOf(hours[0].dateTime.slice(0, 10));
+        const last = dayOffsetOf(hours[hours.length - 1].dateTime.slice(0, 10));
+
+        return {min: Math.min(0, first), max: Math.min(1, Math.max(0, last))};
+    }
+
+    function setWeatherDay(step) {
+        const bounds = weatherDayBounds();
+        state.weatherDay = step === 0 ? 0 : clampDay(state.weatherDay + step, bounds);
+        renderWeather();
+    }
+
+    /**
+     * The window the forecast curve covers: the day ahead, today from midnight, or another
+     * day whole - a day that is not today has no "from now" to look forward from.
      * <p>
      * The whole-day window is a fixed 24 hours whether or not there is a reading for every
      * hour of it - an application started at nine has nothing for the morning, and an axis
@@ -719,8 +846,8 @@
     function weatherWindow() {
         const now = new Date();
 
-        if (state.weatherRange === 'day') {
-            const start = startOfDay(now);
+        if (state.weatherDay !== 0 || state.weatherRange === 'day') {
+            const start = dayAt(state.weatherDay);
             return {start: start, end: new Date(start.getTime() + DAY_MS)};
         }
 
@@ -741,14 +868,24 @@
 
     function renderWeather() {
         const weather = state.weather;
+
+        const bounds = weatherDayBounds();
+        state.weatherDay = clampDay(state.weatherDay, bounds);
+        renderDayNav('weather-day-nav', state.weatherDay, bounds);
+        renderWeatherRangeSwitch();
+
         const range = weatherWindow();
         const points = weatherPoints(range);
 
         el('weather-formula').textContent = weather?.qualityFormula || '';
         renderWeatherGap(range, points);
 
+        // A day with nothing on it says why, and the reason differs by which side of today it is on.
+        const emptyMessage = state.weatherDay < 0 ? t('weather.noneDay')
+            : state.weatherDay > 0 ? t('weather.noneAhead') : t('weather.none');
+
         Charts.weatherChart(el('weather-chart'), points, {
-            emptyMessage: t('weather.none'),
+            emptyMessage: emptyMessage,
             start: range.start,
             end: range.end,
             cloudyThreshold: weather?.cloudyThreshold,
@@ -771,6 +908,19 @@
     }
 
     /**
+     * The range switch rests while a day other than today is shown: that day is always drawn
+     * whole, because "from now" is not on it. It comes back as it was when the browser does.
+     */
+    function renderWeatherRangeSwitch() {
+        const browsing = state.weatherDay !== 0;
+
+        document.querySelectorAll('#weather-range .segment').forEach(button => {
+            button.disabled = browsing;
+            button.classList.toggle('is-active', button.dataset.range === (browsing ? 'day' : state.weatherRange));
+        });
+    }
+
+    /**
      * Says so when the window reaches back further than the recorded hours do.
      * <p>
      * The forecast only ever looks forward, so the hours behind us are the ones this
@@ -780,21 +930,24 @@
     function renderWeatherGap(range, points) {
         const note = el('weather-gap');
         const first = points.length ? new Date(points[0].dateTime) : null;
+        const wholeDay = state.weatherDay !== 0 || state.weatherRange === 'day';
 
         // An hour of slack: the window starts on the hour, so a first point exactly there
-        // is a full window, not a gap. With no forecast at all the chart says so itself,
-        // and saying it twice helps nobody.
-        const missing = state.weatherRange === 'day'
-            && (state.weather?.hours?.length || 0) > 0
-            && (!first || first - range.start >= 3600 * 1000);
+        // is a full window, not a gap. With no forecast at all - or nothing for a day browsed
+        // back to - the chart says so itself, and saying it twice helps nobody. A day ahead
+        // can only be short at its end, which the axis shows on its own.
+        let text = null;
 
-        note.hidden = !missing;
-
-        if (missing) {
-            note.textContent = first
-                ? t('weather.recordedFrom', {time: formatTimeOnly(first.toISOString())})
-                : t('weather.recordedNone');
+        if (wholeDay && state.weatherDay <= 0 && (state.weather?.hours?.length || 0) > 0) {
+            if (first && first - range.start >= 3600 * 1000) {
+                text = t('weather.recordedFrom', {time: formatTimeOnly(first.toISOString())});
+            } else if (!first && state.weatherDay === 0) {
+                text = t('weather.recordedNone');
+            }
         }
+
+        note.hidden = !text;
+        note.textContent = text || '';
     }
 
     /**
@@ -887,14 +1040,17 @@
         return Object.fromEntries([...ids].map(id => [id, moduleText(id, 'name', id)]));
     }
 
-    /* ---------------------------------------------------- work mode colours */
+    /* ------------------------------------------------- work mode over time */
 
     /**
-     * One colour per work mode, for the statistics' time-in-mode bar and its legend.
+     * One colour per work mode, used by the band, its legend and the statistics' time-in-mode
+     * bar alike.
      * <p>
      * Feed-in priority keeps the accent the timeline already paints work mode changes in,
      * self use is the quiet green of production staying home, backup the amber of something
-     * being held in reserve, and manual the cyan the dashboard charges the battery in.
+     * being held in reserve, and manual the cyan the dashboard charges the battery in - the
+     * selling purple is spoken for by the ribbon that runs on top of these, and a manual mode
+     * under a sale would otherwise be purple on purple.
      */
     const MODE_COLOURS = {
         SELF_USE: 'var(--success)',
@@ -902,6 +1058,357 @@
         BACKUP: 'var(--warning)',
         MANUAL: 'var(--charge)'
     };
+
+    /**
+     * The two ends of the connection switch.
+     * <p>
+     * Deliberately outside the mode palette: the supply is a different question, and reusing
+     * a mode's colour a band below it would read as the two saying the same thing. The
+     * metered grid is the ordinary case and gets the quiet slate; the second supply, where
+     * export never reaches the meter, is the one worth spotting from across the room.
+     */
+    const SUPPLY_COLOURS = {
+        HIGH: 'var(--supply-metered)',
+        LOW: 'var(--supply-second)'
+    };
+
+    /**
+     * The day's work mode, rebuilt from the recorded changes.
+     * <p>
+     * Both kinds are in there: what the automation did, and what somebody did from the SolaX
+     * app or the inverter's own panel - the backend reads the mode back on a timer and
+     * records a change it did not make like any other, which is why an entry filed under the
+     * inverter is one nothing here set.
+     */
+    function workModeSegments() {
+        return changeSegments('WORK_MODE_CHANGE', state.overview?.workMode || null);
+    }
+
+    /**
+     * The day's supply, rebuilt the same way from the connection switch.
+     * <p>
+     * HIGH is the metered grid connection, LOW the second supply, and which one the house is
+     * on decides whether exporting is billed at all - so it belongs under the work mode
+     * rather than in a chart of its own. Every physical throw of the switch is recorded as it
+     * happens, which makes this band the more reliable of the two; the same limits still
+     * apply to a throw made while the application was not running.
+     * <p>
+     * Nothing is drawn off a Raspberry Pi: the stub reports a constant HIGH, and a full day
+     * of "metered grid" that nothing ever measured would be an invention.
+     */
+    function supplySegments() {
+        const overview = state.overview;
+
+        if (!overview?.connectionSwitch || overview.connectionSwitchSimulated) {
+            return [];
+        }
+
+        return changeSegments('GPIO_STATE_CHANGE', overview.connectionSwitch);
+    }
+
+    /**
+     * The day of one thing that holds a state and changes a handful of times, rebuilt from
+     * the changes recorded for it and what it is right now.
+     * <p>
+     * Nothing samples any of this into a history, so a band is an inference: the value
+     * between two recorded changes is whatever the earlier one set. That makes the boundaries
+     * of what can be known worth drawing honestly rather than papering over:
+     * <ul>
+     *   <li>before the first change of the day the value is the one that change moved away
+     *       from - which a change made from the dashboard does not record, so a day opening
+     *       with one opens as an unknown stretch instead of a guess;</li>
+     *   <li>with no change recorded at all it has not moved since before midnight, so the
+     *       live value is drawn across the whole day and the tooltip says why;</li>
+     *   <li>a change made while nothing was watching - over a restart, or with the source
+     *       unreachable - still cannot be placed in time. When the live value disagrees with
+     *       the last change recorded, the note under the chart says so rather than the band
+     *       inventing a change.</li>
+     * </ul>
+     *
+     * @param type action type of the history entries that record a change of this value
+     * @param live what it is at this moment, or null when that is not known either
+     */
+    function changeSegments(type, live) {
+        const now = new Date();
+        const start = startOfDay(now);
+
+        // The history reads newest first, which is what the activity list wants and the
+        // opposite of what a band does.
+        const changes = (state.timeline?.history || [])
+            .filter(entry => entry.type === type && entry.success && entry.params?.to)
+            .map(entry => ({at: new Date(entry.at), to: entry.params.to, from: entry.params.from || null, entry}))
+            .filter(change => change.at >= start && change.at <= now)
+            .sort((first, second) => first.at - second.at);
+
+        if (changes.length === 0) {
+            return live ? [{from: start, to: now, mode: live, changedBy: null, entry: null, held: true}] : [];
+        }
+
+        const segments = [{
+            from: start,
+            to: changes[0].at,
+            mode: changes[0].from,
+            changedBy: null,
+            entry: null,
+            held: false
+        }];
+
+        changes.forEach((change, index) => {
+            segments.push({
+                from: change.at,
+                to: index + 1 < changes.length ? changes[index + 1].at : now,
+                mode: change.to,
+                changedBy: change.entry.moduleId,
+                entry: change.entry,
+                held: false
+            });
+        });
+
+        // A change at midnight, or two in the same minute, leaves nothing to draw.
+        return segments.filter(segment => segment.to > segment.from);
+    }
+
+    /**
+     * The stretches of the day the battery was being sold into the grid.
+     * <p>
+     * A sale does not change the work mode - it runs through a remote control session and
+     * hands the inverter back afterwards - so it belongs on top of the band rather than in
+     * it. Two sources, because neither alone covers the day: the module forgets an armed
+     * window the moment it ends, so a sale that already ran is only in the activity history,
+     * where a start and an end marker bracket it; and a window that has not started yet is
+     * only in the module, which is the one that knows when it intends to run.
+     */
+    function sellingOverlays() {
+        const now = new Date();
+        const start = startOfDay(now);
+        const end = new Date(start.getTime() + DAY_MS);
+
+        const marks = (state.timeline?.history || [])
+            .filter(entry => entry.params?.sale)
+            .map(entry => ({at: new Date(entry.at), phase: entry.params.sale, entry}))
+            .sort((first, second) => first.at - second.at);
+
+        const overlays = [];
+        let open = null;
+
+        marks.forEach(mark => {
+            if (mark.phase === 'start') {
+                open = mark;
+                return;
+            }
+
+            if (open) {
+                overlays.push({
+                    from: open.at, to: mark.at, entry: open.entry, endedBy: mark.entry,
+                    pending: false, running: false
+                });
+                open = null;
+            }
+        });
+
+        const selling = state.selling;
+        const armed = selling?.armed && selling.from && selling.to;
+
+        // A start with no end yet is the sale running at this moment. The module knows when
+        // that one is meant to stop, so where it can say so, it wins over "up to now".
+        if (open && !(armed && selling.running)) {
+            overlays.push({from: open.at, to: now, entry: open.entry, endedBy: null, pending: false, running: true});
+        }
+
+        if (armed) {
+            overlays.push({
+                from: new Date(selling.from),
+                to: new Date(selling.to),
+                entry: open ? open.entry : null,
+                endedBy: null,
+                // Nothing is being sold yet, so the ribbon is drawn hollow.
+                pending: !selling.running,
+                running: !!selling.running,
+                watts: selling.watts,
+                revenue: selling.expectedRevenue,
+                manual: selling.manual
+            });
+        }
+
+        // The band draws one day; a window may hang over either end of it.
+        return overlays
+            .map(overlay => ({
+                ...overlay,
+                from: new Date(Math.max(overlay.from, start)),
+                to: new Date(Math.min(overlay.to, end))
+            }))
+            .filter(overlay => overlay.to > overlay.from);
+    }
+
+    function sellingTooltip(overlay) {
+        const state_ = overlay.pending ? t('workMode.sellingArmed')
+            : overlay.running ? t('workMode.sellingRunning')
+                : t('workMode.sellingDone');
+
+        return {
+            title: t('workMode.selling'),
+            subtitle: overlay.manual ? t('workMode.sellingManual') : moduleText('discharge', 'name', 'Grid selling'),
+            accent: 'var(--sell)',
+            rows: [
+                [t('tooltip.when'), `${formatTimeOnly(overlay.from.toISOString())} – ${formatTimeOnly(overlay.to.toISOString())}`],
+                [t('tooltip.duration'), durationBetween(overlay.from.toISOString(), overlay.to.toISOString())],
+                [t('selling.power'), overlay.watts ? formatNumber(overlay.watts, 0) : null],
+                [t('selling.expected'), overlay.revenue !== null && overlay.revenue !== undefined
+                    ? `${formatNumber(overlay.revenue, 0)} ${state.config.currency}` : null],
+                [t('workMode.sellingState'), state_]
+            ],
+            // How the sale ended is the part the band itself cannot show.
+            note: overlay.endedBy ? msg(overlay.endedBy) : null
+        };
+    }
+
+    /**
+     * A stretch of either band: what it was, who moved it there, and for how long.
+     * <p>
+     * Only naming the value differs between the two, so that is all the caller passes -
+     * everything else a person wants to know about a stretch is the same question whether it
+     * is a work mode or a supply.
+     */
+    function segmentTooltip(segment, labels, colours) {
+        const subtitle = segment.changedBy
+            ? moduleText(segment.changedBy, 'name', segment.changedBy)
+            : (segment.held ? t('workMode.held') : t('workMode.beforeFirst'));
+
+        return {
+            title: labels[segment.mode] || t('workMode.unknown'),
+            subtitle: subtitle,
+            accent: colours[segment.mode] || 'var(--text-faint)',
+            rows: [
+                [t('tooltip.when'), `${formatTimeOnly(segment.from.toISOString())} – ${formatTimeOnly(segment.to.toISOString())}`],
+                [t('tooltip.duration'), durationBetween(segment.from.toISOString(), segment.to.toISOString())],
+                [t('workMode.setBy'), segment.entry ? msg(segment.entry) : null]
+            ],
+            note: segment.entry ? detailOf(segment.entry) : (segment.mode ? null : t('workMode.unknownNote'))
+        };
+    }
+
+    /** Mode names as the rest of the page writes them, keyed the way a segment carries them. */
+    function modeLabels() {
+        return Object.fromEntries(Object.keys(MODE_COLOURS).map(mode => [mode, t('mode.' + mode)]));
+    }
+
+    /** The two ends of the connection switch, named as the stat tile names them. */
+    function supplyLabels() {
+        return {HIGH: t('stat.supplyMetered'), LOW: t('stat.supplySecond')};
+    }
+
+    function renderWorkMode() {
+        const segments = workModeSegments();
+        const supply = supplySegments();
+        const overlays = sellingOverlays();
+        const now = new Date();
+        const start = startOfDay(now);
+
+        const labels = modeLabels();
+        const supplyNames = supplyLabels();
+
+        // The work mode is the subject; the supply is what it is read against, so it goes
+        // underneath as the thinner band rather than beside it as a chart of its own.
+        const bands = [
+            {
+                segments: segments,
+                colours: MODE_COLOURS,
+                labels: labels,
+                tooltip: segment => segmentTooltip(segment, labels, MODE_COLOURS),
+                overlays: overlays,
+                overlayTooltip: sellingTooltip
+            },
+            {
+                segments: supply,
+                colours: SUPPLY_COLOURS,
+                labels: supplyNames,
+                tooltip: segment => segmentTooltip(segment, supplyNames, SUPPLY_COLOURS),
+                secondary: true
+            }
+        ];
+
+        Charts.workModeChart(el('workmode-chart'), bands, {
+            emptyMessage: t('workMode.none'),
+            start: start,
+            end: new Date(start.getTime() + DAY_MS),
+            now: now
+        });
+
+        renderWorkModeNote(segments, supply);
+        renderWorkModeLegend(segments, supply, overlays);
+    }
+
+    /**
+     * The one thing a band cannot show: a change nothing was there to see.
+     * <p>
+     * A mode set from the SolaX app or the inverter's panel is caught by the backend reading
+     * the mode back, and every throw of the connection switch is recorded as it happens, so
+     * both are normally on their band. What neither can catch is a change made while nothing
+     * was watching - over a restart, or with the inverter unreachable - and no time can be
+     * put on one of those, so the band stops at the last change we know of and the mismatch
+     * is stated here instead of being drawn at an invented time.
+     */
+    function renderWorkModeNote(segments, supply) {
+        const note = el('workmode-note');
+
+        // A band that was drawn from the live value alone (held) claims nothing about when
+        // anything changed, so it can never disagree with it.
+        const disagrees = (band, live) => {
+            const last = band.length ? band[band.length - 1] : null;
+            return live && last && !last.held && last.mode && last.mode !== live;
+        };
+
+        const sentences = [];
+
+        const mode = state.overview?.workMode || null;
+        if (disagrees(segments, mode)) {
+            sentences.push(t('workMode.changedOutside', {mode: t('mode.' + mode)}));
+        }
+
+        const switchState = state.overview?.connectionSwitch || null;
+        if (disagrees(supply, switchState)) {
+            sentences.push(t('workMode.supplyChangedOutside', {supply: supplyLabels()[switchState] || switchState}));
+        }
+
+        note.hidden = sentences.length === 0;
+        note.textContent = sentences.join(' ');
+    }
+
+    /** Only what the day actually contains - a legend of every mode is mostly noise. */
+    function renderWorkModeLegend(segments, supply, overlays) {
+        const legend = el('workmode-legend');
+        const supplyNames = supplyLabels();
+
+        const item = (background, label) => {
+            const node = document.createElement('li');
+
+            const swatch = document.createElement('i');
+            swatch.className = 'swatch';
+            swatch.style.background = background;
+            node.appendChild(swatch);
+
+            node.appendChild(textSpan(label));
+            return node;
+        };
+
+        const present = band => [...new Set(band.map(segment => segment.mode).filter(Boolean))];
+
+        const items = present(segments)
+            .map(mode => item(MODE_COLOURS[mode] || 'var(--text-faint)', t('mode.' + mode)));
+
+        // The supply band's colours mean nothing on their own - unlike a mode, which the band
+        // labels where it fits - so whichever of the two the day contains is named here.
+        present(supply).forEach(state_ =>
+            items.push(item(SUPPLY_COLOURS[state_] || 'var(--text-faint)', supplyNames[state_] || state_)));
+
+        // The ribbon is the one mark on this chart that is not a band, so it is the one the
+        // legend has to explain rather than merely name.
+        if ((overlays || []).length > 0) {
+            items.push(item('var(--sell)', t('prices.selling')));
+        }
+
+        legend.replaceChildren(...items);
+    }
 
     /** The window the timeline chart draws: the day ahead, or today from midnight. */
     function timelineWindow() {
@@ -1135,7 +1642,6 @@
     function setWeatherRange(range) {
         state.weatherRange = range;
         localStorage.setItem(STORAGE_WEATHER_RANGE, range);
-        markRange('weather-range', range);
         renderWeather();
     }
 
@@ -2097,6 +2603,7 @@
         renderStats();
         renderPrices();
         renderWeather();
+        renderWorkMode();
         renderTimeline();
         renderSelling();
         renderQuickActions();
@@ -2128,6 +2635,7 @@
         el('stat-tiles').replaceChildren(...block('skeleton-tile', 4));
         el('price-chart').replaceChildren(...block('skeleton-chart'));
         el('weather-chart').replaceChildren(...block('skeleton-chart'));
+        el('workmode-chart').replaceChildren(...block('skeleton-chart'));
         el('timeline-chart').replaceChildren(...block('skeleton-chart'));
         el('selling-hero').replaceChildren(...block('skeleton-hero'));
         el('selling-facts').replaceChildren(...lines('is-medium', '', 'is-short'));
@@ -2509,13 +3017,8 @@
         document.querySelectorAll('.tab').forEach(tab =>
             tab.addEventListener('click', () => showPage(tab.dataset.page)));
 
-        document.querySelectorAll('#price-day-switch .segment').forEach(button =>
-            button.addEventListener('click', () => {
-                state.priceDay = button.dataset.day;
-                document.querySelectorAll('#price-day-switch .segment').forEach(other =>
-                    other.classList.toggle('is-active', other === button));
-                renderPrices();
-            }));
+        bindDayNav('price-day-nav', setPriceDay);
+        bindDayNav('weather-day-nav', setWeatherDay);
 
         el('language').addEventListener('change', event => {
             I18N.setLanguage(event.target.value);

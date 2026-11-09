@@ -55,6 +55,9 @@ public class MeteoSourceProperties {
 
         /** Where they are written. Relative paths are resolved against the working directory. */
         private Path file = Path.of("data", "weather-history.json");
+
+        /** How far back the passed hours are kept. A week is what the dashboard browses. */
+        private Duration retention = Duration.ofDays(7);
     }
 
     /**

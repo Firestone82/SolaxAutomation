@@ -54,9 +54,6 @@ public class MeteoSourceService {
             .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
             .enable(SerializationFeature.INDENT_OUTPUT);
 
-    /** How far back the passed hours are kept. Two days is more than any view asks for. */
-    private static final Duration RECORDED_HISTORY = Duration.ofHours(48);
-
     private final MeteoSourceProperties properties;
     private final MeteoSourceApi api;
 
@@ -67,8 +64,8 @@ public class MeteoSourceService {
      * Hours that have already happened, by the hour they belong to.
      * <p>
      * Every fetch carries the hour it was made in, so simply keeping those as the forecast
-     * moves on builds up the day behind us for free. Held in memory only: a restart starts
-     * collecting again, and a chart that starts mid-morning is no reason to write a file.
+     * moves on builds up the days behind us for free. Written down as well, so a restart does
+     * not start the record over - see {@link MeteoSourceProperties.History}.
      */
     private final NavigableMap<LocalDateTime, MeteoDayHourly> recorded = new ConcurrentSkipListMap<>();
 
@@ -93,6 +90,7 @@ public class MeteoSourceService {
         log.info(" - Endpoint ......... {}", properties.getUrl());
         log.info(" - Location ......... {}", describeLocation());
         log.info(" - Cache TTL ........ {} min", properties.getCacheTtl().toMinutes());
+        log.info(" - History .......... {} days", properties.getHistory().getRetention().toDays());
     }
 
     @PostConstruct
@@ -142,6 +140,11 @@ public class MeteoSourceService {
         return List.copyOf(hours.values());
     }
 
+    /** How far back the passed hours are kept, and so how far back the dashboard can browse. */
+    public Duration getRecordedHistory() {
+        return properties.getHistory().getRetention();
+    }
+
     /**
      * Keeps the hours that are now in the past, and forgets the ones nothing will ask for.
      * <p>
@@ -155,7 +158,7 @@ public class MeteoSourceService {
                 .filter(hour -> !hour.getDate().truncatedTo(ChronoUnit.HOURS).isAfter(currentHour))
                 .forEach(hour -> recorded.put(hour.getDate().truncatedTo(ChronoUnit.HOURS), hour));
 
-        recorded.headMap(currentHour.minus(RECORDED_HISTORY)).clear();
+        recorded.headMap(currentHour.minus(properties.getHistory().getRetention())).clear();
 
         // The hour that is running is refreshed on every fetch, which is not worth a write to
         // the Pi's card - only an hour arriving or falling off the end changes what is stored.
@@ -187,7 +190,8 @@ public class MeteoSourceService {
             List<RecordedHour> restored = MAPPER.readValue(file.toFile(), new TypeReference<>() {
             });
 
-            LocalDateTime oldest = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS).minus(RECORDED_HISTORY);
+            LocalDateTime oldest = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS)
+                    .minus(properties.getHistory().getRetention());
 
             restored.stream()
                     .filter(hour -> !hour.at().isBefore(oldest))

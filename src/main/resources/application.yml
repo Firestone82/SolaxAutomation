@@ -149,6 +149,14 @@ ote:
   # tomorrow's prices are picked up after the afternoon auction.
   cache-ttl: 15m
   timeout: 15s
+  # The API only serves today and tomorrow, so each day's prices are kept as they
+  # are first seen - that is what lets the dashboard browse the price chart back by
+  # day. Written down so a restart does not lose them.
+  history:
+    persist: true
+    file: data/price-history.json
+    # How far back a day is kept, and so how far back the price card browses.
+    retention: 7d
 
 # -----------------------------------------------------------------------------
 #  Weather forecast - https://www.meteosource.com/documentation
@@ -170,6 +178,8 @@ meteosource:
   history:
     persist: true
     file: data/weather-history.json
+    # How far back the hours are kept, and so how far back the weather card browses.
+    retention: 7d
 
 # -----------------------------------------------------------------------------
 #  Dashboard
