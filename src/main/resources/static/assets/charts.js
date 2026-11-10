@@ -352,10 +352,11 @@ const Charts = (() => {
 
         const {width, compact} = measure(container);
 
-        // A lane under the plot for the intervals charged from the grid, reserved only when
-        // the day has one, so a day without stays exactly as it was.
+        // A lane under the plot for the intervals sold into and charged from the grid,
+        // reserved only when the day has either, so a day without stays exactly as it was.
         const charged = points.some(point => point.charging);
-        const laneHeight = charged ? 9 : 0;
+        const sold = points.some(point => point.selling);
+        const laneHeight = charged || sold ? 9 : 0;
 
         const height = (compact ? 200 : 260) + laneHeight;
         const padding = compact
@@ -378,10 +379,26 @@ const Charts = (() => {
         svg.appendChild(blockedHatch(hatchId));
 
         /*
-           Charged from the grid: a hatched strip in the lane under the bars rather than a
-           colour on them, so every bar keeps the price band it is in - what the energy was
-           bought at is the point of marking it - and nothing reads as another price level.
+           Sold and charged: strips in the lane under the bars rather than colours on them,
+           so every bar keeps the price band it is in - what the energy was sold or bought
+           at is the point of marking it - and nothing reads as another price level. A sale
+           is a solid strip, a charge a hatched one; the two never share an interval.
         */
+        if (sold) {
+            const laneY = padding.top + plotHeight + 3;
+            const slotWidth = plotWidth / points.length;
+
+            bands(points, point => point.selling === true).forEach(([from, to]) =>
+                svg.appendChild(element('rect', {
+                    class: 'sell-strip',
+                    x: padding.left + from * slotWidth + 0.5,
+                    y: laneY,
+                    width: Math.max(2, (to - from) * slotWidth - 1),
+                    height: laneHeight - 3,
+                    rx: 2
+                })));
+        }
+
         if (charged) {
             const stripeId = 'price-charge-stripes';
             const defs = element('defs');
@@ -471,11 +488,9 @@ const Charts = (() => {
             const x = padding.left + index * barWidth;
             const barHeight = Math.max(1, Math.abs(zeroY - scaleY(point.czkPerKwh)));
 
+            // The colour is the price band and nothing else; the selling window and the
+            // charges are marked in the lane underneath.
             const classes = ['bar-' + (point.level || 'medium')];
-            if (point.selling) {
-                classes.length = 0;
-                classes.push('bar-selling');
-            }
             if (point.exportable === false) {
                 classes.push('bar-blocked');
             }
@@ -732,20 +747,20 @@ const Charts = (() => {
      * with the morning already behind it - and entries outside it are dropped
      * rather than squeezed in.
      *
+     * Rows are groups the caller names - what kind of action it is - rather than one
+     * per module, so a handful of rows says what a dozen modules would. Two entries
+     * of a row that would land on top of each other are not drawn over one another:
+     * the row splits into lanes, the later entry going to the first lane it fits in,
+     * so everything that happens at the same time stays visible.
+     *
      * A tick is only a few pixels wide, so every entry gets a wider invisible
      * hit area on top of it - otherwise the checks would be unhoverable.
+     *
+     * options: groupOf (entry => key), groupNames ({key: label}), groupOrder ([key]),
+     * start, end, now, tooltip, emptyMessage.
      */
     function timelineChart(container, entries, options = {}) {
         const {width, compact} = measure(container);
-
-        /*
-           Wide, the module name sits in a gutter to the left of its band. Narrow, a 150 unit
-           gutter would leave the band itself about a hundred pixels wide, so the name moves
-           on top of its own row instead and the band gets the full width.
-        */
-        const rowHeight = compact ? 46 : 30;
-        const trackTop = compact ? 18 : 5;
-        const trackHeight = compact ? 20 : rowHeight - 12;
 
         const padding = compact
             ? {top: 20, right: 6, bottom: 18, left: 6}
@@ -766,13 +781,80 @@ const Charts = (() => {
             return;
         }
 
-        // one row per module keeps overlapping actions readable
-        const modules = [...new Set(visible.map(entry => entry.moduleId))].sort();
-        const height = padding.top + modules.length * rowHeight + padding.bottom;
         const plotWidth = width - padding.left - padding.right;
-
         const scaleX = date => padding.left + ((date - start) / (end - start)) * plotWidth;
 
+        const groupOf = options.groupOf || (entry => entry.moduleId);
+        const order = options.groupOrder || [];
+        const keys = [...new Set(visible.map(groupOf))]
+            .sort((a, b) => {
+                const ia = order.indexOf(a);
+                const ib = order.indexOf(b);
+                return (ia < 0 ? order.length : ia) - (ib < 0 ? order.length : ib) || String(a).localeCompare(String(b));
+            });
+
+        // Where each entry is drawn, in pixels, worked out before the rows are: how many
+        // lanes a row needs depends on how its entries overlap on screen, not in time.
+        const hitMin = compact ? 16 : 12;
+        const placed = visible.map(entry => {
+            const from = new Date(entry.from);
+            const to = entry.to ? new Date(entry.to) : null;
+            const x = scaleX(from);
+            const barWidth = to ? Math.max(5, scaleX(to) - x) : 5;
+            const barX = to ? x : x - 2;
+            const hitWidth = Math.max(barWidth, hitMin);
+            const hitX = barX - (hitWidth - barWidth) / 2;
+
+            return {entry, group: groupOf(entry), barX, barWidth, hitX, hitWidth};
+        });
+
+        // Greedy lanes: in order of where they start, each entry takes the first lane whose
+        // last entry ends before it begins, with a little air so two ticks never touch.
+        const lanesOf = {};
+
+        keys.forEach(key => {
+            const lanes = [];
+
+            placed
+                .filter(item => item.group === key)
+                .sort((a, b) => a.hitX - b.hitX)
+                .forEach(item => {
+                    let lane = lanes.findIndex(last => last + 2 <= item.hitX);
+
+                    if (lane < 0) {
+                        lane = lanes.length;
+                        lanes.push(0);
+                    }
+
+                    lanes[lane] = item.hitX + item.hitWidth;
+                    item.lane = lane;
+                });
+
+            lanesOf[key] = Math.max(1, lanes.length);
+        });
+
+        const singleHeight = compact ? 20 : 18;
+        const laneHeight = compact ? 14 : 12;
+        const laneGap = 3;
+        const labelSpace = compact ? 14 : 0;
+        const rowGap = compact ? 12 : 12;
+
+        const trackHeightOf = lanes => lanes === 1 ? singleHeight : lanes * laneHeight + (lanes - 1) * laneGap;
+        const laneHeightOf = lanes => lanes === 1 ? singleHeight : laneHeight;
+
+        const rows = [];
+        let y = padding.top;
+
+        keys.forEach(key => {
+            const lanes = lanesOf[key];
+            const trackTop = y + labelSpace;
+            const trackHeight = trackHeightOf(lanes);
+
+            rows.push({key, lanes, top: y, trackTop, trackHeight});
+            y = trackTop + trackHeight + rowGap;
+        });
+
+        const height = y - rowGap + padding.bottom;
         const svg = createSvg(width, height);
 
         const windowHours = Math.round((end - start) / 3600000);
@@ -794,30 +876,28 @@ const Charts = (() => {
             svg.appendChild(text);
         }
 
-        modules.forEach((moduleId, row) => {
-            const y = padding.top + row * rowHeight;
-
+        rows.forEach(row => {
             svg.appendChild(element('rect', {
                 class: 'timeline-track',
-                x: padding.left, y: y + trackTop, width: plotWidth, height: trackHeight, rx: 5
+                x: padding.left, y: row.trackTop, width: plotWidth, height: row.trackHeight, rx: 5
             }));
 
             const label = compact
-                ? element('text', {class: 'timeline-label', x: padding.left + 1, y: y + 10})
+                ? element('text', {class: 'timeline-label', x: padding.left + 1, y: row.top + 10})
                 : element('text', {
                     class: 'timeline-label',
-                    x: padding.left - 10, y: y + rowHeight / 2 + 3, 'text-anchor': 'end'
+                    x: padding.left - 10, y: row.trackTop + row.trackHeight / 2 + 3, 'text-anchor': 'end'
                 });
 
-            label.textContent = options.moduleNames?.[moduleId] || moduleId;
+            label.textContent = options.groupNames?.[row.key] || row.key;
             svg.appendChild(label);
         });
 
-        visible.forEach(entry => {
-            const row = modules.indexOf(entry.moduleId);
-            const y = padding.top + row * rowHeight;
-            const from = new Date(entry.from);
-            const to = entry.to ? new Date(entry.to) : null;
+        placed.forEach(item => {
+            const {entry, barX, barWidth, hitX, hitWidth} = item;
+            const row = rows.find(candidate => candidate.key === item.group);
+            const height_ = laneHeightOf(row.lanes);
+            const top = row.trackTop + item.lane * (height_ + (row.lanes === 1 ? 0 : laneGap));
 
             // A run that failed is worth spotting from across the room; everything else
             // is coloured by what kind of action it is.
@@ -828,25 +908,17 @@ const Charts = (() => {
             // What already happened steps back, so the plan stays the thing you read first.
             const opacity = entry.past ? 0.45 : (entry.certain ? 0.95 : 0.55);
 
-            const x = scaleX(from);
-            const barWidth = to ? Math.max(5, scaleX(to) - x) : 5;
-            const barX = to ? x : x - 2;
-
             const bar = element('rect', {
                 class: 'timeline-bar' + (entry.past ? ' is-past' : ''),
-                x: barX, y: y + trackTop, width: barWidth, height: trackHeight, rx: 3,
+                x: barX, y: top, width: barWidth, height: height_, rx: 3,
                 fill: colour, opacity: opacity
             });
             svg.appendChild(bar);
 
             // Ticks are too narrow to hover, so widen the target without widening the mark.
-            const hitWidth = Math.max(barWidth, compact ? 16 : 12);
             const hit = element('rect', {
                 class: 'hit-area',
-                x: barX - (hitWidth - barWidth) / 2,
-                y: y + trackTop - 3,
-                width: hitWidth,
-                height: trackHeight + 6
+                x: hitX, y: top - 1, width: hitWidth, height: height_ + 2
             });
 
             hoverable(

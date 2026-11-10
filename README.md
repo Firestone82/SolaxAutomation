@@ -279,7 +279,7 @@ remembered per browser. Each opens with the same kind of heading and a few words
 state_ with when the tiles were read and over which link, _Summary_ with how many of the days shown
 have data, and _Module actions_ with how many entries are kept and from when.
 
-**Control** — first the live tiles, then the day's 96 quarter-hour prices with the armed selling window highlighted, and
+**Control** — first the live tiles, then the day's 96 quarter-hour prices with the selling window and the charges marked under them, and
 the weather quality curve with the thresholds the modules compare against: every decision the
 controls make is read off those two. Both cards browse a day at a time (below). Then the controls —
 **Selling** and **Charging from the grid** side by side, and the **Control** card under them. Then
@@ -376,12 +376,15 @@ point of the prices is what those two do about them. Intervals under `automation
 where the export limit module closes the export because production is not worth putting on the grid,
 are **hatched** over their full height and their bars step back. Intervals the selling module may
 sell the battery into — inside its search hours and at or above `automation.discharge.min-price` —
-are **washed in the selling colour** instead, with that minimum drawn in as a dashed line. Adjacent
-intervals merge into one band, so each reads as a part of the day rather than 96 stripes.
+are **washed** lightly instead, with that minimum drawn in as a dashed line. Adjacent intervals merge
+into one band, so each reads as a part of the day rather than 96 stripes. On this chart colour means
+one thing only, how high the price is: the bars keep their price colours whatever happens in them.
 
 The wash is where a window *can* be armed, not where one *will* be: which of those intervals is
 actually chosen depends on the peak, the plateau around it and the charge in the battery, and only
-the planner can answer that. The armed window itself keeps its own solid colour on top.
+the planner can answer that. What is actually sold and bought is marked in a lane under the bars: a
+**solid strip** for the selling window — the armed one, and any sale on record for that day — and a
+**hatched strip** for a charge from the grid. The lane is only there on a day that has either.
 
 The timeline shows every run each module has coming up, not just the next one. Two modules are left
 out of it: the export limit is re-checked every quarter of an hour and the weather work mode every
@@ -393,8 +396,11 @@ default — the next 24 hours of the timeline, the forecast from this hour on. _
 midnight instead, so the morning is on screen next to the afternoon, and the choice is remembered per
 browser. Looking back is only worth a switch because there is something there: the timeline fills the
 hours behind now with what actually ran, taken from the same activity history the list below shows,
-drawn on its module's own row and stepped back so the plan still reads first. A run that failed is
-red. On the weather curve the hours already past are washed over and separated from the forecast by
+drawn on its row and stepped back so the plan still reads first. A run that failed is red. The rows
+are kinds of action rather than modules — _Selling and charging_, _Work mode_, _Export limit_,
+_Checks_ — so a busy day is four rows rather than nine, and the module behind an entry is in its
+tooltip. Entries of a row that would be drawn on top of each other split the row into lanes, so
+everything that happens at the same time stays visible. On the weather curve the hours already past are washed over and separated from the forecast by
 the same "now" marker.
 
 The forecast only ever looks forward, so the hours behind us are the ones the application saw go by.

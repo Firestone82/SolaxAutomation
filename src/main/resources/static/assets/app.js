@@ -25,6 +25,9 @@
         timeline: null,
         selling: null,
         balance: null,
+
+        // The work mode a button was just pressed for, while the change is on its way.
+        modePending: null,
         statistics: null,
 
         // What the statistics section shows: the last 7, 30 or 90 days, or a calendar month.
@@ -751,7 +754,7 @@
         const summary = priceSummary(points);
         const charged = withCharging(points, dayAt(state.priceDay));
 
-        renderChargeLegend(charged.some(point => point.charging));
+        renderChargeLegend(charged.some(point => point.charging), charged.some(point => point.selling));
 
         Charts.priceChart(container, charged, {
             emptyMessage: t('prices.none'),
@@ -759,9 +762,8 @@
             tooltip: point => ({
                 title: `${point.time} – ${endOfSlot(point)}`,
                 subtitle: automationLabel(point),
-                accent: point.selling ? 'var(--sell)'
-                    : point.sellable ? 'var(--sell)'
-                        : point.exportable === false ? 'var(--text-faint)' : `var(--price-${point.level || 'medium'})`,
+                // The price band's colour, like the bar: the chart uses colour for nothing else.
+                accent: point.exportable === false ? 'var(--text-faint)' : `var(--price-${point.level || 'medium'})`,
                 rows: [
                     [t('tooltip.price'), `${formatNumber(point.czkPerKwh, 2)} ${state.config.currency}/kWh`],
                     [t('tooltip.priceEur'), `${formatNumber(point.eurPerKwh, 4)} EUR/kWh`],
@@ -785,9 +787,10 @@
      * stretches come from the activity history, which reaches two days back, and from the plan.
      */
     function withCharging(points, day) {
-        const stretches = chargeStretches();
+        const charges = chargeStretches();
+        const sales = saleStretches();
 
-        if (!stretches.length) {
+        if (!charges.length && !sales.length) {
             return points;
         }
 
@@ -796,20 +799,23 @@
             from.setHours(point.hour, point.minute, 0, 0);
             const to = new Date(from.getTime() + 15 * 60000);
 
-            // An interval counts once a charge covers part of it: a charge started from the
-            // dashboard at 14:07 bought the 14:00 interval too.
-            const charging = stretches.some(stretch => stretch.from < to && stretch.to > from);
-            return charging ? {...point, charging: true} : point;
+            // An interval counts once a stretch covers part of it: a charge started from the
+            // dashboard at 14:07 bought the 14:00 interval too. A sale that already ran is in
+            // the history; the armed one the backend marks itself.
+            const covers = stretch => stretch.from < to && stretch.to > from;
+            const charging = charges.some(covers);
+            const selling = point.selling || sales.some(covers);
+
+            return charging || selling ? {...point, charging, selling} : point;
         });
     }
 
-    /** The charge swatch is only in the price legend while the day shown has a charge on it. */
-    function renderChargeLegend(shown) {
-        const item = el('legend-charging');
+    /** The two strips are only in the price legend while the day shown has one of them. */
+    function renderChargeLegend(charging, selling = false) {
+        el('legend-charging').hidden = !charging;
+        el('legend-selling').hidden = !selling;
 
-        item.hidden = !shown;
-
-        if (shown) {
+        if (charging) {
             el('legend-charging-text').textContent = t('workMode.charging');
         }
     }
@@ -1084,31 +1090,6 @@
         return words.charAt(0).toUpperCase() + words.slice(1);
     }
 
-    /**
-     * Row labels for the timeline chart.
-     * <p>
-     * Not everything that writes history is a module: a quick action comes from the dashboard,
-     * a supply change from the GPIO, and a work mode somebody set on the inverter itself from
-     * the inverter. They have no widget to take a name from, so they are named here rather
-     * than labelling a row with a bare id.
-     */
-    const NON_MODULE_SOURCES = ['dashboard', 'raspberry', 'inverter'];
-
-    /**
-     * Every source the history can name. The modules are named from the dictionary rather
-     * than fetched - the dashboard no longer has a modules page to fetch them for - and an id
-     * that turns up in the history without a translation is shown as it is.
-     */
-    const KNOWN_MODULES = ['battery', 'export', 'weather', 'discharge', 'morning', 'balance'];
-
-    function moduleNames() {
-        const ids = new Set([...KNOWN_MODULES, ...NON_MODULE_SOURCES]);
-
-        [...(state.timeline?.history || []), ...(state.timeline?.planned || [])]
-            .forEach(entry => ids.add(entry.moduleId));
-
-        return Object.fromEntries([...ids].map(id => [id, moduleText(id, 'name', id)]));
-    }
 
     /* ------------------------------------------------- work mode over time */
 
@@ -1204,10 +1185,18 @@
 
         // The history reads newest first, which is what the activity list wants and the
         // opposite of what a band does.
+        // A change is stamped with the backend's clock and compared with the browser's. The two
+        // are a few seconds apart as often as not, and a change made a moment ago from this
+        // page can arrive stamped "in the future" - which used to drop it, and draw the mode it
+        // set across the whole day as if nothing had changed. Anything up to a few minutes
+        // ahead is taken as having happened now.
+        const SKEW = 5 * 60000;
+
         const changes = (state.timeline?.history || [])
             .filter(entry => entry.type === type && entry.success && entry.params?.to)
             .map(entry => ({at: new Date(entry.at), to: entry.params.to, from: entry.params.from || null, entry}))
-            .filter(change => change.at >= start && change.at <= now)
+            .filter(change => change.at >= start && change.at <= new Date(now.getTime() + SKEW))
+            .map(change => change.at > now ? {...change, at: now} : change)
             .sort((first, second) => first.at - second.at);
 
         if (changes.length === 0) {
@@ -1249,9 +1238,22 @@
      * only in the module, which is the one that knows when it intends to run.
      */
     function sellingOverlays() {
-        const now = new Date();
-        const start = startOfDay(now);
+        const start = startOfDay(new Date());
         const end = new Date(start.getTime() + DAY_MS);
+
+        // The band draws one day; a window may hang over either end of it.
+        return saleStretches()
+            .map(overlay => ({
+                ...overlay,
+                from: new Date(Math.max(overlay.from, start)),
+                to: new Date(Math.min(overlay.to, end))
+            }))
+            .filter(overlay => overlay.to > overlay.from);
+    }
+
+    /** Every sale on record and the armed one, unclipped, for the band and the price chart alike. */
+    function saleStretches() {
+        const now = new Date();
 
         const marks = (state.timeline?.history || [])
             .filter(entry => entry.params?.sale)
@@ -1300,14 +1302,7 @@
             });
         }
 
-        // The band draws one day; a window may hang over either end of it.
-        return overlays
-            .map(overlay => ({
-                ...overlay,
-                from: new Date(Math.max(overlay.from, start)),
-                to: new Date(Math.min(overlay.to, end))
-            }))
-            .filter(overlay => overlay.to > overlay.from);
+        return overlays.filter(overlay => overlay.to > overlay.from);
     }
 
     /**
@@ -1613,6 +1608,32 @@
         legend.replaceChildren(...items);
     }
 
+    /**
+     * The rows of the timeline chart: what kind of action it is, rather than which module
+     * did it. A module per row was nine rows on a busy day for four kinds of thing; the module
+     * is still in every tooltip.
+     */
+    const TIMELINE_GROUPS = ['remote', 'mode', 'export', 'checks'];
+
+    function timelineGroup(entry) {
+        switch (entry.type) {
+            case 'GRID_SELL':
+            case 'GRID_CHARGE':
+            case 'REMOTE_CONTROL_EXIT':
+                return 'remote';
+            case 'WORK_MODE_CHANGE':
+                return 'mode';
+            case 'EXPORT_LIMIT':
+                return 'export';
+            default:
+                return 'checks';
+        }
+    }
+
+    function timelineGroupNames() {
+        return Object.fromEntries(TIMELINE_GROUPS.map(key => [key, t('timeline.group.' + key)]));
+    }
+
     /** The window the timeline chart draws: the day ahead, or today from midnight. */
     function timelineWindow() {
         const now = new Date();
@@ -1702,7 +1723,9 @@
         if (timelineChartVisible()) {
             Charts.timelineChart(el('timeline-chart'), timelineEntries(), {
                 emptyMessage: t('timeline.none'),
-                moduleNames: moduleNames(),
+                groupOf: timelineGroup,
+                groupNames: timelineGroupNames(),
+                groupOrder: TIMELINE_GROUPS,
                 start: range.start,
                 end: range.end,
                 tooltip: timelineTooltip
@@ -2252,11 +2275,25 @@
 
         // The mode the inverter is already in is marked rather than disabled - pressing it
         // again is harmless and is sometimes exactly what you want after a manual change.
-        el('quick-modes').replaceChildren(...QUICK_MODES.map(mode => button(
-            t('mode.' + mode),
-            overview?.workMode === mode ? 'button-primary' : '',
-            () => setWorkMode(mode)
-        )));
+        // While a change is on its way every button waits, and the one pressed says so, until
+        // the inverter has confirmed it and the page has read the mode back.
+        const pending = state.modePending;
+
+        el('quick-modes').replaceChildren(...QUICK_MODES.map(mode => {
+            const marked = pending ? pending === mode : overview?.workMode === mode;
+            const node = button(
+                t('mode.' + mode),
+                (marked ? 'button-primary' : '') + (pending === mode ? ' is-loading' : ''),
+                () => setWorkMode(mode),
+                !pending
+            );
+
+            if (pending === mode) {
+                node.setAttribute('aria-busy', 'true');
+            }
+
+            return node;
+        }));
 
         const remote = state.selling?.remoteControlAvailable;
         // Nothing to cancel unless a session is actually running, and a button that is
@@ -2275,14 +2312,15 @@
 
         // Its own line, not the message line: this is a standing fact about the setup, and
         // it must not wipe out what the last button press reported.
-        // Only the reasons the button is off are worth a line; a live button speaks for itself.
+        // Beside the button, whether there is anything for it to end.
         const note = !controllable ? t('selling.controlDisabled')
             : !remote ? t('quick.remoteUnavailable')
                 : !underRemoteControl ? t('quick.noSession')
-                    : '';
+                    : t('quick.sessionRunning');
 
         el('quick-note').textContent = note;
         el('quick-note').hidden = !note;
+        el('quick-note').classList.toggle('is-running', !!underRemoteControl);
 
         updateChargePreview();
     }
@@ -3350,8 +3388,25 @@
         }
     }
 
-    function setWorkMode(mode) {
-        return runQuickAction(() => Api.setWorkMode(mode), 'quick-message');
+    async function setWorkMode(mode) {
+        const node = el('quick-message');
+
+        state.modePending = mode;
+        writeMessage(node, t('quick.modeSetting', {mode: mode}), null);
+        renderQuickActions();
+
+        try {
+            const result = await Api.setWorkMode(mode);
+            writeMessage(node, actionMessage(result), result.success);
+
+            // The mark only moves once the page has read the mode back.
+            await refresh();
+        } catch (error) {
+            writeMessage(node, error.message, false);
+        } finally {
+            state.modePending = null;
+            renderQuickActions();
+        }
     }
 
     function chargeFromGrid() {

@@ -452,16 +452,23 @@ main {
 .blocked-hatch-line   { stroke: var(--text-faint); stroke-width: 1.4; opacity: .3; }
 
 /* The other side of the same question: where the battery may be sold into. A wash
-   rather than a hatch, because it marks what the automation is looking for. */
+   rather than a hatch, because it marks what the automation is looking for - and neutral,
+   because on this chart colour only ever says how high the price is. */
 .slot-sellable {
-    fill: var(--sell);
-    opacity: .11;
+    fill: var(--text);
+    opacity: .05;
+    pointer-events: none;
+}
+
+/* Sold into the grid: a solid strip in the lane under the bars, beside the charge's hatched one. */
+.sell-strip {
+    fill: var(--text-muted);
     pointer-events: none;
 }
 
 .threshold-sunny { stroke: var(--success); }
 .threshold-storm { stroke: var(--danger); }
-.threshold-sell  { stroke: var(--sell); }
+.threshold-sell  { stroke: var(--text-muted); }
 
 .quality-area { fill: var(--accent); opacity: .14; }
 .quality-line { stroke: var(--accent); stroke-width: 2; fill: none; }
@@ -835,7 +842,7 @@ main {
 .swatch-low     { background: var(--price-low); }
 .swatch-medium  { background: var(--price-medium); }
 .swatch-high    { background: var(--price-high); }
-.swatch-selling { background: var(--sell); }
+.swatch-selling { height: 7px; background: var(--text-muted); }
 .swatch-charging {
     height: 7px;
     background: repeating-linear-gradient(45deg,
@@ -846,8 +853,8 @@ main {
 .swatch-quality { background: var(--accent); }
 
 .swatch-sellable {
-    background: color-mix(in srgb, var(--sell) 28%, transparent);
-    border: 1px solid color-mix(in srgb, var(--sell) 55%, transparent);
+    background: color-mix(in srgb, var(--text) 10%, transparent);
+    border: 1px solid var(--border-strong);
 }
 
 /* The hatch from the price chart, at legend size. */
@@ -873,7 +880,7 @@ main {
     width: 16px;
     height: 0;
     border-radius: 0;
-    border-top: 2px dashed var(--sell);
+    border-top: 2px dashed var(--text-muted);
 }
 
 /* ----------------------------------------------------------------- formula */
@@ -1262,7 +1269,8 @@ main {
 .balance-status .stat-bar { margin-top: 8px; }
 .balance-status .stat-bar > i { background: var(--charge); }
 
-#balance-actions { margin-top: 10px; }
+/* The balancing button sits on the group's bottom edge like the other two; its spacing is the
+   group's, not its own. */
 
 /* A field whose value is not being used right now - dimmed, not removed. */
 .field.is-muted { opacity: .5; }
@@ -1272,6 +1280,57 @@ main {
     color: var(--text-faint);
     font-size: .8rem;
     line-height: 1.45;
+}
+
+/* Exit remote control on the left, whether a session runs on the right. */
+.exit-row {
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: nowrap;
+}
+
+.exit-row .quick-note {
+    margin: 0;
+    text-align: right;
+}
+
+.exit-row .quick-note.is-running { color: var(--charge); font-weight: 600; }
+
+/* A button whose command is on its way: a ring turning where its label was. The label stays in
+   the layout, only unseen, so the button keeps its width and the row does not reflow. */
+.button.is-loading {
+    position: relative;
+    color: transparent !important;
+    cursor: progress;
+}
+
+.button.is-loading::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 14px;
+    height: 14px;
+    margin: -9px 0 0 -9px;
+    border: 2px solid var(--text-muted);
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: button-spin .7s linear infinite;
+}
+
+/* A disabled primary button drops its fill; the one waiting keeps it, so it is still the one pressed. */
+.button-primary.is-loading:disabled {
+    background: var(--accent);
+    border-color: var(--accent);
+    opacity: .85;
+}
+
+.button-primary.is-loading::after { border-color: #fff; border-right-color: transparent; }
+
+@keyframes button-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+    .button.is-loading::after { animation-duration: 2.4s; }
 }
 
 /* ------------------------------------------------------------------- modal */

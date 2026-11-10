@@ -376,8 +376,11 @@ se ztratí těch pár, které něco říkají. **Neúspěšná** kontrola zůsta
 
 Na stejné stránce _Historie_ jsou i **Plánované akce**. Tytéž záznamy kreslí jejich graf, když se
 přepne na _Celý den_: hodiny před
-aktuálním časem se doplní tím, co doopravdy proběhlo, na řádku svého modulu a potlačeně, aby plán
-zůstal to první, co je vidět. Neúspěšný běh je červený. Graf **Kvality počasí** se přepíná stejně;
+aktuálním časem se doplní tím, co doopravdy proběhlo, potlačeně, aby plán zůstal to první, co je
+vidět. Neúspěšný běh je červený. Řádky grafu jsou druhy akcí, ne moduly — _Prodej a nabíjení_,
+_Režim střídače_, _Limit dodávky_, _Kontroly_ —, takže i rušný den má čtyři řádky. Který modul akci
+udělal, říká tooltip. Když by se dvě akce v řádku překryly, řádek se rozdělí na podřádky a vidět
+jsou všechny. Graf **Kvality počasí** se přepíná stejně;
 hodiny, které už proběhly, se ukládají průběžně do `data/weather-history.json`, protože předpověď
 sama dozadu nevidí. Restart je tedy nesmaže, ale co aplikace nikdy neviděla (třeba ráno před prvním
 spuštěním), v grafu chybí — osa i tak zůstane celý den a pod grafem se napíše, odkdy jsou hodiny

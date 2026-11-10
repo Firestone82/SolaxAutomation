@@ -114,7 +114,10 @@
                     <li><i class="swatch swatch-low"></i><span data-i18n="prices.low">Low</span></li>
                     <li><i class="swatch swatch-medium"></i><span data-i18n="prices.medium">Medium</span></li>
                     <li><i class="swatch swatch-high"></i><span data-i18n="prices.high">High</span></li>
-                    <li><i class="swatch swatch-selling"></i><span data-i18n="prices.selling">Selling window</span></li>
+                    <!-- The two strips under the bars, each only while the day shown has one. -->
+                    <li id="legend-selling" hidden>
+                        <i class="swatch swatch-selling"></i><span data-i18n="prices.selling">Selling window</span>
+                    </li>
                     <!-- Only while the day shown has a charge from the grid on it. -->
                     <li id="legend-charging" hidden>
                         <i class="swatch swatch-charging"></i><span id="legend-charging-text"></span>
@@ -274,8 +277,11 @@
                         Ends whatever session is running now - a sale, a charge or balancing - and hands
                         the inverter back to its work mode.
                     </p>
-                    <p class="quick-note" id="quick-note"></p>
-                    <div class="button-row" id="exit-actions"></div>
+                    <!-- The button, and on the right whether there is anything for it to end. -->
+                    <div class="button-row exit-row">
+                        <div id="exit-actions"></div>
+                        <span class="quick-note" id="quick-note"></span>
+                    </div>
                     <p class="form-message" id="exit-message" role="status"></p>
                 </section>
             </div>
