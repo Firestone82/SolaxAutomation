@@ -75,7 +75,14 @@
     <!-- ============================================================ OVERVIEW -->
     <section id="page-overview" class="page">
 
-        <!-- The live state first: what the battery, the panels and the grid are doing now. -->
+        <!-- The live state first: what the battery, the panels and the grid are doing now,
+             under a heading like the statistics' summary, with when it was read beside it. -->
+        <header class="section-head">
+            <div class="section-title">
+                <h2 data-i18n="overview.title">Current state</h2>
+                <span class="section-sub" id="overview-sub"></span>
+            </div>
+        </header>
         <div class="grid grid-stats" id="stat-tiles"></div>
 
         <!--
@@ -397,6 +404,14 @@
 
     <!-- ============================================================ HISTORY -->
     <section id="page-history" class="page" hidden>
+        <!-- The same kind of heading as the other two pages, with how much history is kept. -->
+        <header class="section-head">
+            <div class="section-title">
+                <h2 data-i18n="historyPage.title">Module actions</h2>
+                <span class="section-sub" id="history-sub"></span>
+            </div>
+        </header>
+
         <article class="card">
             <header class="card-head">
                 <h2 data-i18n="timeline.title">Planned actions</h2>

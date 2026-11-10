@@ -372,9 +372,35 @@
 
     /* --------------------------------------------------------------- render */
 
+    /**
+     * The few words beside the control page's heading: when the tiles were read, and over
+     * which link. The tiles are a reading, not a live feed, and how old it is matters.
+     */
+    function renderOverviewHead() {
+        const overview = state.overview;
+        const sub = el('overview-sub');
+
+        if (!overview) {
+            sub.textContent = '';
+            return;
+        }
+
+        if (!overview.online) {
+            sub.textContent = t('overview.subOffline');
+            return;
+        }
+
+        const source = overview.source ? t('overview.source.' + overview.source) : null;
+        sub.textContent = source
+            ? t('overview.sub', {time: formatDateTime(overview.readAt), source: source})
+            : t('overview.subTime', {time: formatDateTime(overview.readAt)});
+    }
+
     function renderStats() {
         const overview = state.overview;
         const container = el('stat-tiles');
+
+        renderOverviewHead();
 
         if (!overview) {
             container.replaceChildren();
@@ -1707,6 +1733,24 @@
         }), state.historyRows);
 
         renderHistoryFilters(history);
+        renderHistoryHead();
+    }
+
+    /** The few words beside the history page's heading: how much activity is kept, and from when. */
+    function renderHistoryHead() {
+        const all = state.timeline?.history || [];
+        const sub = el('history-sub');
+
+        if (!all.length) {
+            sub.textContent = t('historyPage.subNone');
+            return;
+        }
+
+        // Newest first, so the last entry is the oldest one kept.
+        sub.textContent = t('historyPage.sub', {
+            count: all.length,
+            since: formatDateTime(all[all.length - 1].at)
+        });
     }
 
     /**

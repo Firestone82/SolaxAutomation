@@ -275,7 +275,9 @@ step is in the activity list. Nothing starts it on its own. The rules are covere
 
 Three pages: **Control**, which is the dashboard proper, **Statistics**, which is the days behind
 us, and **History**, which is what the modules will do and what they did. The page you were on is
-remembered per browser.
+remembered per browser. Each opens with the same kind of heading and a few words beside it: _Current
+state_ with when the tiles were read and over which link, _Summary_ with how many of the days shown
+have data, and _Module actions_ with how many entries are kept and from when.
 
 **Control** — first the live tiles, then the day's 96 quarter-hour prices with the armed selling window highlighted, and
 the weather quality curve with the thresholds the modules compare against: every decision the
