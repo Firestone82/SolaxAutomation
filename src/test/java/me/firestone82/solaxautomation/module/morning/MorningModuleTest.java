@@ -257,8 +257,37 @@ class MorningModuleTest {
     }
 
     @Test
-    @DisplayName("on a bad day the sale keeps the higher reserve the charge was bought for")
-    void badDayKeepsMore() {
+    @DisplayName("on a bad day nothing is sold, because the sun will not fill the battery again")
+    void badDaySellsNothing() {
+        morningPrice(6.0);
+        forecastQuality(WeatherType.OVERCAST, 90);
+        when(raspberryPi.isOnMeteredGrid()).thenReturn(true);
+        when(inverter.getBatterySoc()).thenReturn(Optional.of(100));
+
+        at(6, 15);
+
+        verify(discharge, never()).armFor(anyString(), any(), any(), any(), anyInt());
+        assertEquals("outcome.morning.noSale.badDay", newest().detailKey());
+    }
+
+    @Test
+    @DisplayName("without a forecast nothing is sold either")
+    void noForecastSellsNothing() {
+        morningPrice(6.0);
+        when(weather.getHoursBetween(any(), any())).thenReturn(List.of());
+        when(raspberryPi.isOnMeteredGrid()).thenReturn(true);
+        when(inverter.getBatterySoc()).thenReturn(Optional.of(100));
+
+        at(6, 15);
+
+        verify(discharge, never()).armFor(anyString(), any(), any(), any(), anyInt());
+        assertEquals("outcome.morning.noSale.noForecast", newest().detailKey());
+    }
+
+    @Test
+    @DisplayName("allowed to sell on a bad day, the sale keeps the higher reserve the charge was bought for")
+    void badDayKeepsMoreWhenAllowed() {
+        properties.getSell().setOnBadDay(true);
         morningPrice(6.0);
         forecastQuality(WeatherType.OVERCAST, 90);
         when(raspberryPi.isOnMeteredGrid()).thenReturn(true);
@@ -267,6 +296,18 @@ class MorningModuleTest {
         at(6, 15);
 
         verify(discharge).armFor(eq(MorningModule.ID), any(), any(), isNull(), eq(80));
+    }
+
+    @Test
+    @DisplayName("a bad day with a good morning price is charged for the weather, not for a sale")
+    void badDayChargeIsForTheWeather() {
+        morningPrice(6.0);
+        forecastQuality(WeatherType.OVERCAST, 90);
+
+        at(2, 0);
+
+        verify(inverter).startRemoteCharge(3000, Duration.ofHours(4));
+        assertEquals("outcome.morning.reason.weather", newest().detailKey());
     }
 
     @Test

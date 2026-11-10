@@ -1143,6 +1143,24 @@ main {
 
 .quick-duration-row { margin-bottom: 12px; }
 
+/* Where a running balancing is: a line saying it, and a bar for the hour at the top. */
+.balance-status {
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--charge);
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--charge) 8%, var(--surface-alt));
+    font-size: .85rem;
+}
+
+.balance-status strong { display: block; font-weight: 600; }
+.balance-status span { color: var(--text-muted); font-size: .8rem; }
+
+.balance-status .stat-bar { margin-top: 8px; }
+.balance-status .stat-bar > i { background: var(--charge); }
+
+#balance-actions { margin-top: 10px; }
+
 /* A field whose value is not being used right now - dimmed, not removed. */
 .field.is-muted { opacity: .5; }
 

@@ -75,8 +75,11 @@
     <!-- ============================================================ OVERVIEW -->
     <section id="page-overview" class="page">
 
+        <!-- The live state first: what the battery, the panels and the grid are doing now. -->
+        <div class="grid grid-stats" id="stat-tiles"></div>
+
         <!--
-            What the day is worth and what the sky will do lead the page: every decision the
+            What the day is worth and what the sky will do follow: every decision the
             controls below make - sell now, charge tonight - is read off these two.
         -->
         <div class="grid grid-two">
@@ -229,6 +232,19 @@
                     <div class="button-row" id="quick-actions"></div>
                 </section>
 
+                <!--
+                    Filling the battery and keeping it full for an hour, so the battery
+                    management system can even its cells out. It runs as a remote control
+                    session too, which is why it sits in this card.
+                -->
+                <section class="quick-group" id="balance-group">
+                    <h3 class="quick-group-title" data-i18n="balance.title">Battery balancing</h3>
+                    <p class="quick-hint" id="balance-hint"></p>
+                    <div class="balance-status" id="balance-status" hidden></div>
+                    <div class="button-row" id="balance-actions"></div>
+                    <p class="form-message" id="balance-message" role="status"></p>
+                </section>
+
                 <p class="quick-note" id="quick-note"></p>
                 <p class="form-message" id="quick-message" role="status"></p>
             </article>
@@ -256,7 +272,6 @@
             <ul class="legend" id="workmode-legend"></ul>
         </article>
 
-        <div class="grid grid-stats" id="stat-tiles"></div>
     </section>
 
     <!-- ========================================================= STATISTICS -->

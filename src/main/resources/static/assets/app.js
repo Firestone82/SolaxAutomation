@@ -24,6 +24,7 @@
         weather: null,
         timeline: null,
         selling: null,
+        balance: null,
         statistics: null,
 
         // What the statistics section shows: the last 7, 30 or 90 days, or a calendar month.
@@ -1073,7 +1074,7 @@
      * than fetched - the dashboard no longer has a modules page to fetch them for - and an id
      * that turns up in the history without a translation is shown as it is.
      */
-    const KNOWN_MODULES = ['battery', 'export', 'weather', 'discharge', 'morning'];
+    const KNOWN_MODULES = ['battery', 'export', 'weather', 'discharge', 'morning', 'balance'];
 
     function moduleNames() {
         const ids = new Set([...KNOWN_MODULES, ...NON_MODULE_SOURCES]);
@@ -2213,6 +2214,137 @@
         updateChargePreview();
     }
 
+    /* -------------------------------------------------------- battery balancing */
+
+    /**
+     * The balancing control: what it does, where a running one is, and the one button that
+     * starts or stops it. A running balancing says which half it is in - still charging, or
+     * full and being held - because the hour only starts counting once the battery is full.
+     */
+    function renderBalance() {
+        const balance = state.balance;
+        const status = el('balance-status');
+        const controllable = state.config.allowControl && balance?.available;
+
+        el('balance-hint').textContent = t('balance.hint', {
+            target: balance?.targetBattery ?? 100,
+            minutes: balance?.holdMinutes ?? 60,
+            watts: formatNumber(balance?.defaultWatts ?? 3000, 0)
+        });
+
+        const button = (label, className, onClick) => {
+            const node = document.createElement('button');
+            node.type = 'button';
+            node.className = 'button ' + className;
+            node.textContent = label;
+            node.disabled = !state.config.allowControl || (!balance?.active && !controllable);
+            node.addEventListener('click', onClick);
+            return node;
+        };
+
+        el('balance-actions').replaceChildren(balance?.active
+            ? button(t('balance.cancel'), 'button-danger', cancelBalance)
+            : button(t('balance.start'), '', startBalance));
+
+        const lines = balanceStatus(balance);
+        status.hidden = !lines;
+
+        if (lines) {
+            const title = document.createElement('strong');
+            title.textContent = lines.title;
+
+            const note = document.createElement('span');
+            note.textContent = lines.note || '';
+
+            const children = [title, note];
+
+            if (typeof lines.bar === 'number') {
+                const bar = document.createElement('div');
+                bar.className = 'stat-bar';
+                const fill = document.createElement('i');
+                fill.style.width = Math.max(0, Math.min(100, lines.bar)) + '%';
+                bar.appendChild(fill);
+                children.push(bar);
+            }
+
+            status.replaceChildren(...children);
+        }
+    }
+
+    /** The status block's lines, or null when there is nothing worth saying. */
+    function balanceStatus(balance) {
+        if (!balance) {
+            return null;
+        }
+
+        if (!balance.available && !balance.active) {
+            return {title: t('balance.unavailable'), note: null};
+        }
+
+        if (balance.active && balance.holding) {
+            const total = balance.holdMinutes * 60000;
+            const done = Date.now() - new Date(balance.fullSince).getTime();
+            const left = Math.max(0, Math.round((new Date(balance.holdUntil) - Date.now()) / 60000));
+
+            return {
+                title: t('balance.holding', {target: balance.targetBattery, until: formatTimeOnly(balance.holdUntil)}),
+                note: t('balance.holdingLeft', {left: humanMinutes(left)}),
+                bar: total > 0 ? done / total * 100 : null
+            };
+        }
+
+        if (balance.active) {
+            const soc = state.overview?.batterySoc;
+
+            return {
+                title: t('balance.charging', {target: balance.targetBattery}),
+                note: t('balance.chargingNote', {
+                    battery: hasValue(soc) ? soc : '—',
+                    deadline: formatTimeOnly(balance.deadline)
+                }),
+                bar: hasValue(soc) ? soc : null
+            };
+        }
+
+        // Idle: the last balancing's outcome, as long as there was one.
+        if (balance.summaryKey && balance.summaryKey.startsWith('history.balance.')) {
+            return {
+                title: I18N.message(balance.summaryKey, balance.summaryParams, balance.summary),
+                note: I18N.message(balance.detailKey, balance.detailParams, balance.detail)
+            };
+        }
+
+        return null;
+    }
+
+    function setBalanceMessage(text, ok) {
+        writeMessage(el('balance-message'), text, ok);
+    }
+
+    async function startBalance() {
+        setBalanceMessage('', null);
+
+        try {
+            const result = await Api.startBalance({});
+            setBalanceMessage(actionMessage(result), result.success);
+            await refresh();
+        } catch (error) {
+            setBalanceMessage(error.message, false);
+        }
+    }
+
+    async function cancelBalance() {
+        setBalanceMessage('', null);
+
+        try {
+            const result = await Api.cancelBalance();
+            setBalanceMessage(actionMessage(result), result.success);
+            await refresh();
+        } catch (error) {
+            setBalanceMessage(error.message, false);
+        }
+    }
+
     /* ------------------------------------------------------------ statistics */
 
     /** The ranges the statistics section offers, in days. */
@@ -2784,6 +2916,7 @@
         renderTimeline();
         renderSelling();
         renderQuickActions();
+        renderBalance();
         renderStatistics();
     }
 
@@ -3071,8 +3204,14 @@
 
     async function refresh() {
         try {
-            const [overview, prices, weather, timeline, selling, statistics] = await Promise.all([
+            const [overview, prices, weather, timeline, selling, balance, statistics] = await Promise.all([
                 Api.overview(), Api.prices(), Api.weather(), Api.timeline(), Api.selling(),
+                // Like the statistics, balancing is one control of the page, and an older
+                // backend without it must not take the rest of the refresh down.
+                Api.balance().catch(error => {
+                    console.warn('Balancing unavailable', error);
+                    return null;
+                }),
                 // The statistics are a section of the page, not the page: failing to load them
                 // keeps what was shown last rather than taking the whole refresh down.
                 Api.statistics(statsQuery()).catch(error => {
@@ -3081,7 +3220,7 @@
                 })
             ]);
 
-            Object.assign(state, {overview, prices, weather, timeline, selling, statistics});
+            Object.assign(state, {overview, prices, weather, timeline, selling, balance, statistics});
 
             setConnection(overview.online ? 'status.online' : 'status.offline',
                 overview.online ? 'pill-ok' : 'pill-warn');

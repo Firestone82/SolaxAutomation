@@ -50,8 +50,9 @@ import java.util.Optional;
  * From the start of the sale window, the morning is sold into wherever the price reaches the
  * same threshold - but only on the metered grid, where the export is actually paid for. The
  * sale is handed to the selling module, so it runs exactly like an evening sale: the panels go
- * first, the guard stops it at the reserve, and the dashboard shows it. On a bad day the reserve
- * is higher, because that charge was bought to carry the house.
+ * first, the guard stops it at the reserve, and the dashboard shows it. On a bad day nothing is
+ * sold: the battery is only worth emptying when the sun will fill it again, and that charge was
+ * bought to carry the house. {@code sell.on-bad-day} sells down to a higher reserve instead.
  */
 @Component
 public class MorningModule extends AbstractAutomationModule<MorningProperties> {
@@ -144,8 +145,10 @@ public class MorningModule extends AbstractAutomationModule<MorningProperties> {
                         "Morning price that makes the night charge worth buying and an interval worth selling into"),
                 ConfigEntry.of("automation.morning.sell.reserve-battery", "Reserve", sell.getReserveBattery(), "%",
                         "State of charge the morning sale stops at"),
+                ConfigEntry.of("automation.morning.sell.on-bad-day", "Sell on a bad day", sell.isOnBadDay(),
+                        "Sell the morning on a bad day too, down to the bad day reserve"),
                 ConfigEntry.of("automation.morning.sell.bad-weather-reserve", "Bad day reserve", sell.getBadWeatherReserve(), "%",
-                        "State of charge the morning sale stops at on a bad day")
+                        "State of charge the morning sale stops at on a bad day, when it sells at all")
         );
     }
 
@@ -375,7 +378,30 @@ public class MorningModule extends AbstractAutomationModule<MorningProperties> {
                     .build());
         }
 
-        boolean badDay = evaluate(now.toLocalDate()).badWeather();
+        Evaluation outlook = evaluate(now.toLocalDate());
+        boolean badDay = outlook.badWeather();
+
+        // The battery is only worth emptying this morning if the panels will fill it again
+        // today. A bad day, or one nobody can say anything about, keeps it whole.
+        if (!sell.isOnBadDay() && (badDay || outlook.quality() == null)) {
+            MorningProperties.BadWeather weather = properties.getBadWeather();
+            String hours = String.format(Locale.ROOT, "%02d:00-%02d:00", weather.getFromHour(), weather.getToHour());
+
+            return RunOutcome.unchanged(noSale, outlook.quality() == null
+                    ? Message.key("outcome.morning.noSale.noForecast", String.format(Locale.ROOT,
+                                    "The morning price is worth selling into, but there is no forecast for %s, so nothing says the panels will fill the battery again. Nothing is sold.",
+                                    hours))
+                            .with("hours", hours)
+                            .build()
+                    : Message.key("outcome.morning.noSale.badDay", String.format(Locale.ROOT,
+                                    "The morning price is worth selling into, but the forecast for %s scores %s, a bad day from %.1f. The panels will not fill the battery again, so nothing is sold.",
+                                    hours, describe(outlook.quality()), weather.getMinQuality()))
+                            .with("hours", hours)
+                            .with("quality", describe(outlook.quality()))
+                            .with("minQuality", weather.getMinQuality())
+                            .build());
+        }
+
         int reserve = badDay ? sell.getBadWeatherReserve() : sell.getReserveBattery();
 
         Optional<Integer> socOpt = inverter.getBatterySoc();
@@ -527,7 +553,9 @@ public class MorningModule extends AbstractAutomationModule<MorningProperties> {
         String price = describe(evaluation.bestPrice());
         String at = evaluation.bestAt() == null ? "-" : evaluation.bestAt().toString();
 
-        if (evaluation.badWeather() && evaluation.goodPrice()) {
+        // On a bad day the morning is not sold unless that is switched on, so the price is no
+        // reason to have charged and saying so would promise a sale that will not come.
+        if (evaluation.badWeather() && evaluation.goodPrice() && properties.getSell().isOnBadDay()) {
             return Message.key("outcome.morning.reason.both", String.format(Locale.ROOT,
                             "The forecast for %s scores %s, a bad day from %.1f, and the morning peaks at %s CZK/kWh at %s, at or above the %.2f CZK/kWh worth selling at. The battery is filled from the night tariff.",
                             hours, quality, weather.getMinQuality(), price, at, sell.getMinPrice()))
@@ -585,12 +613,22 @@ public class MorningModule extends AbstractAutomationModule<MorningProperties> {
 
         if (sell.isEnabled()) {
             LocalDateTime nextSale = nextOccurrence(now, sell.getFrom(), sellDecidedFor);
-            actions.add(PlannedAction.at(ID, nextSale, ActionType.CHECK, Message
-                    .key("planned.morning.sellCheck", String.format(Locale.ROOT,
-                            "Sell from %s if the price is at or above %.2f CZK/kWh", sell.getFrom(), sell.getMinPrice()))
-                    .with("from", sell.getFrom().toString())
-                    .with("minPrice", sell.getMinPrice())
-                    .build()));
+            Evaluation outlook = evaluate(nextSale.toLocalDate());
+
+            // What the forecast already says about that morning, so a sale that the weather
+            // rules out is not shown as one waiting on the price.
+            Message message = !sell.isOnBadDay() && outlook.badWeather()
+                    ? Message.key("planned.morning.sellSkipped", String.format(Locale.ROOT,
+                                    "No morning sale, the forecast is bad (%s)", describe(outlook.quality())))
+                            .with("quality", describe(outlook.quality()))
+                            .build()
+                    : Message.key("planned.morning.sellCheck", String.format(Locale.ROOT,
+                                    "Sell from %s if the price is at or above %.2f CZK/kWh", sell.getFrom(), sell.getMinPrice()))
+                            .with("from", sell.getFrom().toString())
+                            .with("minPrice", sell.getMinPrice())
+                            .build();
+
+            actions.add(PlannedAction.at(ID, nextSale, ActionType.CHECK, message));
         }
 
         return actions;

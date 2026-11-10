@@ -228,11 +228,47 @@ rozhodne se hned a nabíjí se zbytek okna.
 Od **6:15** se prodává tam, kde je cena aspoň X: první souvislý úsek takových čtvrthodin do 9:00.
 Prodává se jen na měřené síti, protože dodávka z druhé přípojky k elektroměru nedojde. Prodej provádí
 modul _Prodej do sítě_ (musí být zapnutý), takže běží stejně jako večerní prodej: nejdřív panely,
-zastavení na rezervě, zobrazení v kartě Prodej a započtení do statistik. Prodává se do **40 %**, ve
-špatný den jen do **80 %**, protože nabití bylo koupené na pokrytí dne.
+zastavení na rezervě, zobrazení v kartě Prodej a započtení do statistik. Prodává se do **40 %**.
+
+> **POKUD** je den špatný (předpověď na 8:00–16:00 je 3,0 nebo horší), nebo předpověď chybí
+> **PROVEĎ:** ráno neprodávej vůbec.
+
+Baterii se vyplatí vybít jen tehdy, když ji ještě týž den nabije slunce. Ve špatný den bylo noční
+nabití koupené na pokrytí domu a jeho prodej by se odpoledne jen draze dokupoval ze sítě. Chybějící
+předpověď se bere jako špatný den, protože nic neslibuje, že se baterie znovu nabije. V _Poslední
+aktivitě_ je napsané, který z obou důvodů prodej zastavil, a _Plánované akce_ ukážou ráno jako
+_Ráno se neprodává_, jakmile to předpověď ví. Kdo chce prodávat i ve špatný den, nastaví
+`sell.on-bad-day: true`; prodá se pak jen do `sell.bad-weather-reserve` (**80 %**).
 
 Náhled nočního rozhodnutí je v _Plánovaných akcích_ na stránce Historie, jakmile jsou známé
 předpověď a ceny. Každé rozhodnutí i s důvodem je v _Poslední aktivitě_.
+
+---
+
+## Vyrovnání baterie — `automation.balance`
+
+Lithiová baterie srovnává články jen tehdy, když stojí plná. Baterie, která se každý den cykluje a
+nahoře skoro nepobude, se pomalu rozbalancuje. Tlačítko **Vyrovnat baterii** v kartě rychlých akcí
+na stránce _Ovládání_ ji nabije na **100 %** a pak ji tam **hodinu** (`hold`) drží bez přerušení.
+
+> **POKUD** je baterie na 100 %
+> **PROVEĎ:** drž ji tam 60 minut v kuse, pak vrať střídač do jeho režimu.
+>
+> **POKUD** baterie během držení spadne pod 100 %
+> **PROVEĎ:** hodina začne znovu, až bude zase plná.
+>
+> **POKUD** baterie není plná do 6 hodin (`timeout`)
+> **PROVEĎ:** vzdej to a vrať střídač do jeho režimu.
+
+Nabíjí se dálkovým řízením výkonem `power` (**3 000 W**): co dají panely, zbytek se bere ze sítě.
+Baterie, které je přikázáno nabíjet, se domem nevybíjí, a tím zůstane nahoře. Odesílají se dvě
+relace — jedna dost dlouhá na nabití, druhá na držení s koncem pět minut po něm —, takže se střídač
+vrátí sám, i kdyby aplikace spadla. Prodej má přednost: během prodeje se vyrovnání nespustí, a když
+prodej začne, vyrovnání ustoupí. Když relaci ukončí jiný modul (noční nabíjení při plné baterii),
+pošle se po 3 minutách (`resend-after`) znovu. _Ukončit dálkové řízení_ vyrovnání zruší.
+
+Karta ukazuje, jestli se ještě nabíjí, nebo už drží, i s pruhem pro odpočet hodiny. Pás režimu a
+graf cen ho kreslí jako nabíjení ze sítě a každý krok je v _Poslední aktivitě_. Samo se nespouští.
 
 ---
 

@@ -263,6 +263,43 @@ public final class DashboardDtos {
     }
 
     /**
+     * Battery balancing, as the control on the overview page shows it.
+     *
+     * @param available    the module is on and remote control is configured
+     * @param active       a balancing is running
+     * @param holding      the battery is full and being held there
+     * @param fullSince    when the battery reached the target, {@code null} while charging
+     * @param holdUntil    when the hold ends, {@code null} while charging
+     * @param deadline     when balancing gives up if the battery is not full by then
+     * @param holdMinutes  how long the hold lasts
+     * @param defaultWatts the configured charge power
+     */
+    public record BalanceState(
+            boolean available,
+            boolean active,
+            boolean holding,
+            LocalDateTime startedAt,
+            LocalDateTime fullSince,
+            LocalDateTime holdUntil,
+            LocalDateTime deadline,
+            Integer watts,
+            int targetBattery,
+            long holdMinutes,
+            int defaultWatts,
+            String summary,
+            String summaryKey,
+            Map<String, Object> summaryParams,
+            String detail,
+            String detailKey,
+            Map<String, Object> detailParams
+    ) {
+    }
+
+    /** Starting a balancing: {@code watts} is the charge power, {@code null} for the configured one. */
+    public record BalanceRequest(Integer watts) {
+    }
+
+    /**
      * Charging the battery from the grid by hand.
      *
      * @param durationMinutes how long to charge; defaults to an hour, ignored when

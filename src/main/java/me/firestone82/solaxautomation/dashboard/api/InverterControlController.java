@@ -10,6 +10,7 @@ import me.firestone82.solaxautomation.dashboard.dto.DashboardDtos.ActionResult;
 import me.firestone82.solaxautomation.dashboard.dto.DashboardDtos.ChargeRequest;
 import me.firestone82.solaxautomation.integration.solax.InverterGateway;
 import me.firestone82.solaxautomation.integration.solax.model.InverterMode;
+import me.firestone82.solaxautomation.module.balance.BalanceModule;
 import me.firestone82.solaxautomation.module.discharge.DischargeModule;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -51,6 +52,7 @@ public class InverterControlController {
     private final DashboardProperties properties;
     private final TimelineService timeline;
     private final ObjectProvider<DischargeModule> dischargeModule;
+    private final ObjectProvider<BalanceModule> balanceModule;
 
     /**
      * Changes the persistent work mode.
@@ -227,6 +229,20 @@ public class InverterControlController {
 
             return ResponseEntity.ok(ActionResult.ok(Message
                     .key("quick.sellingStopped", "Remote control exited and the running sale was cancelled")
+                    .build()));
+        }
+
+        // Balancing would otherwise send its session straight back, so it is ended as such.
+        Optional<BalanceModule> balancing = Optional.ofNullable(balanceModule.getIfAvailable())
+                .filter(module -> module.getCurrent().isPresent());
+
+        if (balancing.isPresent()) {
+            log.info("Dashboard is exiting remote control while the battery is balanced - cancelling it");
+            balancing.get().cancel(Message.key("reason.balance.remoteExit",
+                    "Remote control was exited from the dashboard, which ended the balancing.").build());
+
+            return ResponseEntity.ok(ActionResult.ok(Message
+                    .key("quick.balanceStopped", "Remote control exited and the battery balancing was cancelled")
                     .build()));
         }
 

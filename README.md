@@ -78,7 +78,8 @@ classpath is enough for the registry, the API and the timeline to pick it up (gi
 | Export limit | `automation.export` | Closes the export limit while the spot price is too low to be worth selling, and throttles it around midday on dull days. Runs every quarter of an hour, matching how often the price changes. |
 | Weather work mode | `automation.weather` | Chooses between feed-in priority and self use from the forecast, and moves to backup ahead of a thunderstorm. |
 | Grid selling | `automation.discharge` | Finds the most valuable quarter-hour window of the day and sells the battery into it through remote control. |
-| Morning buy and sell | `automation.morning` | Off by default. Fills the battery from the night tariff of the second supply when the day looks bad or the morning price is worth selling into, and sells the morning peak. |
+| Morning buy and sell | `automation.morning` | Off by default. Fills the battery from the night tariff of the second supply when the day looks bad or the morning price is worth selling into, and sells the morning peak — on a good day only. |
+| Battery balancing | `automation.balance` | Started from the dashboard. Fills the battery to 100 % and holds it there for an hour without a break, so the battery management system can even out its cells. |
 
 ### Writing a new module
 
@@ -227,15 +228,44 @@ such intervals up to 09:00. Only on the metered grid (`require-metered-grid`), b
 the second supply never reaches the meter. The sale is handed to the grid selling module
 (`DischargeModule.armFor`), so it runs exactly like an evening sale. The panels go first, the guard
 stops it at the reserve, the selling card shows it as armed by the morning automation, and the
-statistics count it as a sale. That module therefore has to be enabled. The reserve is
-`sell.reserve-battery` (40 %) on an ordinary day and `sell.bad-weather-reserve` (80 %) on a bad one,
-because that charge was bought to carry the house. A window already armed is never replaced.
+statistics count it as a sale. That module therefore has to be enabled. It sells down to
+`sell.reserve-battery` (40 %). A window already armed is never replaced.
+
+**On a bad day the morning is not sold at all.** Emptying the battery only pays when the panels
+fill it again the same day; on a bad day the night charge was bought to carry the house, and
+selling it would only buy it back from the grid in the afternoon. The same judgement as the night
+charge decides it (`bad-weather`), and a morning with no forecast counts as bad, because nothing says
+the sun will refill the battery. The activity list says which of the two stopped the sale, and the
+planned actions show the morning as _No morning sale_ as soon as the forecast says so. Set
+`sell.on-bad-day: true` to sell anyway, down to `sell.bad-weather-reserve` (80 %).
 
 Set X above what the night tariff costs plus the losses of charging and discharging, or the round
 trip loses money. The planned actions on the History page preview tonight's decision as soon as the
 forecast and the prices allow, and every decision is in the activity list with its reason.
 
 The rules are covered by `MorningModuleTest` and `DischargeArmForTest`.
+
+## Battery balancing
+
+A lithium pack evens its cells out only while it sits full, and one that is cycled every day and
+rarely stays at the top drifts apart a little at a time. **Balance the battery** in the quick
+actions card charges it to `automation.balance.target-battery` (100 %) and holds it there for
+`hold` (60 min) without a break, then hands the inverter back to its work mode.
+
+It runs as a remote control charge at `power` (3000 W): the panels cover what they can, the grid the
+rest, and a battery told to charge cannot be drawn down by the house, which is what keeps it at the
+top for the hour. Two sessions are sent, one long enough to get full (`timeout`, 6 h) and one for the
+hold ending five minutes after it, so the inverter lets go on its own even if the application stops.
+A check every minute times the hold. A drop off the top starts the hour over, and a battery not full
+within `timeout` gives up. A sale into the grid takes precedence: balancing does not start while one
+runs, and steps aside if one starts. If another module ends its session — the night charge stopping
+at a full battery — the session is sent again after `resend-after` (3 min). _Exit remote control_
+cancels balancing too.
+
+While it runs, the card shows whether it is still charging or already holding, with a bar for the
+hour; the work mode band and the price chart draw it like any other charge from the grid, and every
+step is in the activity list. Nothing starts it on its own. The rules are covered by
+`BalanceModuleTest`.
 
 ---
 
@@ -247,7 +277,7 @@ Three pages: **Control**, which is the dashboard proper, **Statistics**, which i
 us, and **History**, which is what the modules will do and what they did. The page you were on is
 remembered per browser.
 
-**Control** — first the day's 96 quarter-hour prices with the armed selling window highlighted, and
+**Control** — first the live tiles, then the day's 96 quarter-hour prices with the armed selling window highlighted, and
 the weather quality curve with the thresholds the modules compare against: every decision the
 controls make is read off those two. Both cards browse a day at a time (below). Then the controls —
 the selling card and the quick actions. Then **Work mode today**: the day's work mode as a band,
@@ -264,7 +294,7 @@ A charge to a target state of charge has no end anybody can name in advance — 
 when the battery gets there — so the inverter watcher (`solax.control.work-mode-watch`) records the
 moment the remote control session is seen to end, as _Charging from the grid ended_ in the activity
 list. A charge whose end was never seen is drawn to the next thing on record and its tooltip says so.
-Then the live tiles — battery/PV/grid/load, work mode, current price, and the Raspberry Pi's
+The live tiles at the top are battery/PV/grid/load, work mode, current price, and the Raspberry Pi's
 connection switch (HIGH is the metered grid, LOW the second supply — the tile says which, and says
 plainly when it is the off-Pi stub rather than a pin).
 

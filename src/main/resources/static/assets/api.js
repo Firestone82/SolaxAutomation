@@ -64,6 +64,16 @@ const Api = (() => {
         chargeFromGrid: payload =>
             request('api/inverter/charge', {method: 'POST', body: JSON.stringify(payload)}),
 
-        exitRemoteControl: () => request('api/inverter/remote-control/exit', {method: 'POST'})
+        exitRemoteControl: () => request('api/inverter/remote-control/exit', {method: 'POST'}),
+
+        /* -------- battery balancing -------- */
+
+        balance: () => request('api/balance'),
+
+        /** payload: {watts}, or {} for the configured power. */
+        startBalance: payload =>
+            request('api/balance', {method: 'POST', body: JSON.stringify(payload || {})}),
+
+        cancelBalance: () => request('api/balance', {method: 'DELETE'})
     };
 })();

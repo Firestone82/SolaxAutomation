@@ -107,8 +107,17 @@ public class MorningProperties implements ModuleProperties {
         private int reserveBattery = 40;
 
         /**
-         * State of charge the sale stops at on a bad day, %. The battery was filled to carry
-         * the house through a day without sun, so only what is above this is sold.
+         * Sells on a bad day at all. Off by default: the battery is only worth emptying in the
+         * morning when the day is good enough for the panels to fill it again, and on a bad
+         * day the charge from the night is what carries the house. A morning whose forecast is
+         * not known is treated the same way, because nothing says the sun will refill it.
+         */
+        private boolean onBadDay = false;
+
+        /**
+         * State of charge the sale stops at on a bad day, %, when {@link #onBadDay} lets it
+         * sell at all. The battery was filled to carry the house through a day without sun, so
+         * only what is above this is sold.
          */
         private int badWeatherReserve = 80;
 

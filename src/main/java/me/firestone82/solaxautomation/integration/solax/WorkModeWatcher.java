@@ -171,8 +171,10 @@ public class WorkModeWatcher {
             return;
         }
 
+        // Balancing ends its own sessions and records it, so only a charge nobody watches is ours.
         lastSessionEntry()
                 .filter(event -> event.type() == ActionType.GRID_CHARGE && event.success())
+                .filter(event -> !"balance".equals(event.moduleId()))
                 .filter(event -> event.params() != null && event.params().get("until") == null)
                 .ifPresent(this::recordChargeEnded);
     }

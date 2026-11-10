@@ -467,10 +467,33 @@ automation:
       # 0 follows automation.discharge.discharge-power.
       power: 0
       reserve-battery: 40
-      # On a bad day the charge was bought to carry the house, so less is sold.
+      # On a bad day nothing is sold: the battery is only worth emptying in the morning
+      # when the panels will fill it again, and the night charge was bought to carry the
+      # house. A morning without a forecast counts as bad. Turn on to sell anyway, down
+      # to bad-weather-reserve.
+      on-bad-day: false
       bad-weather-reserve: 80
       # The export only reaches the meter on the metered grid (switch HIGH).
       require-metered-grid: true
+
+  # ---------------------------------------------------------------------------
+  #  Battery balancing
+  #  Fills the battery and holds it full without a break, so the battery
+  #  management system can even out its cells. Nothing runs on its own: it is
+  #  started from the dashboard's quick actions. Requires solax.cloud.
+  # ---------------------------------------------------------------------------
+  balance:
+    enabled: true
+    target-battery: 100
+    # How long the battery stays at the target. A drop off the top starts it over.
+    hold: 60m
+    # Charge power on the way up. The panels cover what they can, the grid the rest.
+    power: 3000
+    # Gives up if the battery is not full after this long.
+    timeout: 6h
+    # Sends the session again if the inverter reports none for this long - the
+    # night charge ending its own session would otherwise end this one too.
+    resend-after: 3m
 
 # -----------------------------------------------------------------------------
 #  Logging
