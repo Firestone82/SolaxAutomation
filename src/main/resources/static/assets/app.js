@@ -733,8 +733,7 @@
             tooltip: point => ({
                 title: `${point.time} – ${endOfSlot(point)}`,
                 subtitle: automationLabel(point),
-                accent: point.charging ? 'var(--charge)'
-                    : point.selling ? 'var(--sell)'
+                accent: point.selling ? 'var(--sell)'
                     : point.sellable ? 'var(--sell)'
                         : point.exportable === false ? 'var(--text-faint)' : `var(--price-${point.level || 'medium'})`,
                 rows: [
@@ -2163,9 +2162,10 @@
     const QUICK_MODES = ['SELF_USE', 'FEED_IN_PRIORITY', 'BACKUP'];
 
     /**
-     * Manual overrides. Two groups, because the two kinds of command behave differently
-     * and confusing them is expensive: a work mode sticks until something changes it,
-     * a remote control session expires on its own.
+     * Manual overrides, in two cards: charging from the grid beside the selling card, and the
+     * control card under both - the work mode, balancing, and leaving remote control. The two
+     * kinds of command behave differently and confusing them is expensive: a work mode sticks
+     * until something changes it, a remote control session expires on its own.
      */
     function renderQuickActions() {
         const overview = state.overview;
@@ -2194,12 +2194,15 @@
         // always live invites pressing it to find out.
         const underRemoteControl = remote && overview?.remoteControlActive === true;
 
-        el('quick-actions').replaceChildren(
-            button(t('quick.charge'), '', chargeFromGrid, remote),
-            // Same window the selling card arms - this is just the shorter way to reach it.
-            button(t('quick.sell'), '', () => openArmDialog('arm'), state.selling?.enabled),
-            button(t('quick.exit'), 'button-danger', exitRemoteControl, underRemoteControl)
-        );
+        el('charge-actions').replaceChildren(
+            button(t('quick.charge'), 'button-primary', chargeFromGrid, remote));
+
+        // Last on the control card, because it undoes whatever is running: a sale, a charge
+        // or balancing alike.
+        el('exit-actions').replaceChildren(
+            button(t('quick.exit'), 'button-danger', exitRemoteControl, underRemoteControl));
+
+        renderChargeStatus(remote);
 
         // Its own line, not the message line: this is a standing fact about the setup, and
         // it must not wipe out what the last button press reported.
@@ -2212,6 +2215,50 @@
         el('quick-note').hidden = !note;
 
         updateChargePreview();
+    }
+
+    /**
+     * The charge card's badge and, while one runs, what is charging: who started it, at what
+     * power and until when. Balancing and the night charge are charges too, and say so.
+     */
+    function renderChargeStatus(remote) {
+        const now = new Date();
+        const running = chargeStretches().find(stretch => stretch.running && stretch.to >= now && stretch.from <= now);
+        const badge = el('charge-badge');
+        const status = el('charge-status');
+
+        if (!remote) {
+            badge.textContent = t('charge.unavailable');
+            badge.className = 'pill pill-muted';
+        } else if (running) {
+            badge.textContent = t('charge.running');
+            badge.className = 'pill pill-charge';
+        } else {
+            badge.textContent = t('charge.idle');
+            badge.className = 'pill pill-muted';
+        }
+
+        status.hidden = !running;
+
+        if (!running) {
+            status.replaceChildren();
+            return;
+        }
+
+        const source = running.entry || running.plannedEntry;
+        const title = document.createElement('strong');
+        title.textContent = hasValue(running.targetSoc) && !running.entry?.params?.until
+            ? t('charge.runningToSoc', {target: running.targetSoc})
+            : t('charge.runningUntil', {until: formatTimeOnly(running.to.toISOString())});
+
+        const note = document.createElement('span');
+        note.textContent = [
+            source ? moduleText(source.moduleId, 'name', source.moduleId) : null,
+            hasValue(running.watts) ? `${formatNumber(running.watts, 0)} W` : null,
+            t('charge.since', {from: formatTimeOnly(running.from.toISOString())})
+        ].filter(Boolean).join(' · ');
+
+        status.replaceChildren(title, note);
     }
 
     /* -------------------------------------------------------- battery balancing */
@@ -3117,25 +3164,25 @@
 
     /* ------------------------------------------------- quick action handlers */
 
-    function setQuickMessage(text, ok) {
-        writeMessage(el('quick-message'), text, ok);
-    }
-
-    /** Runs one inverter command and reports it, so all three read the same way. */
-    async function runQuickAction(call) {
-        setQuickMessage('', null);
+    /**
+     * Runs one inverter command and reports it under the control it came from, so all of them
+     * read the same way.
+     */
+    async function runQuickAction(call, messageId = 'quick-message') {
+        const node = el(messageId);
+        writeMessage(node, '', null);
 
         try {
             const result = await call();
-            setQuickMessage(actionMessage(result), result.success);
+            writeMessage(node, actionMessage(result), result.success);
             await refresh();
         } catch (error) {
-            setQuickMessage(error.message, false);
+            writeMessage(node, error.message, false);
         }
     }
 
     function setWorkMode(mode) {
-        return runQuickAction(() => Api.setWorkMode(mode));
+        return runQuickAction(() => Api.setWorkMode(mode), 'quick-message');
     }
 
     function chargeFromGrid() {
@@ -3145,7 +3192,7 @@
         // would only be a second answer to a question that already has one.
         return runQuickAction(() => Api.chargeFromGrid(target === null
             ? {watts: chargeWatts(), durationMinutes: Number(el('quick-duration').value)}
-            : {watts: chargeWatts(), targetSoc: target}));
+            : {watts: chargeWatts(), targetSoc: target}), 'charge-message');
     }
 
     /** The target SOC field, or null when it is empty or nonsense. */
@@ -3188,7 +3235,7 @@
     }
 
     function exitRemoteControl() {
-        return runQuickAction(() => Api.exitRemoteControl());
+        return runQuickAction(() => Api.exitRemoteControl(), 'exit-message');
     }
 
     /* --------------------------------------------------------------- polling */

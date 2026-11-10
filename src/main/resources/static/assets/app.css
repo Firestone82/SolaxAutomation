@@ -250,6 +250,7 @@ h3 { font-size: .95rem; }
 .pill-error   { background: var(--danger-soft); color: var(--danger); }
 .pill-active  { background: var(--accent-soft); color: var(--accent); }
 .pill-sell    { background: var(--sell-soft); color: var(--sell); }
+.pill-charge  { background: color-mix(in srgb, var(--charge) 16%, var(--surface)); color: var(--charge); }
 
 /* ------------------------------------------------------------------ layout */
 
@@ -434,7 +435,15 @@ main {
 .bar-medium  { fill: var(--price-medium); }
 .bar-high    { fill: var(--price-high); }
 .bar-selling { fill: var(--sell); }
-.bar-charging { fill: var(--charge); }
+/* Charged from the grid: a hatched strip under the bars, in the text colour, so the bars keep
+   their price colours and the strip reads as a mark rather than as another price level. */
+.charge-strip {
+    stroke: var(--text-muted);
+    stroke-width: 1;
+    pointer-events: none;
+}
+
+.charge-stripe { stroke: var(--text-muted); stroke-width: 2; }
 .bar-current { stroke: var(--text); stroke-width: 1.5; }
 
 /* Intervals the export limit module closes the export in: the bar keeps its price
@@ -802,7 +811,13 @@ main {
 .swatch-medium  { background: var(--price-medium); }
 .swatch-high    { background: var(--price-high); }
 .swatch-selling { background: var(--sell); }
-.swatch-charging { background: var(--charge); }
+.swatch-charging {
+    height: 7px;
+    background: repeating-linear-gradient(45deg,
+        var(--text-muted) 0 1.6px,
+        transparent 1.6px 3.6px);
+    border: 1px solid var(--text-muted);
+}
 .swatch-quality { background: var(--accent); }
 
 .swatch-sellable {
@@ -867,7 +882,54 @@ main {
    the ones beside them.
 */
 .grid-selling > .card { display: flex; flex-direction: column; }
-#selling-actions { margin-top: auto; }
+#selling-actions,
+#charge-actions { margin-top: auto; }
+
+/* What is charging right now, above the fields that would start another charge. */
+.charge-status {
+    margin: 4px 0 14px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--charge);
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--charge) 8%, var(--surface-alt));
+    font-size: .85rem;
+}
+
+.charge-status strong { display: block; font-weight: 600; }
+.charge-status span { color: var(--text-muted); font-size: .8rem; }
+
+/* The control card lays its three groups side by side where there is room, each ruled off
+   from the next, and stacks them on a narrow screen. */
+.control-groups {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+    gap: 16px 28px;
+    margin-top: 8px;
+}
+
+.control-groups > .quick-group + .quick-group {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+}
+
+.control-groups > .quick-group { display: flex; flex-direction: column; }
+.control-groups > .quick-group > .button-row { margin-top: auto; padding-top: 12px; }
+
+@media (min-width: 761px) {
+    .control-groups > .quick-group + .quick-group {
+        padding-left: 28px;
+        border-left: 1px solid var(--border);
+    }
+}
+
+@media (max-width: 760px) {
+    .control-groups > .quick-group + .quick-group {
+        padding-top: 16px;
+        border-top: 1px solid var(--border);
+    }
+}
 
 /*
    The headline block. What is armed, at what power and what it is worth are the

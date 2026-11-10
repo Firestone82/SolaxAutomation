@@ -248,7 +248,7 @@ předpověď a ceny. Každé rozhodnutí i s důvodem je v _Poslední aktivitě_
 ## Vyrovnání baterie — `automation.balance`
 
 Lithiová baterie srovnává články jen tehdy, když stojí plná. Baterie, která se každý den cykluje a
-nahoře skoro nepobude, se pomalu rozbalancuje. Tlačítko **Vyrovnat baterii** v kartě rychlých akcí
+nahoře skoro nepobude, se pomalu rozbalancuje. Tlačítko **Vyrovnat baterii** v kartě _Ovládání_
 na stránce _Ovládání_ ji nabije na **100 %** a pak ji tam **hodinu** (`hold`) drží bez přerušení.
 
 > **POKUD** je baterie na 100 %
@@ -274,17 +274,19 @@ graf cen ho kreslí jako nabíjení ze sítě a každý krok je v _Poslední akt
 
 ## Rychlé akce z nástěnky
 
-Vedle karty prodeje sedí **Rychlé akce** — ruční zásahy pro to, o čem automatika vědět nemůže.
-Nic se neplánuje ani nepamatuje:
+Ruční zásahy pro to, o čem automatika vědět nemůže. Nic se neplánuje ani nepamatuje:
 
-- **Režim střídače** (_Vlastní spotřeba_, _Priorita dodávky_, _Záloha_) — trvalý. Přežije restart
-  a modul jej může při dalším běhu opět změnit. Aktuální režim je na tlačítkách zvýrazněný a přepne
-  se hned po přijetí příkazu, ne až s dalším čtením střídače; změna si navíc zapíše i režim, ze
-  kterého se přepínalo, takže historie umí říct, co nahradila.
-- **Dálkové řízení** (_Nabít ze sítě_, _Prodat do sítě_, _Ukončit dálkové řízení_) — střídač se sám
-  vrátí do svého režimu, i kdyby tahle aplikace spadla. Vyžaduje připojení k SolaX Cloud.
-  _Ukončit dálkové řízení_ je aktivní jen tehdy, když nějaká relace opravdu běží; řádek pod kartou
-  napíše, proč je případně vypnuté.
+- **Nabíjení ze sítě** — karta vedle _Prodeje do sítě_. Střídač se sám vrátí do svého režimu, i kdyby
+  tahle aplikace spadla. Když nějaké nabíjení běží (odsud, noční nabíjení, vyrovnání baterie), karta
+  nad poli napíše kdo ho spustil, jakým výkonem a do kdy.
+- **Ovládání** — karta pod nimi se třemi částmi. **Režim střídače** (_Vlastní spotřeba_, _Priorita
+  dodávky_, _Záloha_) je trvalý: přežije restart a modul jej může při dalším běhu opět změnit.
+  Aktuální režim je na tlačítkách zvýrazněný a změna si zapíše i režim, ze kterého se přepínalo.
+  **Vyrovnání baterie** (viz výše). A nakonec **Dálkové řízení** s tlačítkem _Ukončit dálkové
+  řízení_, které ukončí jakoukoli běžící relaci — prodej, nabíjení i vyrovnání. Je aktivní jen tehdy,
+  když nějaká relace opravdu běží, a řádek nad ním napíše, proč je případně vypnuté.
+
+Dálkové řízení vyžaduje připojení k SolaX Cloud. Prodej se plánuje z karty _Prodej do sítě_.
 
 Nabíjet lze dvěma způsoby: **na dobu**, nebo **do nabití**. Vyplňte _Do nabití_ a relace poběží,
 dokud baterie nedosáhne zadané hodnoty, ať to trvá jakkoli dlouho — konec určí sám střídač, tenhle
@@ -318,8 +320,9 @@ hodinu dodávalo. Mimo Pi se pruh přípojky nekreslí — celý den „měřen�
 byl výmysl.
 
 Podél spodního okraje pásu režimu běží stužka relací dálkového řízení: **prodej do sítě** fialově,
-**nabíjení ze sítě** tyrkysově, dokud je jen naplánované, je dutá. Intervaly, ve kterých se nabíjelo,
-jsou stejnou barvou obarvené i v grafu spotové ceny, takže je vidět, za kolik se nakupovalo.
+**nabíjení ze sítě** tyrkysově, dokud je jen naplánované, je dutá. V grafu spotové ceny jsou
+intervaly, ve kterých se nabíjelo, označené šrafovaným pruhem pod sloupci — sloupce si nechají barvu
+podle ceny, takže je vidět, za kolik se nakupovalo.
 Nabíjení se kreslí od začátku do nejbližšího známého konce: do konce, se kterým bylo odeslané
 (časované nabíjení z nástěnky, noční nabíjení), nebo do prvního ukončení, prodeje či dalšího
 nabíjení po něm. Nabíjení do cílového SOC konec předem nemá — střídač ho ukončí sám, až baterie

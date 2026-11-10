@@ -248,8 +248,8 @@ The rules are covered by `MorningModuleTest` and `DischargeArmForTest`.
 ## Battery balancing
 
 A lithium pack evens its cells out only while it sits full, and one that is cycled every day and
-rarely stays at the top drifts apart a little at a time. **Balance the battery** in the quick
-actions card charges it to `automation.balance.target-battery` (100 %) and holds it there for
+rarely stays at the top drifts apart a little at a time. **Balance the battery** in the Control
+card charges it to `automation.balance.target-battery` (100 %) and holds it there for
 `hold` (60 min) without a break, then hands the inverter back to its work mode.
 
 It runs as a remote control charge at `power` (3000 W): the panels cover what they can, the grid the
@@ -280,13 +280,15 @@ remembered per browser.
 **Control** — first the live tiles, then the day's 96 quarter-hour prices with the armed selling window highlighted, and
 the weather quality curve with the thresholds the modules compare against: every decision the
 controls make is read off those two. Both cards browse a day at a time (below). Then the controls —
-the selling card and the quick actions. Then **Work mode today**: the day's work mode as a band,
+**Selling** and **Charging from the grid** side by side, and the **Control** card under them. Then
+**Work mode today**: the day's work mode as a band,
 rebuilt from the recorded changes, with the thinner band underneath saying which supply the house
 was on — the connection switch's throws drawn in time, read against what the inverter was doing.
 A ribbon along the bottom of the mode band marks the remote control sessions that ran on top of it:
 selling to the grid in purple, charging from the grid in cyan, each hollow while it is still only
-planned. The intervals a charge covered are painted cyan on the price chart too, so what the energy
-was bought at reads off it the way the selling window does.
+planned. On the price chart the intervals a charge covered are marked by a hatched strip under the
+bars rather than by recolouring them, so every bar keeps its price band and what the energy was
+bought at stays readable.
 
 A charge's stretch is drawn from its start to the earliest known end: the end it was sent with (a
 timed charge from the dashboard, the night charge), or the first exit, sale or new charge after it.
@@ -474,23 +476,24 @@ is anchored to the application's clock rather than the browser's, so a browser w
 cannot arm a window that begins in the past. Either way it previews the window, its length and roughly
 how much energy it will move before anything is armed.
 
-**Quick actions** — the card beside selling, for what the automation cannot know about: a car to
-charge tonight, a storm the forecast missed, a sale to stop early. It carries no heading and no mode
-badge: the work mode buttons mark the mode the inverter is in, which is the same fact stated once
-instead of three times. It is split the way the commands themselves are:
+**Manual overrides** — for what the automation cannot know about: a car to charge tonight, a storm
+the forecast missed, a sale to stop early. They are split the way the commands themselves are:
 
-- **Work mode** — _Self use_, _Feed-in priority_, _Backup_. Persistent: it survives a restart, and a
-  module may well move it again at its next run. The mode the inverter is already in is marked, and
-  the mark moves the moment a change is accepted rather than on the next reading — a successful write
-  is carried straight into the cached snapshot, since the value written is the value the inverter now
-  has and there is nothing to wait for. A change made here also records which mode it moved away
-  from, so the activity list can say what it replaced.
-- **Remote control** — _Charge from grid_, _Sell to grid_ (the same dialog the selling card opens) and
-  _Exit remote control_. These hand the inverter back on their own, even if this application stops;
-  the work mode is left alone. They need the SolaX Cloud connection, and say so plainly when it is
-  not configured. _Exit remote control_ is live only while a session is actually running: a button
-  that is always pressable invites pressing it to find out, and the line under the card says which of
-  the two reasons it is off for.
+- **Charging from the grid** — the card beside selling, the other direction a remote control session
+  can push the battery in. It hands the inverter back on its own, even if this application stops, and
+  the work mode is left alone. While any charge runs — one started here, the night charge, balancing —
+  the card says so above its fields: who started it, at what power, and until when.
+- **Control** — the card under both, in three groups. **Work mode** — _Self use_, _Feed-in
+  priority_, _Backup_. Persistent: it survives a restart, and a module may well move it again at its
+  next run. The mode the inverter is already in is marked, and the mark moves the moment a change is
+  accepted rather than on the next reading. A change made here also records which mode it moved away
+  from, so the activity list can say what it replaced. **Battery balancing** (below). And last
+  **Remote control** — _Exit remote control_, which ends whatever session is running, a sale, a charge
+  or balancing alike. It is live only while a session is actually running, and the line above it says
+  which of the two reasons it is off for.
+
+Remote control needs the SolaX Cloud connection, and the cards say so plainly when it is not
+configured. A sale is armed from the selling card.
 
 Charging takes either shape: **for a time**, or **to a battery level**. Fill in _To SOC_ and the
 session runs until the battery gets there, however long that takes — that is the cloud's

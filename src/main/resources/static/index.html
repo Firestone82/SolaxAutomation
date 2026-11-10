@@ -183,60 +183,72 @@
             </article>
 
             <!--
-                Manual overrides. Everything here talks to the inverter directly, without
-                going through a module, for the situations the automation cannot know
-                about - a car to charge tonight, a storm the forecast missed.
+                Charging from the grid by hand, beside selling into it: the two directions a
+                remote control session can push the battery in, each in a card of its own.
             -->
             <article class="card">
-                <!--
-                    No card heading and no mode badge: the work mode buttons below already
-                    say which mode the inverter is in by marking it, and a title over two
-                    labelled groups was naming the obvious twice.
-                -->
+                <header class="card-head">
+                    <h2 data-i18n="charge.title">Charging from the grid</h2>
+                    <span id="charge-badge" class="pill pill-muted"></span>
+                </header>
+
+                <p class="card-sub" data-i18n="quick.remoteControlHint">
+                    Runs for a set time and hands the inverter back on its own, even if this
+                    application stops. The work mode is left alone.
+                </p>
+
+                <div class="charge-status" id="charge-status" hidden></div>
+
+                <div class="field-row quick-duration-row">
+                    <label class="field field-narrow">
+                        <span data-i18n="quick.duration">For</span>
+                        <select id="quick-duration" class="control">
+                            <option value="30">30 min</option>
+                            <option value="60" selected>1 h</option>
+                            <option value="120">2 h</option>
+                            <option value="180">3 h</option>
+                            <option value="240">4 h</option>
+                        </select>
+                    </label>
+                    <label class="field field-narrow">
+                        <span data-i18n="quick.power">Power (W)</span>
+                        <input type="number" id="quick-watts" class="control" min="100" step="50" value="3000">
+                    </label>
+                    <label class="field field-narrow">
+                        <span data-i18n="quick.targetSoc">To SOC (%)</span>
+                        <input type="number" id="quick-target-soc" class="control"
+                               min="1" max="100" step="5" placeholder="—">
+                    </label>
+                </div>
+                <p class="quick-hint" id="quick-charge-preview"></p>
+
+                <div class="button-row" id="charge-actions"></div>
+                <p class="form-message" id="charge-message" role="status"></p>
+            </article>
+        </div>
+
+        <!--
+            Everything else that talks to the inverter directly, for what the automation cannot
+            know about: the persistent work mode, balancing the battery, and - last, because it
+            undoes whatever is running - leaving remote control.
+        -->
+        <article class="card control-card">
+            <header class="card-head">
+                <h2 data-i18n="control.title">Control</h2>
+            </header>
+
+            <div class="control-groups">
                 <section class="quick-group">
                     <h3 class="quick-group-title" data-i18n="quick.workMode">Work mode</h3>
                     <p class="quick-hint" data-i18n="quick.workModeHint">
                         Persistent. It survives a restart, and a module may move it again at its next run.
                     </p>
                     <div class="button-row" id="quick-modes"></div>
+                    <p class="form-message" id="quick-message" role="status"></p>
                 </section>
 
-                <section class="quick-group">
-                    <h3 class="quick-group-title" data-i18n="quick.remoteControl">Remote control</h3>
-                    <p class="quick-hint" data-i18n="quick.remoteControlHint">
-                        Runs for a set time and hands the inverter back on its own, even if this
-                        application stops. The work mode is left alone.
-                    </p>
-                    <div class="field-row quick-duration-row">
-                        <label class="field field-narrow">
-                            <span data-i18n="quick.duration">For</span>
-                            <select id="quick-duration" class="control">
-                                <option value="30">30 min</option>
-                                <option value="60" selected>1 h</option>
-                                <option value="120">2 h</option>
-                                <option value="180">3 h</option>
-                                <option value="240">4 h</option>
-                            </select>
-                        </label>
-                        <label class="field field-narrow">
-                            <span data-i18n="quick.power">Power (W)</span>
-                            <input type="number" id="quick-watts" class="control" min="100" step="50" value="3000">
-                        </label>
-                        <label class="field field-narrow">
-                            <span data-i18n="quick.targetSoc">To SOC (%)</span>
-                            <input type="number" id="quick-target-soc" class="control"
-                                   min="1" max="100" step="5" placeholder="—">
-                        </label>
-                    </div>
-                    <p class="quick-hint" id="quick-charge-preview"></p>
-                    <div class="button-row" id="quick-actions"></div>
-                </section>
-
-                <!--
-                    Filling the battery and keeping it full for an hour, so the battery
-                    management system can even its cells out. It runs as a remote control
-                    session too, which is why it sits in this card.
-                -->
+                <!-- Filling the battery and keeping it full for an hour, so the battery
+                     management system can even its cells out. -->
                 <section class="quick-group" id="balance-group">
                     <h3 class="quick-group-title" data-i18n="balance.title">Battery balancing</h3>
                     <p class="quick-hint" id="balance-hint"></p>
@@ -245,10 +257,18 @@
                     <p class="form-message" id="balance-message" role="status"></p>
                 </section>
 
-                <p class="quick-note" id="quick-note"></p>
-                <p class="form-message" id="quick-message" role="status"></p>
-            </article>
-        </div>
+                <section class="quick-group">
+                    <h3 class="quick-group-title" data-i18n="quick.remoteControl">Remote control</h3>
+                    <p class="quick-hint" data-i18n="quick.exitHint">
+                        Ends whatever session is running now - a sale, a charge or balancing - and hands
+                        the inverter back to its work mode.
+                    </p>
+                    <p class="quick-note" id="quick-note"></p>
+                    <div class="button-row" id="exit-actions"></div>
+                    <p class="form-message" id="exit-message" role="status"></p>
+                </section>
+            </div>
+        </article>
 
         <!--
             The day's work mode, rebuilt from the changes the modules recorded, with which

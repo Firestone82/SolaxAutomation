@@ -351,10 +351,16 @@ const Charts = (() => {
         }
 
         const {width, compact} = measure(container);
-        const height = compact ? 200 : 260;
+
+        // A lane under the plot for the intervals charged from the grid, reserved only when
+        // the day has one, so a day without stays exactly as it was.
+        const charged = points.some(point => point.charging);
+        const laneHeight = charged ? 9 : 0;
+
+        const height = (compact ? 200 : 260) + laneHeight;
         const padding = compact
-            ? {top: 12, right: 6, bottom: 20, left: 30}
-            : {top: 16, right: 12, bottom: 24, left: 44};
+            ? {top: 12, right: 6, bottom: 20 + laneHeight, left: 30}
+            : {top: 16, right: 12, bottom: 24 + laneHeight, left: 44};
 
         const plotWidth = width - padding.left - padding.right;
         const plotHeight = height - padding.top - padding.bottom;
@@ -370,6 +376,36 @@ const Charts = (() => {
         const svg = createSvg(width, height);
         const hatchId = 'price-blocked-hatch';
         svg.appendChild(blockedHatch(hatchId));
+
+        /*
+           Charged from the grid: a hatched strip in the lane under the bars rather than a
+           colour on them, so every bar keeps the price band it is in - what the energy was
+           bought at is the point of marking it - and nothing reads as another price level.
+        */
+        if (charged) {
+            const stripeId = 'price-charge-stripes';
+            const defs = element('defs');
+            const pattern = element('pattern', {
+                id: stripeId, width: 5, height: 5, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)'
+            });
+            pattern.appendChild(element('line', {class: 'charge-stripe', x1: 0, y1: 0, x2: 0, y2: 5}));
+            defs.appendChild(pattern);
+            svg.appendChild(defs);
+
+            const laneY = padding.top + plotHeight + 3;
+            const slotWidth = plotWidth / points.length;
+
+            bands(points, point => point.charging === true).forEach(([from, to]) =>
+                svg.appendChild(element('rect', {
+                    class: 'charge-strip',
+                    x: padding.left + from * slotWidth + 0.5,
+                    y: laneY,
+                    width: Math.max(2, (to - from) * slotWidth - 1),
+                    height: laneHeight - 3,
+                    rx: 2,
+                    fill: `url(#${stripeId})`
+                })));
+        }
 
         // Both bands are drawn first, so the bars and the axis stay on top of them.
         // Adjacent columns are merged into one rectangle: 96 abutting rectangles show
@@ -439,11 +475,6 @@ const Charts = (() => {
             if (point.selling) {
                 classes.length = 0;
                 classes.push('bar-selling');
-            }
-            // Bought from the grid: the charge's colour, as on the work mode band's ribbon.
-            if (point.charging) {
-                classes.length = 0;
-                classes.push('bar-charging');
             }
             if (point.exportable === false) {
                 classes.push('bar-blocked');
