@@ -2231,10 +2231,11 @@
 
         // Its own line, not the message line: this is a standing fact about the setup, and
         // it must not wipe out what the last button press reported.
+        // Only the reasons the button is off are worth a line; a live button speaks for itself.
         const note = !controllable ? t('selling.controlDisabled')
             : !remote ? t('quick.remoteUnavailable')
                 : !underRemoteControl ? t('quick.noSession')
-                    : t('quick.underRemoteControl');
+                    : '';
 
         el('quick-note').textContent = note;
         el('quick-note').hidden = !note;
@@ -2243,14 +2244,16 @@
     }
 
     /**
-     * The charge card's badge and, while one runs, what is charging: who started it, at what
-     * power and until when. Balancing and the night charge are charges too, and say so.
+     * The charge card's badge and headline block, in the selling card's style: three figures
+     * while a charge runs - the window, the power, and the target or the time left - with who
+     * started it underneath, and one line when nothing is charging. Balancing and the night
+     * charge are charges too, and show here like one started from this card.
      */
     function renderChargeStatus(remote) {
         const now = new Date();
         const running = chargeStretches().find(stretch => stretch.running && stretch.to >= now && stretch.from <= now);
         const badge = el('charge-badge');
-        const status = el('charge-status');
+        const hero = el('charge-hero');
 
         if (!remote) {
             badge.textContent = t('charge.unavailable');
@@ -2263,27 +2266,66 @@
             badge.className = 'pill pill-muted';
         }
 
-        status.hidden = !running;
-
         if (!running) {
-            status.replaceChildren();
+            hero.className = 'selling-hero is-idle';
+
+            const message = document.createElement('p');
+            message.className = 'selling-idle';
+            message.textContent = remote ? t('charge.idleExplain') : t('quick.remoteUnavailable');
+            hero.replaceChildren(message);
             return;
         }
 
+        hero.className = 'selling-hero is-charging';
+
+        const toTarget = hasValue(running.targetSoc) && !running.entry?.params?.until && !running.entry?.params?.minutes;
+
+        const figures = document.createElement('div');
+        figures.className = 'selling-figures';
+
+        const addFigure = (label, value, unit) => {
+            const figure = document.createElement('div');
+            figure.className = 'selling-figure';
+
+            const caption = document.createElement('span');
+            caption.className = 'selling-figure-label';
+            caption.textContent = label;
+            figure.appendChild(caption);
+
+            const amount = document.createElement('span');
+            amount.className = 'selling-figure-value';
+            amount.textContent = value;
+
+            if (unit) {
+                const suffix = document.createElement('span');
+                suffix.className = 'unit';
+                suffix.textContent = unit;
+                amount.appendChild(suffix);
+            }
+
+            figure.appendChild(amount);
+            figures.appendChild(figure);
+        };
+
+        const from = formatTimeOnly(running.from.toISOString());
+
+        addFigure(t('selling.window'), toTarget ? `${from} –` : `${from} – ${formatTimeOnly(running.to.toISOString())}`);
+        addFigure(t('selling.power'), hasValue(running.watts) ? formatNumber(running.watts, 0) : '—', 'W');
+
+        if (hasValue(running.targetSoc)) {
+            addFigure(t('charge.target'), String(running.targetSoc), '%');
+        }
+
+        hero.replaceChildren(figures);
+
         const source = running.entry || running.plannedEntry;
-        const title = document.createElement('strong');
-        title.textContent = hasValue(running.targetSoc) && !running.entry?.params?.until
-            ? t('charge.runningToSoc', {target: running.targetSoc})
-            : t('charge.runningUntil', {until: formatTimeOnly(running.to.toISOString())});
-
-        const note = document.createElement('span');
-        note.textContent = [
-            source ? moduleText(source.moduleId, 'name', source.moduleId) : null,
-            hasValue(running.watts) ? `${formatNumber(running.watts, 0)} W` : null,
-            t('charge.since', {from: formatTimeOnly(running.from.toISOString())})
+        const footer = document.createElement('p');
+        footer.className = 'selling-hero-note';
+        footer.textContent = [
+            toTarget ? t('charge.untilTarget') : t('selling.endsIn', {duration: relativeTo(running.to)}),
+            source ? moduleText(source.moduleId, 'name', source.moduleId) : null
         ].filter(Boolean).join(' · ');
-
-        status.replaceChildren(title, note);
+        hero.appendChild(footer);
     }
 
     /* -------------------------------------------------------- battery balancing */

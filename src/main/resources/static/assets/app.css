@@ -281,11 +281,8 @@ main {
 */
 .grid-stats  { grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); }
 .grid-two    { grid-template-columns: repeat(auto-fit, minmax(min(440px, 100%), 1fr)); }
-/*
-   Selling leads and the manual overrides sit beside it, narrower: the automation is
-   the normal case and the buttons are the exception.
-*/
-.grid-selling{ grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-items: stretch; }
+/* Selling and charging side by side, as equals: the two directions the battery can be pushed in. */
+.grid-selling{ grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: stretch; }
 
 /* ------------------------------------------------------------------- cards */
 
@@ -890,21 +887,10 @@ main {
 */
 .grid-selling > .card { display: flex; flex-direction: column; }
 #selling-actions,
-#charge-actions { margin-top: auto; }
+#charge-actions { margin-top: auto; padding-top: 16px; }
 
-/* What is charging right now, above the fields that would start another charge. */
-.charge-status {
-    margin: 4px 0 14px;
-    padding: 10px 12px;
-    border: 1px solid var(--border);
-    border-left: 4px solid var(--charge);
-    border-radius: var(--radius-sm);
-    background: color-mix(in srgb, var(--charge) 8%, var(--surface-alt));
-    font-size: .85rem;
-}
-
-.charge-status strong { display: block; font-weight: 600; }
-.charge-status span { color: var(--text-muted); font-size: .8rem; }
+/* The charge card's headline block sits closer to the fields under it than selling's does to its facts. */
+#charge-hero { margin-top: 0; }
 
 /* The control card lays its three groups side by side where there is room, each ruled off
    from the next, and stacks them on a narrow screen. */
@@ -912,7 +898,11 @@ main {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
     gap: 16px 28px;
-    margin-top: 8px;
+}
+
+/* Each group of the control card is titled like a card, since the card itself is not. */
+.control-group-title {
+    margin: 0 0 4px;
 }
 
 .control-groups > .quick-group + .quick-group {
@@ -954,6 +944,7 @@ main {
 
 .selling-hero.is-armed   { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent-soft) 45%, var(--surface-alt)); }
 .selling-hero.is-running { border-left-color: var(--sell);   background: color-mix(in srgb, var(--sell-soft) 45%, var(--surface-alt)); }
+.selling-hero.is-charging { border-left-color: var(--charge); background: color-mix(in srgb, var(--charge) 9%, var(--surface-alt)); }
 
 .selling-figures {
     display: flex;
