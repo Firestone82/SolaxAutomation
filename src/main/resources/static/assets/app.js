@@ -2566,25 +2566,45 @@
             button.classList.toggle('is-active', button.dataset.days === state.statsRange));
 
         const months = availableMonths();
-        const select = el('stats-month');
         const browsing = state.statsRange === 'month';
         const shown = browsing ? state.statsMonth : monthKey(new Date());
+        const [shownYear] = shown.split('-');
 
-        // Rebuilt only when the list itself changed, so an open dropdown is not yanked shut
-        // by a refresh, and relabelled when the language changes.
-        const signature = I18N.language + '|' + months.join(',');
+        const monthSelect = el('stats-month');
+        const yearSelect = el('stats-year');
 
-        if (select.dataset.signature !== signature) {
-            select.replaceChildren(...months.map(key => {
+        // Rebuilt only when what they offer changed, so an open dropdown is not yanked shut by a
+        // refresh, and relabelled when the language changes. The month list depends on the
+        // year, because only the months of that year with anything kept can be picked.
+        const years = [...new Set(months.map(key => key.slice(0, 4)))];
+        const yearSignature = years.join(',');
+
+        if (yearSelect.dataset.signature !== yearSignature) {
+            yearSelect.replaceChildren(...years.map(year => {
                 const option = document.createElement('option');
-                option.value = key;
-                option.textContent = monthLabel(key);
+                option.value = year;
+                option.textContent = year;
                 return option;
             }));
-            select.dataset.signature = signature;
+            yearSelect.dataset.signature = yearSignature;
         }
 
-        select.value = months.includes(shown) ? shown : months[0];
+        const monthSignature = I18N.language + '|' + shownYear + '|' + months.join(',');
+
+        if (monthSelect.dataset.signature !== monthSignature) {
+            monthSelect.replaceChildren(...Array.from({length: 12}, (_, index) => {
+                const key = `${shownYear}-${pad2(index + 1)}`;
+                const option = document.createElement('option');
+                option.value = pad2(index + 1);
+                option.textContent = monthName(index);
+                option.disabled = !months.includes(key);
+                return option;
+            }));
+            monthSelect.dataset.signature = monthSignature;
+        }
+
+        yearSelect.value = years.includes(shownYear) ? shownYear : years[0];
+        monthSelect.value = shown.slice(5, 7);
         el('stats-month-nav').classList.toggle('is-idle', !browsing);
 
         // From a rolling view the arrow goes to last month, inside a month to the one before.
@@ -2595,6 +2615,34 @@
         // The arrows carry no words of their own, so a screen reader gets them in the page's language.
         el('stats-month-prev').setAttribute('aria-label', t('stats.prevMonth'));
         el('stats-month-next').setAttribute('aria-label', t('stats.nextMonth'));
+    }
+
+    /** "Listopad" - a month's own name, capitalised, by its index from 0. */
+    function monthName(index) {
+        const text = new Date(2000, index, 1).toLocaleDateString(locale(), {month: 'long'});
+        return text.charAt(0).toUpperCase() + text.slice(1);
+    }
+
+    /**
+     * Picks a year in the month browser. The month stays where it was if that year has it, and
+     * otherwise moves to the nearest month of that year that has anything kept.
+     */
+    function setStatsYear(year) {
+        const months = availableMonths().filter(key => key.startsWith(year + '-'));
+
+        if (!months.length) {
+            return;
+        }
+
+        const current = state.statsRange === 'month' ? state.statsMonth : monthKey(new Date());
+        const wanted = `${year}-${current.slice(5, 7)}`;
+
+        const nearest = months.includes(wanted) ? wanted
+            : months.reduce((best, key) =>
+                Math.abs(Number(key.slice(5)) - Number(wanted.slice(5))) < Math.abs(Number(best.slice(5)) - Number(wanted.slice(5)))
+                    ? key : best);
+
+        setStatsMonth(nearest);
     }
 
     async function loadStatistics() {
@@ -2668,14 +2716,24 @@
         renderStatsTable(stats);
     }
 
-    /** Where the numbers come from, and since when - the record starts when the application did. */
+    /**
+     * A few words beside the title: how many of the days shown have data. The whole story -
+     * the period, money at the spot price, since when, days only partly valued - is its hover
+     * text, there for whoever wants it without taking a line of the page.
+     */
     function renderStatsSub(stats) {
         const sub = el('stats-sub');
 
         if (!stats || !stats.collectingSince) {
-            sub.textContent = t('stats.notYet');
+            sub.textContent = t('stats.notYetShort');
+            sub.title = t('stats.notYet');
             return;
         }
+
+        sub.textContent = t('stats.shortSummary', {
+            recorded: stats.totals.recordedDays,
+            days: stats.days.length
+        });
 
         const parts = [t('stats.periodSummary', {
             period: statsPeriodLabel(stats),
@@ -2688,7 +2746,7 @@
             parts.push(t('stats.partial', {count: stats.totals.partialDays}));
         }
 
-        sub.textContent = parts.join(' ');
+        sub.title = parts.join(' ');
     }
 
     function renderStatsTiles(stats) {
@@ -3423,7 +3481,9 @@
                 setStatsRange(button.dataset.days);
             }));
 
-        el('stats-month').addEventListener('change', event => setStatsMonth(event.target.value));
+        el('stats-month').addEventListener('change', event =>
+            setStatsMonth(`${el('stats-year').value}-${event.target.value}`));
+        el('stats-year').addEventListener('change', event => setStatsYear(event.target.value));
         el('stats-month-prev').addEventListener('click', previousStatsMonth);
         el('stats-month-next').addEventListener('click', nextStatsMonth);
 

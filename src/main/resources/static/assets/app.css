@@ -585,7 +585,7 @@ main {
    the tiles a little, so they read as what it is the heading of. */
 .section-head {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 10px 16px;
@@ -593,9 +593,22 @@ main {
     margin-bottom: -6px;
 }
 
-.section-title { min-width: 0; }
+/* The title and its few words on one line, the words after it in the muted colour. */
+.section-title {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 2px 12px;
+    min-width: 0;
+}
+
 .section-title > h2 { font-size: 1.15rem; }
-.section-title > .card-sub { margin: 4px 0 0; }
+
+.section-sub {
+    color: var(--text-muted);
+    font-size: .85rem;
+    cursor: help;
+}
 
 /* The month browser beside the range switch: back a month, pick one, forward a month. */
 .month-nav {
@@ -604,7 +617,15 @@ main {
     gap: 6px;
 }
 
-.month-nav .control { min-width: 9.5em; }
+/* Every part of the browser is as tall as the arrow buttons, so the row reads as one control. */
+.month-nav .control {
+    height: 32px;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+.month-nav .month-select { min-width: 8em; }
+.month-nav .year-select { min-width: 5.5em; }
 
 /* While a rolling range is on screen, the month in the list is not what is shown - it steps
    back until it is used, but stays one press away. */
@@ -889,8 +910,9 @@ main {
 #selling-actions,
 #charge-actions { margin-top: auto; padding-top: 16px; }
 
-/* The charge card's headline block sits closer to the fields under it than selling's does to its facts. */
-#charge-hero { margin-top: 0; }
+/* Under a card's description the headline block keeps the description's own spacing, so selling
+   and charging sit their blocks the same distance below their text. */
+.card-sub + .selling-hero { margin-top: 0; }
 
 /* The control card lays its three groups side by side where there is room, each ruled off
    from the next, and stacks them on a narrow screen. */
@@ -1468,6 +1490,9 @@ main {
     .page { gap: 12px; }
 
     .section-head { align-items: flex-start; }
+    .month-nav .control { height: 38px; }
+    .month-nav { flex: 1 1 auto; }
+    .month-nav .month-select { flex: 1 1 auto; min-width: 0; }
     .section-head .card-head-actions { width: 100%; justify-content: space-between; }
 
     /* The day browser takes a line of its own, and the name in it the room between the

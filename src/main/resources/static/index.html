@@ -311,9 +311,10 @@
             controls that choose the period sit in a plain header above them.
         -->
         <header class="section-head">
+            <!-- The title with a few words beside it; the whole explanation is the hover text. -->
             <div class="section-title">
                 <h2 data-i18n="stats.title">Summary</h2>
-                <p class="card-sub" id="stats-sub"></p>
+                <span class="section-sub" id="stats-sub"></span>
             </div>
             <div class="card-head-actions">
                 <div class="segmented" id="stats-range">
@@ -321,12 +322,14 @@
                     <button class="segment is-active" data-days="30" data-i18n="stats.range30">30 days</button>
                     <button class="segment" data-days="90" data-i18n="stats.range90">90 days</button>
                 </div>
-                <!-- A calendar month, browsed a month at a time or picked from the list. -->
+                <!-- A calendar month, browsed a month at a time or picked as a month and a year. -->
                 <div class="month-nav" id="stats-month-nav">
                     <button type="button" class="button button-small icon-step" id="stats-month-prev"
                             data-i18n-title="stats.prevMonth" title="Previous month" aria-label="Previous month"><svg class="chevron" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg></button>
                     <label class="visually-hidden" for="stats-month" data-i18n="stats.month">Month</label>
-                    <select id="stats-month" class="control"></select>
+                    <select id="stats-month" class="control month-select"></select>
+                    <label class="visually-hidden" for="stats-year" data-i18n="stats.year">Year</label>
+                    <select id="stats-year" class="control year-select"></select>
                     <button type="button" class="button button-small icon-step" id="stats-month-next"
                             data-i18n-title="stats.nextMonth" title="Next month" aria-label="Next month"><svg class="chevron" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button>
                 </div>

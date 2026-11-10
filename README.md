@@ -339,12 +339,15 @@ The section shows:
 - **Daily breakdown** — every recorded day in a table, newest first, with totals, built only while
   it is open.
 
-**Which days.** The switch picks the last 7, 30 or 90 days, ending today. Beside it is a **month
-browser**: ‹ goes back a calendar month (from a rolling view, to last month), › forward again, and the
-list jumps straight to any month there is something recorded for — back to the month recording began,
-or the oldest month still within `retention`. The current month runs from the 1st to today. Which
-kind of view is remembered per browser, but the month browsed to is not, so the page always opens on the
-present. The line under the heading names the period on screen and how many of its days have data.
+**Which days.** The controls sit on the heading's line, to the right of it. The switch picks the
+last 7, 30 or 90 days, ending today. Beside it is a **month browser**: the arrows go back and forward
+a calendar month (from a rolling view, back to last month), and a month and a year picked separately
+jump straight to any month there is something recorded for — back to the month recording began, or
+the oldest month still within `retention`; months with nothing kept are greyed out in the list. The
+current month runs from the 1st to today. Which kind of view is remembered per browser, but the month
+browsed to is not, so the page always opens on the present. Beside the heading a few words say how many
+of the days shown have data; hovering them gives the whole story — the period, since when the record
+runs, that money is at the spot price without fees, and how many days are only partly valued.
 The API takes either shape: `GET /api/statistics?days=30` or
 `GET /api/statistics?from=2026-10-01&to=2026-10-31`, clipped to what is kept and never past today.
 
