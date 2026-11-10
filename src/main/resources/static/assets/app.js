@@ -1836,6 +1836,30 @@
     /** Page each list is showing, by list id, so a refresh does not send it back to page 1. */
     const listPages = {};
 
+    /**
+     * A drawn chevron for a step button. Drawn rather than set as a glyph: the angle quotes
+     * sit on the text baseline and come out visibly off centre in a square button, and their
+     * shape differs from one system font to the next.
+     */
+    function chevron(direction) {
+        const ns = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(ns, 'svg');
+        svg.setAttribute('class', 'chevron');
+        svg.setAttribute('viewBox', '0 0 16 16');
+        svg.setAttribute('aria-hidden', 'true');
+        svg.setAttribute('fill', 'none');
+        svg.setAttribute('stroke', 'currentColor');
+        svg.setAttribute('stroke-width', '1.9');
+        svg.setAttribute('stroke-linecap', 'round');
+        svg.setAttribute('stroke-linejoin', 'round');
+
+        const path = document.createElementNS(ns, 'path');
+        path.setAttribute('d', direction === 'left' ? 'M10 3.5 5.5 8l4.5 4.5' : 'M6 3.5 10.5 8 6 12.5');
+        svg.appendChild(path);
+
+        return svg;
+    }
+
     function renderEntryList(list, entries, emptyMessage, mapper, perPage = ENTRIES_PER_PAGE) {
         const pager = el(list.id + '-pager');
 
@@ -1909,8 +1933,9 @@
         const step = (delta, label, disabled) => {
             const button = document.createElement('button');
             button.type = 'button';
-            button.className = 'button button-small';
-            button.textContent = label;
+            button.className = 'button button-small icon-step';
+            button.appendChild(chevron(delta < 0 ? 'left' : 'right'));
+            button.setAttribute('aria-label', label);
             button.disabled = disabled;
             button.addEventListener('click', () => {
                 listPages[list.id] = page + delta;
@@ -1924,9 +1949,9 @@
         position.textContent = t('pager.position', {page: page + 1, pages, total});
 
         pager.replaceChildren(
-            step(-1, '‹', page === 0),
+            step(-1, t('pager.previous'), page === 0),
             position,
-            step(1, '›', page >= pages - 1)
+            step(1, t('pager.next'), page >= pages - 1)
         );
     }
 

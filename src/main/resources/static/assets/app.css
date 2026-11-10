@@ -560,6 +560,13 @@ main {
 }
 
 .day-nav-label {
+    /* As tall as the arrow buttons beside it, so the three read as one control. */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 32px;
+    padding-top: 0;
+    padding-bottom: 0;
     min-width: 7.5em;
     text-align: center;
     font-variant-numeric: tabular-nums;
@@ -1170,6 +1177,27 @@ main {
     min-width: 34px;
 }
 
+/*
+   A square step button - back, forward - holding a drawn chevron. Flex centring puts the
+   icon in the exact middle, which a text glyph sitting on its baseline never was.
+*/
+.icon-step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    min-width: 34px;
+    height: 32px;
+    padding: 0;
+    line-height: 1;
+}
+
+.icon-step .chevron {
+    width: 16px;
+    height: 16px;
+    flex: none;
+}
+
 /* A button that stays pressed: it filters a list rather than doing something once, so it
    has to look like a state and not like an action waiting to be taken. */
 .toggle-button.is-active {
@@ -1524,6 +1552,11 @@ main {
     /* A row of controls that fills the width is easier to hit than one that hugs the text. */
     .button-row .button { flex: 1 1 auto; }
     .button-small { flex: 0 0 auto; padding: 6px 12px; }
+
+    /* The step buttons keep their square on a phone, a little larger for a thumb. */
+    .icon-step { width: 40px; min-width: 40px; height: 38px; padding: 0; }
+    .day-nav-label { height: 38px; }
+    .icon-step .chevron { width: 18px; height: 18px; }
 
     .card-head { align-items: flex-start; }
     .card-head-actions { width: 100%; justify-content: space-between; }
