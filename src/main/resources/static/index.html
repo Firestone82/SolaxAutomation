@@ -266,8 +266,11 @@
                 <section class="quick-group" id="balance-group">
                     <h2 class="control-group-title" data-i18n="balance.title">Battery balancing</h2>
                     <p class="quick-hint" id="balance-hint"></p>
-                    <div class="balance-status" id="balance-status" hidden></div>
-                    <div class="button-row" id="balance-actions"></div>
+                    <!-- The button, and on the right what balancing is doing - like the exit row. -->
+                    <div class="button-row action-row">
+                        <div id="balance-actions"></div>
+                        <span class="quick-note" id="balance-note"></span>
+                    </div>
                     <p class="form-message" id="balance-message" role="status"></p>
                 </section>
 
@@ -278,7 +281,7 @@
                         the inverter back to its work mode.
                     </p>
                     <!-- The button, and on the right whether there is anything for it to end. -->
-                    <div class="button-row exit-row">
+                    <div class="button-row action-row">
                         <div id="exit-actions"></div>
                         <span class="quick-note" id="quick-note"></span>
                     </div>

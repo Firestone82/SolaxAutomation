@@ -384,19 +384,26 @@ const Charts = (() => {
            at is the point of marking it - and nothing reads as another price level. A sale
            is a solid strip, a charge a hatched one; the two never share an interval.
         */
+        // Every strip drawn, so the hover layer at the end can give each its own target.
+        const strips = [];
+
         if (sold) {
             const laneY = padding.top + plotHeight + 3;
             const slotWidth = plotWidth / points.length;
 
-            bands(points, point => point.selling === true).forEach(([from, to]) =>
-                svg.appendChild(element('rect', {
+            bands(points, point => point.selling === true).forEach(([from, to]) => {
+                const rect = element('rect', {
                     class: 'sell-strip',
                     x: padding.left + from * slotWidth + 0.5,
                     y: laneY,
                     width: Math.max(2, (to - from) * slotWidth - 1),
                     height: laneHeight - 3,
                     rx: 2
-                })));
+                });
+
+                svg.appendChild(rect);
+                strips.push({kind: 'selling', from, to, rect});
+            });
         }
 
         if (charged) {
@@ -412,8 +419,8 @@ const Charts = (() => {
             const laneY = padding.top + plotHeight + 3;
             const slotWidth = plotWidth / points.length;
 
-            bands(points, point => point.charging === true).forEach(([from, to]) =>
-                svg.appendChild(element('rect', {
+            bands(points, point => point.charging === true).forEach(([from, to]) => {
+                const rect = element('rect', {
                     class: 'charge-strip',
                     x: padding.left + from * slotWidth + 0.5,
                     y: laneY,
@@ -421,7 +428,11 @@ const Charts = (() => {
                     height: laneHeight - 3,
                     rx: 2,
                     fill: `url(#${stripeId})`
-                })));
+                });
+
+                svg.appendChild(rect);
+                strips.push({kind: 'charging', from, to, rect});
+            });
         }
 
         // Both bands are drawn first, so the bars and the axis stay on top of them.
@@ -544,6 +555,33 @@ const Charts = (() => {
                 () => options.tooltip ? options.tooltip(point, index) : null,
                 () => highlight.setAttribute('opacity', '1'),
                 () => highlight.setAttribute('opacity', '0')
+            );
+
+            svg.appendChild(hit);
+        });
+
+        // The strips under the bars report the sale or the charge they mark - the window,
+        // the power, who started it - rather than the price of the interval above them.
+        // Their targets reach a little above and below the strip, which is only a few
+        // pixels tall.
+        strips.forEach(strip => {
+            const box = {
+                x: Number(strip.rect.getAttribute('x')),
+                y: Number(strip.rect.getAttribute('y')),
+                width: Number(strip.rect.getAttribute('width')),
+                height: Number(strip.rect.getAttribute('height'))
+            };
+
+            const hit = element('rect', {
+                class: 'hit-area',
+                x: box.x, y: box.y - 3, width: box.width, height: box.height + 6
+            });
+
+            hoverable(
+                hit,
+                () => options.stripTooltip ? options.stripTooltip(strip.kind, points[strip.from], points[strip.to - 1]) : null,
+                () => strip.rect.classList.add('is-hovered'),
+                () => strip.rect.classList.remove('is-hovered')
             );
 
             svg.appendChild(hit);

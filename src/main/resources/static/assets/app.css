@@ -441,6 +441,10 @@ main {
 }
 
 .charge-stripe { stroke: var(--text-muted); stroke-width: 2; }
+
+/* A strip under the pointer stands out from the rest of the lane. */
+.sell-strip.is-hovered { fill: var(--text); }
+.charge-strip.is-hovered { stroke: var(--text); stroke-width: 1.5; }
 .bar-current { stroke: var(--text); stroke-width: 1.5; }
 
 /* Intervals the export limit module closes the export in: the bar keeps its price
@@ -1253,21 +1257,6 @@ main {
 
 .quick-duration-row { margin-bottom: 12px; }
 
-/* Where a running balancing is: a line saying it, and a bar for the hour at the top. */
-.balance-status {
-    padding: 10px 12px;
-    border: 1px solid var(--border);
-    border-left: 4px solid var(--charge);
-    border-radius: var(--radius-sm);
-    background: color-mix(in srgb, var(--charge) 8%, var(--surface-alt));
-    font-size: .85rem;
-}
-
-.balance-status strong { display: block; font-weight: 600; }
-.balance-status span { color: var(--text-muted); font-size: .8rem; }
-
-.balance-status .stat-bar { margin-top: 8px; }
-.balance-status .stat-bar > i { background: var(--charge); }
 
 /* The balancing button sits on the group's bottom edge like the other two; its spacing is the
    group's, not its own. */
@@ -1282,19 +1271,20 @@ main {
     line-height: 1.45;
 }
 
-/* Exit remote control on the left, whether a session runs on the right. */
-.exit-row {
+/* A button on the left and what it stands for on the right: exit remote control with whether a
+   session runs, balance the battery with what balancing is doing. */
+.action-row {
     align-items: center;
     justify-content: space-between;
     flex-wrap: nowrap;
 }
 
-.exit-row .quick-note {
+.action-row .quick-note {
     margin: 0;
     text-align: right;
 }
 
-.exit-row .quick-note.is-running { color: var(--charge); font-weight: 600; }
+.action-row .quick-note.is-running { color: var(--charge); font-weight: 600; }
 
 /* A button whose command is on its way: a ring turning where its label was. The label stays in
    the layout, only unseen, so the button keeps its width and the row does not reflow. */

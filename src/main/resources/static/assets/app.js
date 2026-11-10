@@ -758,6 +758,7 @@
 
         Charts.priceChart(container, charged, {
             emptyMessage: t('prices.none'),
+            stripTooltip: (kind, first, last) => stripTooltip(kind, first, last, dayAt(state.priceDay)),
             sellThreshold: prices.sellMinPrice,
             tooltip: point => ({
                 title: `${point.time} – ${endOfSlot(point)}`,
@@ -808,6 +809,42 @@
 
             return charging || selling ? {...point, charging, selling} : point;
         });
+    }
+
+    /**
+     * The tooltip of a strip under the price bars: the sale or the charge it marks, told the
+     * way the work mode band tells it, found by the intervals the strip covers. A window only
+     * the backend knows about - armed, with nothing on record yet - is described from the
+     * intervals alone.
+     */
+    function stripTooltip(kind, first, last, day) {
+        const from = new Date(day.getTime());
+        from.setHours(first.hour, first.minute, 0, 0);
+
+        const to = new Date(day.getTime());
+        to.setHours(last.hour, last.minute + 15, 0, 0);
+
+        const covers = stretch => stretch.from < to && stretch.to > from;
+
+        if (kind === 'charging') {
+            const stretch = chargeStretches().find(covers);
+            return stretch ? chargeTooltip(stretch) : null;
+        }
+
+        const sale = saleStretches().find(covers);
+
+        if (sale) {
+            return sellingTooltip(sale);
+        }
+
+        return {
+            title: t('workMode.selling'),
+            accent: 'var(--text-muted)',
+            rows: [
+                [t('tooltip.when'), `${formatTimeOnly(from.toISOString())} – ${formatTimeOnly(to.toISOString())}`],
+                [t('tooltip.duration'), durationBetween(from.toISOString(), to.toISOString())]
+            ]
+        };
     }
 
     /** The two strips are only in the price legend while the day shown has one of them. */
@@ -2419,7 +2456,6 @@
      */
     function renderBalance() {
         const balance = state.balance;
-        const status = el('balance-status');
         const controllable = state.config.allowControl && balance?.available;
 
         el('balance-hint').textContent = t('balance.hint', {
@@ -2442,50 +2478,31 @@
             ? button(t('balance.cancel'), 'button-danger', cancelBalance)
             : button(t('balance.start'), '', startBalance));
 
-        const lines = balanceStatus(balance);
-        status.hidden = !lines;
+        // Beside the button, like the exit button's: what balancing is doing, in a few words.
+        const note = el('balance-note');
+        const status = balanceStatus(balance);
 
-        if (lines) {
-            const title = document.createElement('strong');
-            title.textContent = lines.title;
-
-            const note = document.createElement('span');
-            note.textContent = lines.note || '';
-
-            const children = [title, note];
-
-            if (typeof lines.bar === 'number') {
-                const bar = document.createElement('div');
-                bar.className = 'stat-bar';
-                const fill = document.createElement('i');
-                fill.style.width = Math.max(0, Math.min(100, lines.bar)) + '%';
-                bar.appendChild(fill);
-                children.push(bar);
-            }
-
-            status.replaceChildren(...children);
-        }
+        note.textContent = status.text;
+        note.title = status.detail || '';
+        note.classList.toggle('is-running', !!balance?.active);
     }
 
-    /** The status block's lines, or null when there is nothing worth saying. */
+    /** The few words beside the balancing button, and the longer story for its hover text. */
     function balanceStatus(balance) {
         if (!balance) {
-            return null;
+            return {text: ''};
         }
 
         if (!balance.available && !balance.active) {
-            return {title: t('balance.unavailable'), note: null};
+            return {text: t('balance.unavailableShort'), detail: t('balance.unavailable')};
         }
 
         if (balance.active && balance.holding) {
-            const total = balance.holdMinutes * 60000;
-            const done = Date.now() - new Date(balance.fullSince).getTime();
             const left = Math.max(0, Math.round((new Date(balance.holdUntil) - Date.now()) / 60000));
 
             return {
-                title: t('balance.holding', {target: balance.targetBattery, until: formatTimeOnly(balance.holdUntil)}),
-                note: t('balance.holdingLeft', {left: humanMinutes(left)}),
-                bar: total > 0 ? done / total * 100 : null
+                text: t('balance.holdingShort', {target: balance.targetBattery, left: humanMinutes(left)}),
+                detail: t('balance.holding', {target: balance.targetBattery, until: formatTimeOnly(balance.holdUntil)})
             };
         }
 
@@ -2493,24 +2510,20 @@
             const soc = state.overview?.batterySoc;
 
             return {
-                title: t('balance.charging', {target: balance.targetBattery}),
-                note: t('balance.chargingNote', {
-                    battery: hasValue(soc) ? soc : '—',
-                    deadline: formatTimeOnly(balance.deadline)
-                }),
-                bar: hasValue(soc) ? soc : null
+                text: t('balance.chargingShort', {target: balance.targetBattery, battery: hasValue(soc) ? soc : '—'}),
+                detail: t('balance.chargingNote', {battery: hasValue(soc) ? soc : '—', deadline: formatTimeOnly(balance.deadline)})
             };
         }
 
         // Idle: the last balancing's outcome, as long as there was one.
         if (balance.summaryKey && balance.summaryKey.startsWith('history.balance.')) {
             return {
-                title: I18N.message(balance.summaryKey, balance.summaryParams, balance.summary),
-                note: I18N.message(balance.detailKey, balance.detailParams, balance.detail)
+                text: I18N.message(balance.summaryKey, balance.summaryParams, balance.summary),
+                detail: I18N.message(balance.detailKey, balance.detailParams, balance.detail)
             };
         }
 
-        return null;
+        return {text: t('balance.idleShort')};
     }
 
     function setBalanceMessage(text, ok) {
@@ -3391,13 +3404,15 @@
     async function setWorkMode(mode) {
         const node = el('quick-message');
 
+        // The turning button says it is on its way and the mark moving says it arrived, so the
+        // line under the buttons is kept for the one thing they cannot say: that it failed.
         state.modePending = mode;
-        writeMessage(node, t('quick.modeSetting', {mode: mode}), null);
+        writeMessage(node, '', null);
         renderQuickActions();
 
         try {
             const result = await Api.setWorkMode(mode);
-            writeMessage(node, actionMessage(result), result.success);
+            writeMessage(node, result.success ? '' : actionMessage(result), result.success ? null : false);
 
             // The mark only moves once the page has read the mode back.
             await refresh();

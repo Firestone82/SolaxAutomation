@@ -262,8 +262,8 @@ runs, and steps aside if one starts. If another module ends its session — the 
 at a full battery — the session is sent again after `resend-after` (3 min). _Exit remote control_
 cancels balancing too.
 
-While it runs, the card shows whether it is still charging or already holding, with a bar for the
-hour; the work mode band and the price chart draw it like any other charge from the grid, and every
+While it runs, a few words beside the button say whether it is still charging or already holding
+and how long is left, the way the exit button says whether a session runs; the work mode band and the price chart draw it like any other charge from the grid, and every
 step is in the activity list. Nothing starts it on its own. The rules are covered by
 `BalanceModuleTest`.
 
@@ -384,7 +384,8 @@ The wash is where a window *can* be armed, not where one *will* be: which of tho
 actually chosen depends on the peak, the plateau around it and the charge in the battery, and only
 the planner can answer that. What is actually sold and bought is marked in a lane under the bars: a
 **solid strip** for the selling window — the armed one, and any sale on record for that day — and a
-**hatched strip** for a charge from the grid. The lane is only there on a day that has either.
+**hatched strip** for a charge from the grid. The lane is only there on a day that has either, and
+hovering a strip tells the sale or the charge it marks: when, the power, who started it, how it ended.
 
 The timeline shows every run each module has coming up, not just the next one. Two modules are left
 out of it: the export limit is re-checked every quarter of an hour and the weather work mode every

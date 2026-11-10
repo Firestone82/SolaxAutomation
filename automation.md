@@ -267,7 +267,7 @@ vrátí sám, i kdyby aplikace spadla. Prodej má přednost: během prodeje se v
 prodej začne, vyrovnání ustoupí. Když relaci ukončí jiný modul (noční nabíjení při plné baterii),
 pošle se po 3 minutách (`resend-after`) znovu. _Ukončit dálkové řízení_ vyrovnání zruší.
 
-Karta ukazuje, jestli se ještě nabíjí, nebo už drží, i s pruhem pro odpočet hodiny. Pás režimu a
+Vpravo od tlačítka je krátce napsané, jestli se ještě nabíjí, nebo už drží, a kolik zbývá. Pás režimu a
 graf cen ho kreslí jako nabíjení ze sítě a každý krok je v _Poslední aktivitě_. Samo se nespouští.
 
 ---
