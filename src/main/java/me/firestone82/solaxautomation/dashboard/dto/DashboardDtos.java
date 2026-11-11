@@ -413,6 +413,45 @@ public final class DashboardDtos {
     ) {
     }
 
+    /**
+     * What the billing page can show: whether the SolaxStatistics summaries are there, and for
+     * which months and years.
+     *
+     * @param enabled       the page is switched on
+     * @param available     the summary folder exists
+     * @param summaryDir    where the summaries are read from, so a missing folder can be named
+     * @param months        months with totals, {@code YYYY-MM}, oldest first
+     * @param monthsWithDays months with a day-by-day breakdown
+     * @param years         years with any month
+     * @param updatedAt     when SolaxStatistics last wrote a summary
+     */
+    public record BillingOverview(
+            boolean enabled,
+            boolean available,
+            String summaryDir,
+            List<String> months,
+            List<String> monthsWithDays,
+            List<Integer> years,
+            LocalDateTime updatedAt
+    ) {
+    }
+
+    /**
+     * A month by day, or a year by month, with its totals.
+     *
+     * @param period {@code month} or {@code year}
+     * @param key    {@code YYYY-MM} or {@code YYYY}
+     * @param rows   the days of the month or the months of the year, oldest first
+     * @param totals the period's totals, {@code null} when SolaxStatistics has none
+     */
+    public record BillingView(
+            String period,
+            String key,
+            List<me.firestone82.solaxautomation.integration.solaxstatistics.BillingRow> rows,
+            me.firestone82.solaxautomation.integration.solaxstatistics.BillingRow totals
+    ) {
+    }
+
     /** Static facts the front end needs once, at start-up. */
     /**
      * @param pvPeak production the tile's bar is drawn against, W

@@ -273,8 +273,9 @@ step is in the activity list. Nothing starts it on its own. The rules are covere
 
 `http://<host>:8080/` — no build step, no CDN, works offline on the Pi.
 
-Three pages: **Control**, which is the dashboard proper, **Statistics**, which is the days behind
-us, and **History**, which is what the modules will do and what they did. The page you were on is
+Four pages: **Control**, which is the dashboard proper, **Statistics**, which is the days behind
+us, **History**, which is what the modules will do and what they did, and **Billing**, which is what
+the energy actually cost and earned, read from the SolaxStatistics application (below). The page you were on is
 remembered per browser. Each opens with the same kind of heading and a few words beside it: _Current
 state_ with when the tiles were read and over which link, _Summary_ with how many of the days shown
 have data, and _Module actions_ with how many entries are kept and from when.
@@ -311,6 +312,35 @@ did, with the list of what is coming) and the activity list, with its day filter
 row count. Neither grows the control page: the plan is long on a busy day and the activity list grows
 all day.
 
+### Billing — SolaxStatistics
+
+SolaxStatistics is a separate application. It reads the inverter's history, the ČEZ meter and the
+spot prices, prices every quarter of an hour at the installation's own tariffs and writes the result
+into its `data` folder — `solax/`, `ote/`, `cez/` and one summary per month in `summary/`
+(`summary_YYYY-MM.xlsx` and `summary_YYYY-MM.json`). The **Billing** page reads those summaries; it
+never writes to them. Point `solax-statistics.data-dir` at that `data` folder (default
+`../SolaxStatistics/data`, beside this application) and the page fills in on the next refresh.
+
+"Grid" is what passed the distributor's meter, the metered supply; "second supply" is the other
+side of the connection switch. Every number is the one SolaxStatistics computed, nothing is priced
+again here, so the page and the workbook always agree.
+
+- **Month** — the month by day, from the workbook's Daily sheet: tiles for production (with how much
+  was used at home), consumption (with the self-use rate), imported and exported energy, costs and
+  revenue — each split between the grid and the second supply — savings, and the balance (savings
+  plus revenue minus costs); charts of the energy, of the two supplies (export above the line, import
+  below) and of the money (savings and revenue above, costs below, a tick for the balance); and a
+  breakdown table.
+- **Year** — the same by month. The newest workbook carries every month back to the first one
+  SolaxStatistics priced, so years before the files on disk still have their months, and the
+  Yearly sheet gives the year's totals.
+
+A month's totals come from its JSON where there is one. The workbook is read as a stream, and only
+its Daily, Monthly and Yearly sheets — the three-megabyte quarter-hour sheet is never opened — and a
+file is parsed again only when SolaxStatistics rewrites it. A missing folder or a broken file is
+said plainly on the page rather than failing it. The raw CSVs in `solax/`, `ote/` and `cez/` are not
+read yet.
+
 ### Statistics
 
 Nothing upstream keeps a history this application can ask for — the inverter and the cloud report
@@ -337,7 +367,12 @@ The section shows:
 - **Money per day** — income stacked above the axis (sales, then other export), import cost below it,
   and a tick for the day's net.
 - **Battery per day** — a bar from the lowest to the highest state of charge.
-- **Time in each work mode** — the watched time split between the modes.
+- **Work modes and energy** — the watched time split between the modes, and under it the period's
+  production, export and import.
+
+Every chart legend is also a switch: clicking an entry takes that series off the chart and clicking
+it again puts it back, so a few series can be compared on their own and the axis follows what is
+left. The last series on stays on.
 - **Daily breakdown** — every recorded day in a table, newest first, with totals, built only while
   it is open.
 

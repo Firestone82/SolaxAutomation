@@ -206,6 +206,19 @@ dashboard:
   pv-peak: 7200
 
 # -----------------------------------------------------------------------------
+#  SolaxStatistics - the billing page
+#  SolaxStatistics is a separate application that prices every quarter of an
+#  hour from the inverter's history, the ČEZ meter and the spot prices, and
+#  writes one summary per month into its data folder. The dashboard's billing
+#  page reads those summaries (summary/summary_YYYY-MM.xlsx and .json); it never
+#  writes to them.
+# -----------------------------------------------------------------------------
+solax-statistics:
+  enabled: true
+  # The SolaxStatistics data folder, the one holding solax/, ote/, cez/ and summary/.
+  data-dir: ../SolaxStatistics/data
+
+# -----------------------------------------------------------------------------
 #  Activity history shown on the dashboard
 # -----------------------------------------------------------------------------
 timeline:

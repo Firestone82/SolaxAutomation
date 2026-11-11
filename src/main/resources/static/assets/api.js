@@ -74,6 +74,12 @@ const Api = (() => {
         startBalance: payload =>
             request('api/balance', {method: 'POST', body: JSON.stringify(payload || {})}),
 
-        cancelBalance: () => request('api/balance', {method: 'DELETE'})
+        cancelBalance: () => request('api/balance', {method: 'DELETE'}),
+
+        /* -------- SolaxStatistics summaries -------- */
+
+        billingOverview: () => request('api/billing/overview'),
+        billingMonth: month => request('api/billing/month/' + encodeURIComponent(month)),
+        billingYear: year => request('api/billing/year/' + encodeURIComponent(year))
     };
 })();

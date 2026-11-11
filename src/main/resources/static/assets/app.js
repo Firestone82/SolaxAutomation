@@ -256,7 +256,7 @@
      * statistics and history. A stored page that no longer exists - the old modules page -
      * opens the control page.
      */
-    const PAGES = ['overview', 'statistics', 'history'];
+    const PAGES = ['overview', 'statistics', 'history', 'billing'];
 
     function showPage(requested) {
         const page = PAGES.includes(requested) ? requested : 'overview';
@@ -342,6 +342,10 @@
         renderWorkMode();
         renderTimeline();
         renderStatisticsCharts();
+
+        if (billing.overview) {
+            renderBillingCharts();
+        }
     }
 
     /**
@@ -393,7 +397,8 @@
             return;
         }
 
-        const source = overview.source ? t('overview.source.' + overview.source) : null;
+        // A source the dictionary does not name is left out rather than shown as its key.
+        const source = overview.source ? I18N.message('overview.source.' + overview.source, null, null) : null;
         sub.textContent = source
             ? t('overview.sub', {time: formatDateTime(overview.readAt), source: source})
             : t('overview.subTime', {time: formatDateTime(overview.readAt)});
@@ -1005,7 +1010,9 @@
             stormThreshold: weather?.stormThreshold,
             tooltip: point => ({
                 title: formatDateTime(point.dateTime),
-                subtitle: point.weather ? t('weatherType.' + point.weather, null) || prettyWeather(point.weather) : null,
+                // t() hands back the key itself when there is no translation, so it cannot be
+                // the thing that decides whether to fall back - I18N.message can.
+                subtitle: point.weather ? I18N.message('weatherType.' + point.weather, null, prettyWeather(point.weather)) : null,
                 accent: qualityColour(point.quality, weather),
                 rows: [
                     [t('tooltip.quality'), formatNumber(point.quality, 2)],
@@ -2808,6 +2815,7 @@
         renderStatsTiles(stats);
         renderStatisticsCharts();
         renderModeShare(stats);
+        renderEnergyTotals(stats);
         renderStatsTable(stats);
     }
 
@@ -2961,8 +2969,26 @@
         };
     }
 
-    function renderLegend(id, items) {
-        el(id).replaceChildren(...items.map(([colour, label, line]) => {
+    /**
+     * Series switched off from a chart's legend, by legend id. Kept for the visit: which ones are
+     * worth comparing is a question of the moment, not a setting.
+     */
+    const hiddenSeries = {};
+
+    const isShown = (legendId, key) => !key || !hiddenSeries[legendId]?.has(key);
+
+    /** The series of a chart that its legend leaves on. */
+    const shownSeries = (legendId, series) => series.filter(item => isShown(legendId, item.key));
+
+    /**
+     * A chart's legend. Items that carry a key (the fourth element) are switches: a click takes
+     * that series off the chart and another puts it back, so a few can be compared on their own.
+     * The last one left on stays on - an empty chart compares nothing.
+     */
+    function renderLegend(id, items, onToggle = null) {
+        el(id).classList.toggle('is-interactive', !!onToggle);
+
+        el(id).replaceChildren(...items.map(([colour, label, line, key]) => {
             const item = document.createElement('li');
             const swatch = document.createElement('i');
 
@@ -2970,6 +2996,39 @@
             swatch.style.background = colour;
 
             item.append(swatch, textSpan(label));
+
+            if (key && onToggle) {
+                const shown = isShown(id, key);
+
+                item.className = 'legend-toggle' + (shown ? '' : ' is-off');
+                item.tabIndex = 0;
+                item.setAttribute('role', 'button');
+                item.setAttribute('aria-pressed', String(shown));
+                item.title = t(shown ? 'legend.hide' : 'legend.show');
+
+                const toggle = () => {
+                    const hidden = hiddenSeries[id] || (hiddenSeries[id] = new Set());
+                    const keys = items.map(entry => entry[3]).filter(Boolean);
+
+                    if (hidden.has(key)) {
+                        hidden.delete(key);
+                    } else if (keys.filter(other => !hidden.has(other)).length > 1) {
+                        hidden.add(key);
+                    }
+
+                    Charts.hideTooltip();
+                    onToggle();
+                };
+
+                item.addEventListener('click', toggle);
+                item.addEventListener('keydown', event => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        toggle();
+                    }
+                });
+            }
+
             return item;
         }));
     }
@@ -2986,44 +3045,46 @@
 
         Charts.dailyChart(el('stats-energy-chart'), days, {
             mode: 'grouped',
-            series: [
-                {value: day => day.yieldKwh, colour: STAT_COLOURS.production},
-                {value: day => day.consumptionKwh, colour: STAT_COLOURS.consumption},
-                {value: day => day.exportKwh, colour: STAT_COLOURS.export},
-                {value: day => day.importKwh, colour: STAT_COLOURS.import}
-            ],
+            series: shownSeries('stats-energy-legend', [
+                {key: 'production', value: day => day.yieldKwh, colour: STAT_COLOURS.production},
+                {key: 'consumption', value: day => day.consumptionKwh, colour: STAT_COLOURS.consumption},
+                {key: 'export', value: day => day.exportKwh, colour: STAT_COLOURS.export},
+                {key: 'import', value: day => day.importKwh, colour: STAT_COLOURS.import}
+            ]),
             axisFormat, xLabel, emptyMessage,
             tooltip: day => statsTooltip(day, STAT_COLOURS.production)
         });
 
         renderLegend('stats-energy-legend', [
-            [STAT_COLOURS.production, t('stats.production')],
-            [STAT_COLOURS.consumption, t('stats.consumption')],
-            [STAT_COLOURS.export, t('stats.exported')],
-            [STAT_COLOURS.import, t('stats.imported')]
-        ]);
+            [STAT_COLOURS.production, t('stats.production'), false, 'production'],
+            [STAT_COLOURS.consumption, t('stats.consumption'), false, 'consumption'],
+            [STAT_COLOURS.export, t('stats.exported'), false, 'export'],
+            [STAT_COLOURS.import, t('stats.imported'), false, 'import']
+        ], renderStatisticsCharts);
 
         // Income stacks up from the axis, cost hangs below it. A sale is part of the export,
         // so it is taken out of the export bar rather than drawn on top of all of it.
         Charts.dailyChart(el('stats-money-chart'), days, {
             mode: 'stacked',
-            series: [
-                {value: day => day.soldValue, colour: STAT_COLOURS.sold},
-                {value: day => hasValue(day.exportValue) ? day.exportValue - (day.soldValue || 0) : null, colour: STAT_COLOURS.export},
-                {value: day => hasValue(day.importCost) ? -day.importCost : null, colour: STAT_COLOURS.import}
-            ],
-            marker: day => hasValue(day.exportValue) || hasValue(day.importCost)
-                ? (day.exportValue || 0) - (day.importCost || 0) : null,
+            series: shownSeries('stats-money-legend', [
+                {key: 'sold', value: day => day.soldValue, colour: STAT_COLOURS.sold},
+                {key: 'otherExport', value: day => hasValue(day.exportValue) ? day.exportValue - (day.soldValue || 0) : null, colour: STAT_COLOURS.export},
+                {key: 'importCost', value: day => hasValue(day.importCost) ? -day.importCost : null, colour: STAT_COLOURS.import}
+            ]),
+            marker: isShown('stats-money-legend', 'net')
+                ? day => hasValue(day.exportValue) || hasValue(day.importCost)
+                    ? (day.exportValue || 0) - (day.importCost || 0) : null
+                : null,
             axisFormat, xLabel, emptyMessage,
             tooltip: day => statsTooltip(day, STAT_COLOURS.sold)
         });
 
         renderLegend('stats-money-legend', [
-            [STAT_COLOURS.sold, t('stats.sales')],
-            [STAT_COLOURS.export, t('stats.legend.otherExport')],
-            [STAT_COLOURS.import, t('stats.legend.importCost')],
-            [STAT_COLOURS.net, t('stats.net'), true]
-        ]);
+            [STAT_COLOURS.sold, t('stats.sales'), false, 'sold'],
+            [STAT_COLOURS.export, t('stats.legend.otherExport'), false, 'otherExport'],
+            [STAT_COLOURS.import, t('stats.legend.importCost'), false, 'importCost'],
+            [STAT_COLOURS.net, t('stats.net'), true, 'net']
+        ], renderStatisticsCharts);
 
         Charts.dailyChart(el('stats-battery-chart'), days, {
             mode: 'range',
@@ -3081,6 +3142,36 @@
                 percent: formatNumber(value / total * 100, 0)
             })
         ]));
+    }
+
+    /** The period's energy in one row under the work modes: what was made, sold and bought. */
+    function renderEnergyTotals(stats) {
+        const totals = stats?.totals;
+        const row = el('stats-energy-totals');
+
+        const items = [
+            [t('stats.production'), totals?.yieldKwh, STAT_COLOURS.production],
+            [t('stats.exported'), totals?.exportKwh, STAT_COLOURS.export],
+            [t('stats.imported'), totals?.importKwh, STAT_COLOURS.import]
+        ].filter(([, value]) => hasValue(value));
+
+        row.hidden = items.length === 0;
+
+        row.replaceChildren(...items.map(([label, value, colour]) => {
+            const item = document.createElement('div');
+
+            const term = document.createElement('dt');
+            const swatch = document.createElement('i');
+            swatch.className = 'swatch';
+            swatch.style.background = colour;
+            term.append(swatch, textSpan(label));
+
+            const amount = document.createElement('dd');
+            amount.textContent = `${kwh(value)} kWh`;
+
+            item.append(term, amount);
+            return item;
+        }));
     }
 
     /**
@@ -3166,6 +3257,444 @@
         table.replaceChildren(head, body, foot);
     }
 
+    /* --------------------------------------------------------------- billing */
+
+    /**
+     * The billing page reads what the SolaxStatistics application wrote: the energy priced at
+     * the installation's own tariffs, "grid" being the distributor's meter and "self" the second
+     * supply. A month by day or a year by month; the overview of what there is comes with every
+     * refresh, the period itself only when it is asked for or the files changed.
+     */
+    const billing = {
+        overview: null,
+        view: null,
+        range: 'month',
+        month: null,
+        year: null,
+        loadedKey: null
+    };
+
+    /** Colours of the two supplies: the grid in the statistics' own hues, the second supply lighter. */
+    const BILLING_COLOURS = {
+        production: 'var(--stat-production)',
+        consumption: 'var(--stat-consumption)',
+        importTotal: 'var(--stat-import)',
+        exportTotal: 'var(--stat-export)',
+        exportGrid: 'var(--stat-export)',
+        exportSelf: 'var(--stat-export-self)',
+        importGrid: 'var(--stat-import)',
+        importSelf: 'var(--stat-import-self)',
+        savings: 'var(--success)',
+        profit: 'var(--text)'
+    };
+
+    const sumOf = (...values) => values.some(hasValue) ? values.reduce((sum, value) => sum + (value || 0), 0) : null;
+    const importOf = row => sumOf(row?.importGrid, row?.importSelf);
+    const exportOf = row => sumOf(row?.exportGrid, row?.exportSelf);
+    const costOf = row => sumOf(row?.importCostGrid, row?.importCostSelf);
+    const revenueOf = row => sumOf(row?.exportRevenueGrid, row?.exportRevenueSelf);
+
+    function billingKey() {
+        return billing.range === 'year' ? 'year:' + billing.year : 'month:' + billing.month;
+    }
+
+    /**
+     * Keeps the period on something there is data for: the newest month on the first visit,
+     * and the nearest one when what was picked is not in the list.
+     */
+    function settleBillingPeriod() {
+        const months = billing.overview?.months || [];
+        const years = billing.overview?.years || [];
+
+        if (!months.length) {
+            return;
+        }
+
+        if (!billing.month || !months.includes(billing.month)) {
+            billing.month = months[months.length - 1];
+        }
+
+        if (!billing.year || !years.includes(billing.year)) {
+            billing.year = Number(billing.month.slice(0, 4));
+        }
+    }
+
+    async function loadBilling(force = false) {
+        settleBillingPeriod();
+
+        const overview = billing.overview;
+        if (!overview?.available || !overview.months.length) {
+            billing.view = null;
+            renderBilling();
+            return;
+        }
+
+        // The files only change when SolaxStatistics writes them, so the period is fetched again
+        // when the selection changed or a summary was rewritten - not on every refresh.
+        const key = billingKey() + '|' + overview.updatedAt;
+
+        if (!force && key === billing.loadedKey && billing.view) {
+            renderBilling();
+            return;
+        }
+
+        try {
+            billing.view = billing.range === 'year'
+                ? await Api.billingYear(billing.year)
+                : await Api.billingMonth(billing.month);
+            billing.loadedKey = key;
+        } catch (error) {
+            console.warn('Billing unavailable', error);
+        }
+
+        renderBilling();
+    }
+
+    function setBillingRange(range) {
+        billing.range = range;
+        loadBilling();
+    }
+
+    function stepBilling(delta) {
+        if (billing.range === 'year') {
+            const years = billing.overview?.years || [];
+            const next = years[years.indexOf(billing.year) + delta];
+            if (next) {
+                billing.year = next;
+            }
+        } else {
+            const months = billing.overview?.months || [];
+            const next = months[months.indexOf(billing.month) + delta];
+            if (next) {
+                billing.month = next;
+            }
+        }
+
+        loadBilling();
+    }
+
+    function renderBilling() {
+        const overview = billing.overview;
+
+        renderBillingHead(overview);
+
+        const missing = !overview || !overview.enabled || !overview.available || !overview.months.length;
+        el('billing-missing').hidden = !missing || !overview;
+
+        if (missing) {
+            el('billing-missing-text').textContent = !overview ? ''
+                : !overview.enabled ? t('billing.disabled')
+                    : !overview.available ? t('billing.noFolder', {dir: overview.summaryDir})
+                        : t('billing.noFiles', {dir: overview.summaryDir});
+        }
+
+        ['billing-tiles'].forEach(id => el(id).hidden = missing);
+        document.querySelectorAll('#page-billing > .grid-two, #page-billing > .card:not(#billing-missing)')
+            .forEach(node => node.hidden = missing);
+
+        if (missing) {
+            return;
+        }
+
+        renderBillingTiles();
+        renderBillingCharts();
+        renderBillingTable();
+    }
+
+    /** The heading's few words, the range switch and the period picker. */
+    function renderBillingHead(overview) {
+        const sub = el('billing-sub');
+
+        sub.textContent = overview?.updatedAt
+            ? t('billing.sub', {updated: formatDateTime(overview.updatedAt)})
+            : t('billing.subNone');
+
+        document.querySelectorAll('#billing-range .segment').forEach(button =>
+            button.classList.toggle('is-active', button.dataset.range === billing.range));
+
+        const months = overview?.months || [];
+        const years = overview?.years || [];
+        const yearSelect = el('billing-year');
+        const monthSelect = el('billing-month');
+
+        const yearSignature = years.join(',');
+        if (yearSelect.dataset.signature !== yearSignature) {
+            yearSelect.replaceChildren(...years.map(year => {
+                const option = document.createElement('option');
+                option.value = String(year);
+                option.textContent = String(year);
+                return option;
+            }));
+            yearSelect.dataset.signature = yearSignature;
+        }
+
+        const shownYear = billing.range === 'year' ? billing.year : Number((billing.month || '').slice(0, 4));
+        const monthSignature = I18N.language + '|' + shownYear + '|' + months.join(',');
+
+        if (monthSelect.dataset.signature !== monthSignature) {
+            monthSelect.replaceChildren(...Array.from({length: 12}, (_, index) => {
+                const option = document.createElement('option');
+                option.value = `${shownYear}-${pad2(index + 1)}`;
+                option.textContent = monthName(index);
+                option.disabled = !months.includes(option.value);
+                return option;
+            }));
+            monthSelect.dataset.signature = monthSignature;
+        }
+
+        if (shownYear) {
+            yearSelect.value = String(shownYear);
+        }
+
+        if (billing.month) {
+            monthSelect.value = billing.month;
+        }
+
+        monthSelect.hidden = billing.range === 'year';
+
+        const list = billing.range === 'year' ? years : months;
+        const current = billing.range === 'year' ? billing.year : billing.month;
+        const index = list.indexOf(current);
+
+        el('billing-prev').disabled = index <= 0;
+        el('billing-next').disabled = index < 0 || index >= list.length - 1;
+    }
+
+    /** The period's columns: every day of the month, or every month of the year, gaps kept. */
+    function billingColumns() {
+        const view = billing.view;
+        const rows = view?.rows || [];
+
+        if (!view) {
+            return [];
+        }
+
+        const byKey = new Map(rows.map(row => [view.period === 'year' ? row.date.slice(0, 7) : row.date, row]));
+
+        if (view.period === 'year') {
+            return Array.from({length: 12}, (_, index) => {
+                const key = `${view.key}-${pad2(index + 1)}`;
+                const row = byKey.get(key);
+                return {...(row || {}), date: key + '-01', recorded: !!row};
+            });
+        }
+
+        const [year, month] = view.key.split('-').map(Number);
+        const length = new Date(year, month, 0).getDate();
+
+        return Array.from({length}, (_, index) => {
+            const key = `${view.key}-${pad2(index + 1)}`;
+            const row = byKey.get(key);
+            return {...(row || {}), date: key, recorded: !!row};
+        });
+    }
+
+    function renderBillingTiles() {
+        const totals = billing.view?.totals;
+        const container = el('billing-tiles');
+
+        if (!totals) {
+            container.replaceChildren();
+            return;
+        }
+
+        const tiles = [];
+        const push = (label, value, unit, notes, bar = null, barColour = null) =>
+            tiles.push({label, value, unit, notes: [].concat(notes || []).filter(Boolean), bar, barColour});
+
+        const split = (grid, self, unit, digits) => [
+            hasValue(grid) ? t('billing.gridShare', {value: formatNumber(grid, digits), unit}) : null,
+            hasValue(self) ? t('billing.selfShare', {value: formatNumber(self, digits), unit}) : null
+        ];
+
+        push(t('billing.production'), kwh(totals.yield), 'kWh',
+            hasValue(totals.selfConsumption) ? t('billing.selfConsumed', {value: kwh(totals.selfConsumption)}) : null,
+            hasValue(totals.selfUseRate) ? totals.selfUseRate : null, BILLING_COLOURS.production);
+
+        push(t('billing.consumption'), kwh(totals.consumption), 'kWh',
+            hasValue(totals.selfUseRate) ? t('billing.selfUseRate', {value: formatNumber(totals.selfUseRate, 0)}) : null);
+
+        push(t('billing.import'), kwh(importOf(totals)), 'kWh', split(totals.importGrid, totals.importSelf, 'kWh', 1));
+        push(t('billing.export'), kwh(exportOf(totals)), 'kWh', split(totals.exportGrid, totals.exportSelf, 'kWh', 1));
+        push(t('billing.cost'), money(costOf(totals)), 'CZK', split(totals.importCostGrid, totals.importCostSelf, 'CZK', 0));
+        push(t('billing.revenue'), money(revenueOf(totals)), 'CZK', split(totals.exportRevenueGrid, totals.exportRevenueSelf, 'CZK', 0));
+        push(t('billing.savings'), money(totals.savings), 'CZK', t('billing.savingsNote'));
+        push(t('billing.profit'), money(totals.profit), 'CZK', t('billing.profitNote'));
+
+        container.replaceChildren(...tiles.map(tileNode));
+    }
+
+    function renderBillingCharts() {
+        const columns = billingColumns();
+        const year = billing.view?.period === 'year';
+        const axisFormat = value => formatNumber(value, Math.abs(value) < 10 && value % 1 !== 0 ? 1 : 0);
+        const emptyMessage = t(year ? 'billing.noneYear' : 'billing.noneMonth');
+
+        const xLabel = year
+            ? column => new Date(column.date + 'T00:00:00').toLocaleDateString(locale(), {month: 'short'})
+            : column => String(Number(column.date.slice(8)));
+
+        const common = {axisFormat, xLabel, emptyMessage, columns: year ? 'month' : 'day', tooltip: billingTooltip};
+
+        Charts.dailyChart(el('billing-energy-chart'), columns, {
+            ...common,
+            mode: 'grouped',
+            series: shownSeries('billing-energy-legend', [
+                {key: 'production', value: row => row.yield, colour: BILLING_COLOURS.production},
+                {key: 'consumption', value: row => row.consumption, colour: BILLING_COLOURS.consumption},
+                {key: 'export', value: row => exportOf(row), colour: BILLING_COLOURS.exportTotal},
+                {key: 'import', value: row => importOf(row), colour: BILLING_COLOURS.importTotal}
+            ])
+        });
+
+        renderLegend('billing-energy-legend', [
+            [BILLING_COLOURS.production, t('billing.production'), false, 'production'],
+            [BILLING_COLOURS.consumption, t('billing.consumption'), false, 'consumption'],
+            [BILLING_COLOURS.exportTotal, t('billing.export'), false, 'export'],
+            [BILLING_COLOURS.importTotal, t('billing.import'), false, 'import']
+        ], renderBillingCharts);
+
+        Charts.dailyChart(el('billing-supply-chart'), columns, {
+            ...common,
+            mode: 'stacked',
+            series: shownSeries('billing-supply-legend', [
+                {key: 'exportGrid', value: row => row.exportGrid, colour: BILLING_COLOURS.exportGrid},
+                {key: 'exportSelf', value: row => row.exportSelf, colour: BILLING_COLOURS.exportSelf},
+                {key: 'importGrid', value: row => hasValue(row.importGrid) ? -row.importGrid : null, colour: BILLING_COLOURS.importGrid},
+                {key: 'importSelf', value: row => hasValue(row.importSelf) ? -row.importSelf : null, colour: BILLING_COLOURS.importSelf}
+            ])
+        });
+
+        renderLegend('billing-supply-legend', [
+            [BILLING_COLOURS.exportGrid, t('billing.legend.exportGrid'), false, 'exportGrid'],
+            [BILLING_COLOURS.exportSelf, t('billing.legend.exportSelf'), false, 'exportSelf'],
+            [BILLING_COLOURS.importGrid, t('billing.legend.importGrid'), false, 'importGrid'],
+            [BILLING_COLOURS.importSelf, t('billing.legend.importSelf'), false, 'importSelf']
+        ], renderBillingCharts);
+
+        Charts.dailyChart(el('billing-money-chart'), columns, {
+            ...common,
+            mode: 'stacked',
+            series: shownSeries('billing-money-legend', [
+                {key: 'savings', value: row => row.savings, colour: BILLING_COLOURS.savings},
+                {key: 'revenueGrid', value: row => row.exportRevenueGrid, colour: BILLING_COLOURS.exportGrid},
+                {key: 'revenueSelf', value: row => row.exportRevenueSelf, colour: BILLING_COLOURS.exportSelf},
+                {key: 'costGrid', value: row => hasValue(row.importCostGrid) ? -row.importCostGrid : null, colour: BILLING_COLOURS.importGrid},
+                {key: 'costSelf', value: row => hasValue(row.importCostSelf) ? -row.importCostSelf : null, colour: BILLING_COLOURS.importSelf}
+            ]),
+            marker: isShown('billing-money-legend', 'profit') ? row => row.profit : null
+        });
+
+        renderLegend('billing-money-legend', [
+            [BILLING_COLOURS.savings, t('billing.savings'), false, 'savings'],
+            [BILLING_COLOURS.exportGrid, t('billing.legend.revenueGrid'), false, 'revenueGrid'],
+            [BILLING_COLOURS.exportSelf, t('billing.legend.revenueSelf'), false, 'revenueSelf'],
+            [BILLING_COLOURS.importGrid, t('billing.legend.costGrid'), false, 'costGrid'],
+            [BILLING_COLOURS.importSelf, t('billing.legend.costSelf'), false, 'costSelf'],
+            [BILLING_COLOURS.profit, t('billing.profit'), true, 'profit']
+        ], renderBillingCharts);
+    }
+
+    /** Everything about one day or month, the same tooltip on every billing chart. */
+    function billingTooltip(column) {
+        const year = billing.view?.period === 'year';
+        const date = new Date(column.date + 'T00:00:00');
+        const title = year
+            ? monthName(date.getMonth()) + ' ' + date.getFullYear()
+            : formatDay(column.date, true);
+
+        if (!column.recorded) {
+            return {title, accent: 'var(--text-faint)', note: t('billing.notRecorded')};
+        }
+
+        const energy = value => hasValue(value) ? `${kwh(value)} kWh` : null;
+        const czk = value => hasValue(value) ? `${money(value)} CZK` : null;
+
+        return {
+            title,
+            accent: BILLING_COLOURS.production,
+            rows: [
+                [t('billing.production'), energy(column.yield)],
+                [t('billing.consumption'), energy(column.consumption)],
+                [t('billing.legend.importGrid'), energy(column.importGrid)],
+                [t('billing.legend.importSelf'), energy(column.importSelf)],
+                [t('billing.legend.exportGrid'), energy(column.exportGrid)],
+                [t('billing.legend.exportSelf'), energy(column.exportSelf)],
+                [t('billing.cost'), czk(costOf(column))],
+                [t('billing.revenue'), czk(revenueOf(column))],
+                [t('billing.savings'), czk(column.savings)],
+                [t('billing.profit'), czk(column.profit)]
+            ]
+        };
+    }
+
+    /** Every day or month in numbers, newest first, with the totals; built only while open. */
+    function renderBillingTable() {
+        const table = el('billing-table');
+
+        if (!el('billing-details').open) {
+            table.replaceChildren();
+            return;
+        }
+
+        const year = billing.view?.period === 'year';
+        const rows = billingColumns().filter(column => column.recorded).reverse();
+        const totals = billing.view?.totals;
+
+        if (!rows.length) {
+            const caption = document.createElement('caption');
+            caption.textContent = t(year ? 'billing.noneYear' : 'billing.noneMonth');
+            table.replaceChildren(caption);
+            return;
+        }
+
+        const columns = [
+            {label: year ? t('billing.col.month') : t('stats.col.day'), text: true,
+                row: row => year ? monthName(Number(row.date.slice(5, 7)) - 1) : formatDay(row.date, true),
+                total: () => t('stats.col.total')},
+            {label: `${t('billing.production')} (kWh)`, value: row => row.yield, format: kwh},
+            {label: `${t('billing.consumption')} (kWh)`, value: row => row.consumption, format: kwh},
+            {label: `${t('billing.legend.importGrid')} (kWh)`, value: row => row.importGrid, format: kwh},
+            {label: `${t('billing.legend.importSelf')} (kWh)`, value: row => row.importSelf, format: kwh},
+            {label: `${t('billing.legend.exportGrid')} (kWh)`, value: row => row.exportGrid, format: kwh},
+            {label: `${t('billing.legend.exportSelf')} (kWh)`, value: row => row.exportSelf, format: kwh},
+            {label: `${t('billing.cost')} (CZK)`, value: costOf, format: money},
+            {label: `${t('billing.revenue')} (CZK)`, value: revenueOf, format: money},
+            {label: `${t('billing.savings')} (CZK)`, value: row => row.savings, format: money},
+            {label: `${t('billing.profit')} (CZK)`, value: row => row.profit, format: money}
+        ];
+
+        const cell = (tag, text, numeric) => {
+            const node = document.createElement(tag);
+            node.textContent = text;
+            if (numeric) {
+                node.className = 'num';
+            }
+            return node;
+        };
+
+        const head = document.createElement('thead');
+        const headRow = document.createElement('tr');
+        columns.forEach(column => headRow.appendChild(cell('th', column.label, !column.text)));
+        head.appendChild(headRow);
+
+        const body = document.createElement('tbody');
+        rows.forEach(row => {
+            const line = document.createElement('tr');
+            columns.forEach(column => line.appendChild(cell('td',
+                column.text ? column.row(row) : column.format(column.value(row)), !column.text)));
+            body.appendChild(line);
+        });
+
+        const foot = document.createElement('tfoot');
+        const footRow = document.createElement('tr');
+        columns.forEach(column => footRow.appendChild(cell('td',
+            column.text ? column.total() : (totals ? column.format(column.value(totals)) : '—'), !column.text)));
+        foot.appendChild(footRow);
+
+        table.replaceChildren(head, body, foot);
+    }
+
     function textSpan(text) {
         const node = document.createElement('span');
         node.textContent = text;
@@ -3185,6 +3714,7 @@
         renderQuickActions();
         renderBalance();
         renderStatistics();
+        renderBilling();
     }
 
     /* ------------------------------------------------------------ skeletons */
@@ -3490,13 +4020,17 @@
 
     async function refresh() {
         try {
-            const [overview, prices, weather, timeline, selling, balance, statistics] = await Promise.all([
+            const [overview, prices, weather, timeline, selling, balance, billingOverview, statistics] = await Promise.all([
                 Api.overview(), Api.prices(), Api.weather(), Api.timeline(), Api.selling(),
                 // Like the statistics, balancing is one control of the page, and an older
                 // backend without it must not take the rest of the refresh down.
                 Api.balance().catch(error => {
                     console.warn('Balancing unavailable', error);
                     return null;
+                }),
+                Api.billingOverview().catch(error => {
+                    console.warn('Billing overview unavailable', error);
+                    return billing.overview;
                 }),
                 // The statistics are a section of the page, not the page: failing to load them
                 // keeps what was shown last rather than taking the whole refresh down.
@@ -3507,6 +4041,7 @@
             ]);
 
             Object.assign(state, {overview, prices, weather, timeline, selling, balance, statistics});
+            billing.overview = billingOverview;
 
             setConnection(overview.online ? 'status.online' : 'status.offline',
                 overview.online ? 'pill-ok' : 'pill-warn');
@@ -3516,6 +4051,9 @@
             // The charts are rebuilt from scratch, so any open tooltip is now orphaned.
             Charts.hideTooltip();
             renderAll();
+
+            // The billing period is fetched on its own, and only when it changed.
+            loadBilling();
         } catch (error) {
             console.error('Refresh failed', error);
             setConnection('status.error', 'pill-error');
@@ -3594,6 +4132,31 @@
                 state.statsMonth = monthKey(new Date());
                 setStatsRange(button.dataset.days);
             }));
+
+        document.querySelectorAll('#billing-range .segment').forEach(button =>
+            button.addEventListener('click', () => setBillingRange(button.dataset.range)));
+        el('billing-month').addEventListener('change', event => {
+            billing.month = event.target.value;
+            loadBilling();
+        });
+        el('billing-year').addEventListener('change', event => {
+            const year = Number(event.target.value);
+            billing.year = year;
+
+            // Picking a year in the month view keeps the month if that year has it.
+            const months = (billing.overview?.months || []).filter(key => key.startsWith(year + '-'));
+            const wanted = `${year}-${(billing.month || '').slice(5, 7)}`;
+            billing.month = months.includes(wanted) ? wanted : months[months.length - 1] || billing.month;
+            loadBilling();
+        });
+        el('billing-prev').addEventListener('click', () => stepBilling(-1));
+        el('billing-next').addEventListener('click', () => stepBilling(1));
+        el('billing-details').addEventListener('toggle', () => {
+            const hint = el('billing-details').querySelector('summary .card-hint');
+            hint.dataset.i18n = el('billing-details').open ? 'stats.tableHide' : 'stats.tableHint';
+            hint.textContent = t(hint.dataset.i18n);
+            renderBillingTable();
+        });
 
         el('stats-month').addEventListener('change', event =>
             setStatsMonth(`${el('stats-year').value}-${event.target.value}`));

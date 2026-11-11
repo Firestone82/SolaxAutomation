@@ -36,6 +36,7 @@
         <button class="tab" data-page="overview" role="tab" data-i18n="nav.overview">Control</button>
         <button class="tab" data-page="statistics" role="tab" data-i18n="nav.statistics">Statistics</button>
         <button class="tab" data-page="history" role="tab" data-i18n="nav.history">History</button>
+        <button class="tab" data-page="billing" role="tab" data-i18n="nav.billing">Billing</button>
     </nav>
 
     <div class="topbar-actions">
@@ -390,11 +391,13 @@
 
             <article class="card">
                 <header class="card-head">
-                    <h2 data-i18n="stats.modesTitle">Time in each work mode</h2>
+                    <h2 data-i18n="stats.modesTitle">Work modes and energy</h2>
                 </header>
                 <p class="card-sub" id="stats-modes-sub"></p>
                 <div class="mode-share" id="stats-modes"></div>
                 <ul class="legend" id="stats-modes-legend"></ul>
+                <!-- The period's energy in one line: what was made, sold and bought. -->
+                <dl class="totals-row" id="stats-energy-totals"></dl>
             </article>
         </div>
 
@@ -465,6 +468,90 @@
             </header>
             <ol class="timeline-list" id="timeline-history"></ol>
             <div class="pager" id="timeline-history-pager" hidden></div>
+        </article>
+    </section>
+    <!-- ============================================================ BILLING -->
+    <!--
+        The SolaxStatistics summaries: what the energy actually cost and earned, priced at the
+        installation's own tariffs and read off the distributor's meter. A month by day, or a
+        year by month.
+    -->
+    <section id="page-billing" class="page" hidden>
+        <header class="section-head">
+            <div class="section-title">
+                <h2 data-i18n="billing.title">Billing</h2>
+                <span class="section-sub" id="billing-sub"></span>
+            </div>
+            <div class="card-head-actions">
+                <div class="segmented" id="billing-range">
+                    <button class="segment is-active" data-range="month" data-i18n="billing.month">Month</button>
+                    <button class="segment" data-range="year" data-i18n="billing.year">Year</button>
+                </div>
+                <div class="month-nav" id="billing-nav">
+                    <button type="button" class="button button-small icon-step" id="billing-prev"
+                            data-i18n-title="billing.previous" title="Previous" aria-label="Previous"><svg class="chevron" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg></button>
+                    <label class="visually-hidden" for="billing-month" data-i18n="stats.month">Month</label>
+                    <select id="billing-month" class="control month-select"></select>
+                    <label class="visually-hidden" for="billing-year" data-i18n="stats.year">Year</label>
+                    <select id="billing-year" class="control year-select"></select>
+                    <button type="button" class="button button-small icon-step" id="billing-next"
+                            data-i18n-title="billing.next" title="Next" aria-label="Next"><svg class="chevron" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Said once, plainly, when there is nothing to read - instead of empty charts. -->
+        <article class="card" id="billing-missing" hidden>
+            <p class="billing-missing" id="billing-missing-text"></p>
+        </article>
+
+        <div class="grid grid-stats" id="billing-tiles"></div>
+
+        <div class="grid grid-two">
+            <article class="card">
+                <header class="card-head">
+                    <h2 data-i18n="billing.energyTitle">Energy</h2>
+                    <span class="card-hint">kWh</span>
+                </header>
+                <div class="chart" id="billing-energy-chart"></div>
+                <ul class="legend" id="billing-energy-legend"></ul>
+            </article>
+
+            <article class="card">
+                <header class="card-head">
+                    <h2 data-i18n="billing.supplyTitle">Metered grid and second supply</h2>
+                    <span class="card-hint">kWh</span>
+                </header>
+                <p class="card-sub" data-i18n="billing.supplyExplain">
+                    What went out above the line, what came in below it, split by supply.
+                </p>
+                <div class="chart" id="billing-supply-chart"></div>
+                <ul class="legend" id="billing-supply-legend"></ul>
+            </article>
+        </div>
+
+        <article class="card">
+            <header class="card-head">
+                <h2 data-i18n="billing.moneyTitle">Money</h2>
+                <span class="card-hint">CZK</span>
+            </header>
+            <p class="card-sub" data-i18n="billing.moneyExplain">
+                Savings and revenue above the line, costs below it. The tick is the balance.
+            </p>
+            <div class="chart" id="billing-money-chart"></div>
+            <ul class="legend" id="billing-money-legend"></ul>
+        </article>
+
+        <article class="card">
+            <details class="stats-details" id="billing-details">
+                <summary class="card-head">
+                    <h2 data-i18n="billing.tableTitle">Breakdown</h2>
+                    <span class="card-hint" data-i18n="stats.tableHint">Show</span>
+                </summary>
+                <div class="table-scroll">
+                    <table class="stats-table" id="billing-table"></table>
+                </div>
+            </details>
         </article>
     </section>
 </main>

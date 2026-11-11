@@ -1333,8 +1333,13 @@ const Charts = (() => {
 
         const svg = createSvg(width, height);
 
-        // Column washes first, so everything else sits on top of them.
+        // Column washes first, so everything else sits on top of them. Columns that are months
+        // have no weekend and no today to mark.
         days.forEach((day, index) => {
+            if (options.columns === 'month') {
+                return;
+            }
+
             const date = new Date(day.date + 'T00:00:00');
             const weekday = date.getDay();
             const classes = [];

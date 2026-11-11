@@ -402,6 +402,25 @@ jedno stisknutí daleko a dokud ceny nevyjdou, napíše, kdy vyjdou.
 
 ---
 
+## Vyúčtování — SolaxStatistics (`solax-statistics`)
+
+Stránka **Vyúčtování** čte souhrny, které píše samostatná aplikace SolaxStatistics do své složky
+`data/summary` (`summary_RRRR-MM.xlsx` a `.json`). Cestu nastavte v `solax-statistics.data-dir` na
+složku `data` aplikace SolaxStatistics (výchozí `../SolaxStatistics/data`). Nic se nepřepočítává —
+čísla jsou přesně ta, která spočítala SolaxStatistics.
+
+- **Měsíc** — po dnech: výroba, spotřeba, odběr a dodávka rozdělené na měřenou síť (elektroměr ČEZ)
+  a druhou přípojku, náklady, výnosy, úspora a bilance (úspora + výnosy − náklady), tři grafy a rozpis.
+- **Rok** — totéž po měsících; nejnovější sešit nese všechny měsíce zpětně, takže i starší roky mají
+  data.
+
+Chybějící složka nebo poškozený soubor se na stránce napíše, aplikaci neshodí. Surová CSV ve
+`solax/`, `ote/` a `cez/` se zatím nečtou.
+
+V grafech statistik i vyúčtování jde **kliknutím na položku legendy** řadu skrýt a znovu zobrazit.
+
+---
+
 ## Statistiky — `statistics`
 
 Žádná historie, kterou by šlo stáhnout, neexistuje — střídač i cloud hlásí jen *dnešní* čítače a
