@@ -866,13 +866,14 @@ main {
 .totals-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px 28px;
+    justify-content: center;
+    gap: 8px 48px;
     margin: 14px 0 0;
     padding-top: 12px;
     border-top: 1px solid var(--border);
 }
 
-.totals-row > div { display: flex; flex-direction: column; gap: 2px; }
+.totals-row > div { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 
 .totals-row dt {
     display: flex;
