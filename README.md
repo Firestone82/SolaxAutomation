@@ -317,9 +317,11 @@ all day.
 SolaxStatistics is a separate application. It reads the inverter's history, the ČEZ meter and the
 spot prices, prices every quarter of an hour at the installation's own tariffs and writes the result
 into its `data` folder — `solax/`, `ote/`, `cez/` and one summary per month in `summary/`
-(`summary_YYYY-MM.xlsx` and `summary_YYYY-MM.json`). The **Billing** page reads those summaries; it
-never writes to them. Point `solax-statistics.data-dir` at that `data` folder (default
-`../SolaxStatistics/data`, beside this application) and the page fills in on the next refresh.
+(`summary_YYYY-MM.xlsx` and `summary_YYYY-MM.json`, directly or in a folder per year such as
+`summary/2026/`). The **Billing** page reads those summaries; it never writes to them. Point
+`solax-statistics.data-dir` at that `data` folder — an absolute path such as
+`/srv/SolaxStatistics/data` is the safe choice, a relative one is resolved against the service's
+working directory — and the page fills in on the next refresh.
 
 "Grid" is what passed the distributor's meter, the metered supply; "second supply" is the other
 side of the connection switch. Every number is the one SolaxStatistics computed, nothing is priced

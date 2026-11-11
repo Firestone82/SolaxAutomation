@@ -88,7 +88,11 @@ class SolaxStatisticsServiceTest {
     }
 
     private void workbook(String month, List<double[]> daily, List<double[]> monthly, List<double[]> yearly) throws IOException {
-        Path file = summary.resolve("summary_" + month + ".xlsx");
+        workbook(summary, month, daily, monthly, yearly);
+    }
+
+    private void workbook(Path folder, String month, List<double[]> daily, List<double[]> monthly, List<double[]> yearly) throws IOException {
+        Path file = folder.resolve("summary_" + month + ".xlsx");
 
         StringBuilder strings = new StringBuilder("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
                 + "<sst xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">");
@@ -238,6 +242,26 @@ class SolaxStatisticsServiceTest {
         assertTrue(service.getDays(YearMonth.of(2026, 9)).isEmpty());
         assertTrue(service.getMonth(YearMonth.of(2026, 9)).isEmpty());
         assertEquals(List.of(YearMonth.of(2026, 9)), service.getMonths(), "the month is listed, it just has nothing to show");
+    }
+
+    @Test
+    @DisplayName("finds the summaries in the folder per year SolaxStatistics files them in")
+    void findsYearFolders() throws IOException {
+        Path year2025 = Files.createDirectories(summary.resolve("2025"));
+        Path year2026 = Files.createDirectories(summary.resolve("2026"));
+
+        workbook(year2025, "2025-12", List.of(row(LocalDate.of(2025, 12, 1), 3, 20, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1)), List.of(), List.of());
+        workbook(year2026, "2026-10",
+                List.of(row(LocalDate.of(2026, 10, 1), 36.6, 20.54, 3.2, 2.2, 24.1, 2.4, 4.8, 17.5, 26.7, 46.1, 15.1, 113.6, 74.8, 159.8)),
+                List.of(row(LocalDate.of(2026, 10, 1), 725.7, 537.76, 87.5, 68.8, 656.4, 75.6, 115.4, 201.5, 529.0, 398.2, 381.5, 2861.1, 66.6, 3056.3)),
+                List.of());
+        Files.writeString(year2026.resolve("summary_2026-10.json"), """
+                {"date":"2026-10-01T00:00:00","yield":725.7,"consumption":537.76}
+                """);
+
+        assertEquals(List.of(YearMonth.of(2025, 12), YearMonth.of(2026, 10)), service.getMonthsWithDays());
+        assertEquals(36.6, service.getDays(YearMonth.of(2026, 10)).getFirst().yield(), 1e-9);
+        assertEquals(725.7, service.getMonth(YearMonth.of(2026, 10)).orElseThrow().yield(), 1e-9);
     }
 
     @Test

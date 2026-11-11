@@ -216,6 +216,9 @@ dashboard:
 solax-statistics:
   enabled: true
   # The SolaxStatistics data folder, the one holding solax/, ote/, cez/ and summary/.
+  # An absolute path is the safe choice, e.g. /srv/SolaxStatistics/data; a relative one
+  # is resolved against the working directory the service runs in. The summaries are
+  # found directly in summary/ and in its folders per year (summary/2026/...).
   data-dir: ../SolaxStatistics/data
 
 # -----------------------------------------------------------------------------

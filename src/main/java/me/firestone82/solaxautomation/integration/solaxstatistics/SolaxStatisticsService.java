@@ -7,8 +7,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -191,7 +194,14 @@ public class SolaxStatisticsService {
     private record MonthFiles(Path json, Path xlsx) {
     }
 
-    /** The summary files on disk, by month, oldest first. */
+    /**
+     * How deep under {@code summary/} a summary is looked for. SolaxStatistics files them in a
+     * folder per year - {@code summary/2026/summary_2026-10.xlsx} - and a file directly in
+     * {@code summary/} is found as well.
+     */
+    private static final int SEARCH_DEPTH = 3;
+
+    /** The summary files on disk, by month, oldest first - in {@code summary/} and its year folders. */
     private TreeMap<YearMonth, MonthFiles> files() {
         TreeMap<YearMonth, MonthFiles> months = new TreeMap<>();
 
@@ -199,20 +209,36 @@ public class SolaxStatisticsService {
             return months;
         }
 
-        try (Stream<Path> listing = Files.list(properties.summaryDir())) {
-            listing.forEach(path -> {
-                Matcher matcher = SUMMARY.matcher(path.getFileName().toString());
+        try {
+            Files.walkFileTree(properties.summaryDir(), Set.of(), SEARCH_DEPTH, new SimpleFileVisitor<>() {
+                @Override
+                public FileVisitResult visitFile(Path path, BasicFileAttributes attributes) {
+                    if (!attributes.isRegularFile()) {
+                        return FileVisitResult.CONTINUE;
+                    }
 
-                if (!matcher.matches()) {
-                    return;
+                    Matcher matcher = SUMMARY.matcher(path.getFileName().toString());
+
+                    if (!matcher.matches()) {
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    YearMonth month = YearMonth.parse(matcher.group(1));
+                    MonthFiles current = months.getOrDefault(month, new MonthFiles(null, null));
+
+                    months.put(month, "json".equals(matcher.group(2))
+                            ? new MonthFiles(path, current.xlsx())
+                            : new MonthFiles(current.json(), path));
+
+                    return FileVisitResult.CONTINUE;
                 }
 
-                YearMonth month = YearMonth.parse(matcher.group(1));
-                MonthFiles current = months.getOrDefault(month, new MonthFiles(null, null));
-
-                months.put(month, "json".equals(matcher.group(2))
-                        ? new MonthFiles(path, current.xlsx())
-                        : new MonthFiles(current.json(), path));
+                /** A folder this application may not read is passed over, not the whole listing. */
+                @Override
+                public FileVisitResult visitFileFailed(Path path, IOException e) {
+                    log.debug("Skipping {} while looking for summaries: {}", path, e.getMessage());
+                    return FileVisitResult.CONTINUE;
+                }
             });
         } catch (IOException e) {
             log.warn("Could not list the SolaxStatistics summaries in {}: {}", properties.summaryDir(), e.getMessage());
