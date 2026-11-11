@@ -727,6 +727,20 @@ main {
 }
 
 .stats-table .num { text-align: right; }
+
+/* The breakdown's tools, between its heading and the table. */
+.table-tools {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    margin: 0 0 10px;
+}
+
+/* A tinted cell keeps its tint under the row hover, which only darkens the rest. */
+.stats-table td.is-tinted { border-bottom-color: color-mix(in srgb, var(--border) 60%, transparent); }
+.stats-table tbody tr:hover td.is-tinted { filter: brightness(.96); }
+[data-theme="dark"] .stats-table tbody tr:hover td.is-tinted { filter: brightness(1.15); }
 .stats-table tbody tr:hover td { background: var(--surface-alt); }
 
 /* Today, or a day whose money is only partly known: readable, but not on a par with the rest. */

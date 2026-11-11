@@ -3648,27 +3648,79 @@
             return;
         }
 
+        // Each column in its quantity's own colour, the one its series has on the charts:
+        // the sun's yellow, the house's slate, import and its cost in rose, export and its
+        // revenue in blue, savings in green. The balance runs both ways - green above nought,
+        // red below.
         const columns = [
             {label: year ? t('billing.col.month') : t('stats.col.day'), text: true,
                 row: row => year ? monthName(Number(row.date.slice(5, 7)) - 1) : formatDay(row.date, true),
                 total: () => t('stats.col.total')},
-            {label: `${t('billing.production')} (kWh)`, value: row => row.yield, format: kwh},
-            {label: `${t('billing.consumption')} (kWh)`, value: row => row.consumption, format: kwh},
-            {label: `${t('billing.legend.importGrid')} (kWh)`, value: row => row.importGrid, format: kwh},
-            {label: `${t('billing.legend.importSelf')} (kWh)`, value: row => row.importSelf, format: kwh},
-            {label: `${t('billing.legend.exportGrid')} (kWh)`, value: row => row.exportGrid, format: kwh},
-            {label: `${t('billing.legend.exportSelf')} (kWh)`, value: row => row.exportSelf, format: kwh},
-            {label: `${t('billing.cost')} (CZK)`, value: costOf, format: money},
-            {label: `${t('billing.revenue')} (CZK)`, value: revenueOf, format: money},
-            {label: `${t('billing.savings')} (CZK)`, value: row => row.savings, format: money},
-            {label: `${t('billing.profit')} (CZK)`, value: row => row.profit, format: money}
+            {label: `${t('billing.production')} (kWh)`, value: row => row.yield, format: kwh, tint: 'var(--stat-production)'},
+            {label: `${t('billing.consumption')} (kWh)`, value: row => row.consumption, format: kwh, tint: 'var(--stat-consumption)'},
+            {label: `${t('billing.legend.importGrid')} (kWh)`, value: row => row.importGrid, format: kwh, tint: 'var(--stat-import)'},
+            {label: `${t('billing.legend.importSelf')} (kWh)`, value: row => row.importSelf, format: kwh, tint: 'var(--stat-import)'},
+            {label: `${t('billing.legend.exportGrid')} (kWh)`, value: row => row.exportGrid, format: kwh, tint: 'var(--stat-export)'},
+            {label: `${t('billing.legend.exportSelf')} (kWh)`, value: row => row.exportSelf, format: kwh, tint: 'var(--stat-export)'},
+            {label: `${t('billing.cost')} (CZK)`, value: costOf, format: money, tint: 'var(--stat-import)'},
+            {label: `${t('billing.revenue')} (CZK)`, value: revenueOf, format: money, tint: 'var(--stat-export)'},
+            {label: `${t('billing.savings')} (CZK)`, value: row => row.savings, format: money, tint: 'var(--success)'},
+            {label: `${t('billing.profit')} (CZK)`, value: row => row.profit, format: money, diverging: true}
         ];
 
-        const cell = (tag, text, numeric) => {
+        // Where a column's values lie, for how strongly each of its cells is tinted.
+        const tinted = billingTint;
+
+        columns.forEach(column => {
+            if (column.text) {
+                return;
+            }
+
+            const values = rows.map(column.value).filter(hasValue);
+            column.min = values.length ? Math.min(...values) : 0;
+            column.max = values.length ? Math.max(...values) : 0;
+        });
+
+        /**
+         * The background of one cell: nothing for a value that is not there, the faintest wash
+         * for the lowest in the column and the strongest for the highest. A column whose
+         * values are all the same says nothing by colour, so it gets none.
+         */
+        const tintOf = (column, value) => {
+            if (!tinted || column.text || !hasValue(value)) {
+                return null;
+            }
+
+            const strength = share => `${Math.round(6 + Math.max(0, Math.min(1, share)) * 42)}%`;
+
+            if (column.diverging) {
+                if (value > 0 && column.max > 0) {
+                    return `color-mix(in srgb, var(--success) ${strength(value / column.max)}, transparent)`;
+                }
+
+                if (value < 0 && column.min < 0) {
+                    return `color-mix(in srgb, var(--danger) ${strength(value / column.min)}, transparent)`;
+                }
+
+                return null;
+            }
+
+            if (column.max === column.min) {
+                return null;
+            }
+
+            return `color-mix(in srgb, ${column.tint} ${strength((value - column.min) / (column.max - column.min))}, transparent)`;
+        };
+
+        const cell = (tag, text, numeric, background = null) => {
             const node = document.createElement(tag);
             node.textContent = text;
             if (numeric) {
                 node.className = 'num';
+            }
+            if (background) {
+                node.style.background = background;
+                node.classList.add('is-tinted');
             }
             return node;
         };
@@ -3682,7 +3734,8 @@
         rows.forEach(row => {
             const line = document.createElement('tr');
             columns.forEach(column => line.appendChild(cell('td',
-                column.text ? column.row(row) : column.format(column.value(row)), !column.text)));
+                column.text ? column.row(row) : column.format(column.value(row)), !column.text,
+                column.text ? null : tintOf(column, column.value(row)))));
             body.appendChild(line);
         });
 
@@ -3693,6 +3746,36 @@
         foot.appendChild(footRow);
 
         table.replaceChildren(head, body, foot);
+        table.classList.toggle('is-tinted', tinted);
+    }
+
+    /** Whether the breakdown tints its cells by value; remembered per browser, on by default. */
+    let billingTint = (() => {
+        try {
+            return localStorage.getItem('solax.billingTint') !== 'off';
+        } catch (error) {
+            return true;
+        }
+    })();
+
+    function renderBillingTintToggle() {
+        const button = el('billing-tint');
+        button.classList.toggle('is-active', billingTint);
+        button.setAttribute('aria-pressed', String(billingTint));
+        el('billing-tint-hint').hidden = !billingTint;
+    }
+
+    function toggleBillingTint() {
+        billingTint = !billingTint;
+
+        try {
+            localStorage.setItem('solax.billingTint', billingTint ? 'on' : 'off');
+        } catch (error) {
+            // Not remembered, but still switched for this visit.
+        }
+
+        renderBillingTintToggle();
+        renderBillingTable();
     }
 
     function textSpan(text) {
@@ -4150,6 +4233,8 @@
             loadBilling();
         });
         el('billing-prev').addEventListener('click', () => stepBilling(-1));
+        el('billing-tint').addEventListener('click', toggleBillingTint);
+        renderBillingTintToggle();
         el('billing-next').addEventListener('click', () => stepBilling(1));
         el('billing-details').addEventListener('toggle', () => {
             const hint = el('billing-details').querySelector('summary .card-hint');

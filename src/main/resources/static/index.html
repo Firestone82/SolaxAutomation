@@ -548,6 +548,14 @@
                     <h2 data-i18n="billing.tableTitle">Breakdown</h2>
                     <span class="card-hint" data-i18n="stats.tableHint">Show</span>
                 </summary>
+                <!-- Cells tinted by how high they are within their column, switchable. -->
+                <div class="table-tools">
+                    <button type="button" id="billing-tint" class="button button-small toggle-button"
+                            aria-pressed="true" data-i18n="billing.tint">Colour by value</button>
+                    <span class="card-hint" id="billing-tint-hint" data-i18n="billing.tintHint">
+                        The stronger the colour, the higher the value within its column.
+                    </span>
+                </div>
                 <div class="table-scroll">
                     <table class="stats-table" id="billing-table"></table>
                 </div>

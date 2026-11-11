@@ -330,7 +330,10 @@ again here, so the page and the workbook always agree.
   revenue — each split between the grid and the second supply — savings, and the balance (savings
   plus revenue minus costs); charts of the energy, of the two supplies (export above the line, import
   below) and of the money (savings and revenue above, costs below, a tick for the balance); and a
-  breakdown table.
+  breakdown table. _Colour by value_ above the table tints every cell by how high it is within its
+  column, in that quantity's colour from the charts — a day of high export stands out in blue, a
+  day of high import in rose — and the balance green above nought and red below. The switch is
+  remembered per browser.
 - **Year** — the same by month. The newest workbook carries every month back to the first one
   SolaxStatistics priced, so years before the files on disk still have their months, and the
   Yearly sheet gives the year's totals.

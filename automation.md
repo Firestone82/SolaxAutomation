@@ -411,6 +411,8 @@ složku `data` aplikace SolaxStatistics (výchozí `../SolaxStatistics/data`). N
 
 - **Měsíc** — po dnech: výroba, spotřeba, odběr a dodávka rozdělené na měřenou síť (elektroměr ČEZ)
   a druhou přípojku, náklady, výnosy, úspora a bilance (úspora + výnosy − náklady), tři grafy a rozpis.
+  V rozpisu přepínač **Barvy podle hodnoty** podbarví každou buňku podle toho, jak vysoká je v rámci
+  sloupce (barvou veličiny z grafů); bilance je zelená nad nulou a červená pod ní.
 - **Rok** — totéž po měsících; nejnovější sešit nese všechny měsíce zpětně, takže i starší roky mají
   data.
 
